@@ -23,21 +23,33 @@ npm start            # the desktop inside a normal window, for testing
 > Running from VS Code's terminal? The scripts strip `ELECTRON_RUN_AS_NODE`, which VS Code sets and which
 > otherwise stops Electron from starting.
 
-## Install (Arch Linux)
+## Install
 
-[packaging/arch/PKGBUILD](packaging/arch/PKGBUILD) builds the `liquid-desktop-git` package from a git repo.
-It uses Arch's `electron43` and `picom`, and installs the login-screen session.
+One line — it fetches the installer from GitHub, detects your distro, and does the rest:
 
 ```sh
-# from a checkout of this repo — point LIQUID_REPO at wherever you pushed it
-LIQUID_REPO=https://github.com/you/LiquidDesktop.git yay -Bi packaging/arch
-# or, without yay
-cd packaging/arch && LIQUID_REPO=https://github.com/you/LiquidDesktop.git makepkg -si
+curl -fsSL https://raw.githubusercontent.com/arc360alt/LiquidDesktop/main/install.sh | sh
 ```
 
-(Instead of setting `LIQUID_REPO` every time, you can edit `_repo` and `url` at the top of the PKGBUILD.)
+| Distro | What the installer does |
+|---|---|
+| Arch, Manjaro, EndeavourOS, CachyOS, Garuda | builds the `liquid-desktop-git` package from [packaging/arch/PKGBUILD](packaging/arch/PKGBUILD) — with **yay** or **paru** if you have one, otherwise `makepkg` |
+| Debian, Ubuntu, Mint, Pop!_OS | installs dependencies with `apt`, then LiquidDesktop to `/opt/liquid-desktop` |
+| Fedora | `dnf`, then `/opt/liquid-desktop` |
+| openSUSE | `zypper`, then `/opt/liquid-desktop` |
 
-Then log out and choose **LiquidDesktop** on your login screen. It also installs:
+Run it as your normal user (it asks for sudo). Options go after `sh -s --`:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/arc360alt/LiquidDesktop/main/install.sh | sh -s -- --uninstall   # remove it
+curl -fsSL https://raw.githubusercontent.com/arc360alt/LiquidDesktop/main/install.sh | sh -s -- --minimal     # skip Control Center helpers
+curl -fsSL https://raw.githubusercontent.com/arc360alt/LiquidDesktop/main/install.sh | sh -s -- --dry-run     # just show what it would do
+```
+
+Running the same one-liner again updates LiquidDesktop. On Arch you can also build by hand:
+`git clone https://github.com/arc360alt/LiquidDesktop && cd LiquidDesktop && yay -Bi packaging/arch`.
+
+Then log out and choose **LiquidDesktop** on your login screen. (No login screen yet? `sudo pacman -S sddm && sudo systemctl enable sddm`, or run it with `startx` — the installer prints both.) It also installs:
 
 | Command | |
 |---|---|

@@ -1,11 +1,13 @@
-# Maintainer: you <you@example.com>
+# Maintainer: arc360alt
 #
 # Builds LiquidDesktop from a git repository and installs it as a desktop session.
 #
-#   Point it at your repo (either edit _repo below, or set LIQUID_REPO when building):
-#     LIQUID_REPO=https://github.com/you/LiquidDesktop.git yay -Bi packaging/arch
-#     LIQUID_REPO=https://github.com/you/LiquidDesktop.git makepkg -si      (from this folder)
-#   A branch or tag works too: LIQUID_REPO='https://github.com/you/LiquidDesktop.git#branch=dev'
+#   Easiest (no checkout needed):
+#     curl -fsSL https://raw.githubusercontent.com/arc360alt/LiquidDesktop/main/install.sh | sh
+#   From a checkout of the repo:
+#     git clone https://github.com/arc360alt/LiquidDesktop && cd LiquidDesktop
+#     yay -Bi packaging/arch            (or: cd packaging/arch && makepkg -si)
+#   Another repo or branch: LIQUID_REPO='https://github.com/arc360alt/LiquidDesktop.git#branch=dev' makepkg -si
 #
 # Afterwards pick "LiquidDesktop" on your login screen, or run `liquid-desktop` to try it in a window.
 
@@ -15,9 +17,9 @@ pkgver=0.2.0
 pkgrel=1
 pkgdesc='A Liquid Glass desktop environment written in JavaScript (Electron UI, X11 window manager, picom compositor)'
 arch=('any')
-url='https://github.com/you/LiquidDesktop'
+url='https://github.com/arc360alt/LiquidDesktop'
 license=('MIT')
-_repo="${LIQUID_REPO:-https://github.com/you/LiquidDesktop.git}"
+_repo="${LIQUID_REPO:-https://github.com/arc360alt/LiquidDesktop.git#branch=main}"
 
 depends=(
   'electron43'          # runs the UI and the window manager

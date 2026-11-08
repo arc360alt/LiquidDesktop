@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=LiquidDesktop
+Comment=A Liquid Glass desktop written in JavaScript
+Exec=@HERE@/session/liquid-desktop-session
+TryExec=@HERE@/session/liquid-desktop-session
+Type=Application
+DesktopNames=LiquidDesktop

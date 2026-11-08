@@ -1,0 +1,9 @@
+#!/bin/sh
+# LiquidDesktop in a normal window (testing mode). Pass --devtools to open the inspector.
+HERE="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
+unset ELECTRON_RUN_AS_NODE
+for E in "$LIQUID_ELECTRON" "$HERE/node_modules/electron/dist/electron" "$(command -v electron43)" "$(command -v electron)"; do
+  [ -n "$E" ] && [ -x "$E" ] && exec "$E" "$HERE" --windowed "$@"
+done
+echo "liquid-desktop: Electron not found (install electron43)" >&2
+exit 1

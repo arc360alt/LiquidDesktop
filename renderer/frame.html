@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en" data-layer="frame">
+<head>
+  <meta charset="utf-8">
+  <title>Window</title>
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/window.css">
+  <style>
+    html, body { background: var(--win-bg); height: 100%; }
+    /* the native app sits inside this frame, 36px below the top and 4px in from the other edges */
+    .fr-bar { position: absolute; left: 0; right: 0; top: 0; height: 36px; display: flex; align-items: center; padding: 0 14px; gap: 8px; }
+    .fr-bar .win-title { position: absolute; left: 50%; transform: translateX(-50%); max-width: 60%; font-size: 13px; }
+    body:not(.focused) .win-title { opacity: 0.5; }
+    body.fullscreen .fr-bar { display: none; }
+    body.focused .traffic .tl-close { background: #ff5f57; }
+    body.focused .traffic .tl-min { background: #febc2e; }
+    body.focused .traffic .tl-max { background: #28c840; }
+    .rz { position: absolute; z-index: 5; }
+    .rz.n { top: 0; left: 10px; right: 10px; height: 3px; cursor: ns-resize; }
+    .rz.s { bottom: 0; left: 10px; right: 10px; height: 4px; cursor: ns-resize; }
+    .rz.e { right: 0; top: 10px; bottom: 10px; width: 4px; cursor: ew-resize; }
+    .rz.w { left: 0; top: 10px; bottom: 10px; width: 4px; cursor: ew-resize; }
+    .rz.se { right: 0; bottom: 0; width: 12px; height: 12px; cursor: nwse-resize; }
+    .rz.sw { left: 0; bottom: 0; width: 12px; height: 12px; cursor: nesw-resize; }
+    .rz.ne { right: 0; top: 0; width: 10px; height: 10px; cursor: nesw-resize; }
+    .rz.nw { left: 0; top: 0; width: 10px; height: 10px; cursor: nwse-resize; }
+  </style>
+</head>
+<body>
+  <div class="fr-bar">
+    <div class="traffic">
+      <button class="tl-close" title="Close"><svg viewBox="0 0 10 10"><path d="M2.5 2.5l5 5M7.5 2.5l-5 5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></button>
+      <button class="tl-min" title="Minimize"><svg viewBox="0 0 10 10"><path d="M2 5h6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></button>
+      <button class="tl-max" title="Zoom"><svg viewBox="0 0 10 10"><path d="M2.2 6.6V2.2h4.4zM7.8 3.4v4.4H3.4z" fill="currentColor"/></svg></button>
+    </div>
+    <div class="win-title"></div>
+  </div>
+  <div class="rz n"></div><div class="rz s"></div><div class="rz e"></div><div class="rz w"></div>
+  <div class="rz ne"></div><div class="rz nw"></div><div class="rz se"></div><div class="rz sw"></div>
+  <script type="module" src="js/frame.js"></script>
+</body>
+</html>

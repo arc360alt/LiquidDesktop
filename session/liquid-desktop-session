@@ -1,0 +1,29 @@
+#!/bin/sh
+# LiquidDesktop X11 session. Started by a display manager (liquid-desktop.desktop), by startx/xinit,
+# or nested for testing (tools/xephyr-test.sh). LiquidDesktop itself is the window manager.
+HERE="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
+export XDG_CURRENT_DESKTOP=LiquidDesktop
+export XDG_SESSION_DESKTOP=LiquidDesktop
+export XDG_SESSION_TYPE=x11
+export GDK_BACKEND=x11
+export QT_QPA_PLATFORM=xcb
+export GTK_CSD=0
+unset ELECTRON_RUN_AS_NODE WAYLAND_DISPLAY
+
+command -v xsetroot >/dev/null && xsetroot -cursor_name left_ptr
+
+# the compositor: real blur behind the glass, rounded corners, shadows
+if command -v picom >/dev/null; then
+  picom --config "$HERE/session/picom.conf" $LIQUID_PICOM_ARGS &
+  PICOM=$!
+  sleep 0.5
+else
+  echo "liquid-desktop: picom not found — install it for blur, rounded corners and shadows" >&2
+fi
+
+if [ -z "$DBUS_SESSION_BUS_ADDRESS" ] && command -v dbus-run-session >/dev/null; then
+  dbus-run-session -- "$HERE/session/liquid-desktop-session-inner" "$HERE"
+else
+  "$HERE/session/liquid-desktop-session-inner" "$HERE"
+fi
+[ -n "$PICOM" ] && kill $PICOM 2>/dev/null

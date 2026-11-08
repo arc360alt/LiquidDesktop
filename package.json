@@ -1,0 +1,25 @@
+{
+  "name": "liquid-desktop",
+  "version": "0.2.0",
+  "description": "A Liquid Glass desktop environment for Linux, written in JavaScript (Electron).",
+  "main": "main/main.js",
+  "license": "MIT",
+  "scripts": {
+    "start": "env -u ELECTRON_RUN_AS_NODE electron . --windowed",
+    "dev": "env -u ELECTRON_RUN_AS_NODE electron . --windowed --devtools",
+    "session": "env -u ELECTRON_RUN_AS_NODE electron . --session",
+    "shots": "env -u ELECTRON_RUN_AS_NODE electron tools/shot.js shots",
+    "web": "node tools/serve.mjs",
+    "nested": "tools/nested.sh",
+    "install-session": "session/install-session.sh"
+  },
+  "dependencies": {
+    "@fontsource-variable/inter": "5.2.5",
+    "@xterm/addon-fit": "0.11.0",
+    "@xterm/xterm": "6.0.0",
+    "x11": "2.3.0"
+  },
+  "devDependencies": {
+    "electron": "43.8.7"
+  }
+}

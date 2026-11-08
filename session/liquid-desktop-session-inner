@@ -1,0 +1,9 @@
+#!/bin/sh
+# Starts the Electron part of the session. Uses, in order: $LIQUID_ELECTRON, the Electron bundled in a
+# development checkout (node_modules), then the system's electron43 / electron.
+HERE="$1"
+for E in "$LIQUID_ELECTRON" "$HERE/node_modules/electron/dist/electron" "$(command -v electron43)" "$(command -v electron)"; do
+  [ -n "$E" ] && [ -x "$E" ] && exec "$E" "$HERE" --session
+done
+echo "liquid-desktop: Electron not found (install electron43)" >&2
+exit 1

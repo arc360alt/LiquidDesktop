@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=LiquidDesktop (Window)
+Comment=Try the LiquidDesktop environment inside a window
+Exec=liquid-desktop
+Icon=preferences-desktop-theme
+Terminal=false
+Type=Application
+Categories=System;Utility;

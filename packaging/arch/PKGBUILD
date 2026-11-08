@@ -1,0 +1,87 @@
+# Maintainer: you <you@example.com>
+#
+# Builds LiquidDesktop from a git repository and installs it as a desktop session.
+#
+#   Point it at your repo (either edit _repo below, or set LIQUID_REPO when building):
+#     LIQUID_REPO=https://github.com/you/LiquidDesktop.git yay -Bi packaging/arch
+#     LIQUID_REPO=https://github.com/you/LiquidDesktop.git makepkg -si      (from this folder)
+#   A branch or tag works too: LIQUID_REPO='https://github.com/you/LiquidDesktop.git#branch=dev'
+#
+# Afterwards pick "LiquidDesktop" on your login screen, or run `liquid-desktop` to try it in a window.
+
+pkgname=liquid-desktop-git
+_name=liquid-desktop
+pkgver=0.2.0
+pkgrel=1
+pkgdesc='A Liquid Glass desktop environment written in JavaScript (Electron UI, X11 window manager, picom compositor)'
+arch=('any')
+url='https://github.com/you/LiquidDesktop'
+license=('MIT')
+_repo="${LIQUID_REPO:-https://github.com/you/LiquidDesktop.git}"
+
+depends=(
+  'electron43'          # runs the UI and the window manager
+  'picom'               # compositor: blur behind glass, rounded corners, shadows
+  'python'              # tiny PTY bridge for the Terminal app
+  'xorg-server'         # the session is an X11 session
+  'xdg-utils'           # opening files with other apps
+  'ttf-font'
+)
+optdepends=(
+  'networkmanager: Wi-Fi status, network list and joining (nmcli)'
+  'wireplumber: volume control (wpctl)'
+  'libpulse: volume control fallback (pactl)'
+  'brightnessctl: screen brightness'
+  'bluez-utils: Bluetooth toggle (bluetoothctl)'
+  'playerctl: Now Playing in Control Center'
+  'upower: battery details'
+  'glib2: move to Trash via gio'
+  'xorg-xwayland: run the session nested in a window on Wayland (liquid-desktop-nested)'
+  'xorg-server-xephyr: run the session nested in a window on X11'
+  'mesa-utils: GPU detection for the nested session'
+  'xfce4-terminal: a native terminal for Linux apps that need one'
+)
+makedepends=('git' 'npm' 'nodejs')
+provides=("$_name")
+conflicts=("$_name")
+options=('!strip' '!debug')
+source=("$_name::git+$_repo")
+sha256sums=('SKIP')
+
+pkgver() {
+  cd "$_name"
+  local v
+  v=$(node -p "require('./package.json').version" 2>/dev/null || echo 0.0.0)
+  printf '%s.r%s.%s' "$v" "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
+}
+
+build() {
+  cd "$_name"
+  # runtime JS dependencies only — Electron itself comes from the electron43 package
+  npm ci --omit=dev --no-audit --no-fund --ignore-scripts
+}
+
+package() {
+  cd "$_name"
+  local dest="$pkgdir/usr/lib/$_name"
+  install -dm755 "$dest"
+  cp -r main renderer session tools package.json "$dest/"
+  cp -r node_modules "$dest/"
+  rm -rf "$dest/node_modules/.package-lock.json" "$dest/tools/shot.js"
+  chmod 755 "$dest/session/liquid-desktop" "$dest/session/liquid-desktop-session" \
+            "$dest/session/liquid-desktop-session-inner" "$dest/tools/nested.sh" "$dest/tools/xephyr-test.sh"
+
+  # commands
+  install -dm755 "$pkgdir/usr/bin"
+  ln -s "/usr/lib/$_name/session/liquid-desktop" "$pkgdir/usr/bin/liquid-desktop"
+  ln -s "/usr/lib/$_name/session/liquid-desktop-session" "$pkgdir/usr/bin/liquid-desktop-session"
+  ln -s "/usr/lib/$_name/tools/nested.sh" "$pkgdir/usr/bin/liquid-desktop-nested"
+
+  # login screen entry (X11 session)
+  install -Dm644 packaging/liquid-desktop.xsession.desktop "$pkgdir/usr/share/xsessions/liquid-desktop.desktop"
+  # app menu entry for the testing window
+  install -Dm644 packaging/liquid-desktop.desktop "$pkgdir/usr/share/applications/liquid-desktop.desktop"
+
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 README.md "$pkgdir/usr/share/doc/$_name/README.md"
+}

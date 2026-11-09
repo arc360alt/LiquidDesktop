@@ -516,3 +516,11 @@ body.mission-open #spaces { z-index: 7550; }
   background: rgba(0, 0, 0, 0.55); color: #fff; opacity: 0; transition: opacity 0.15s; }
 .acct-pic-wrap:hover .acct-edit { opacity: 1; }
 .alert input.field { width: 100%; box-sizing: border-box; height: 30px; }
+
+/* Settings › Lock Screen › login screen themes */
+.sddm-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin-bottom: 18px; }
+.sddm-card { border-radius: 12px; padding: 6px; background: var(--group); box-shadow: 0 0 0 0.5px var(--group-border); border: 2px solid transparent; display: flex; flex-direction: column; gap: 6px; font-size: 12px; text-align: center; }
+.sddm-card:hover { border-color: rgba(128, 128, 128, 0.3); }
+.sddm-card.sel { border-color: var(--accent); }
+.sddm-card img, .sddm-nopv { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 8px; background: linear-gradient(135deg, #2b5876, #4e4376); }
+.sddm-nopv { display: flex; align-items: center; justify-content: center; color: #fff; font-size: 26px; font-weight: 600; }

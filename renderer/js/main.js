@@ -88,9 +88,14 @@ async function bootShell() {
   initSessionShell({ windowMenu });
   initShellShape();
   progress(100);
+  // LiquidDesktop's own login screen at startup — skipped when you just logged in through the LiquidDesktop
+  // login screen (SDDM), so you don't type your password twice (Settings › Lock Screen)
+  const bootLogin = store.get('bootLogin') || 'auto';
+  let askLogin = store.get('requirePassword') && params.get('login') !== '0' && bootLogin !== 'never';
+  if (askLogin && bootLogin === 'auto') { try { if ((await api.sddm.status()).usingOurs) askLogin = false; } catch { /* keep asking */ } }
   await sleep(500);
   hideBoot();
-  if (store.get('requirePassword') && params.get('login') !== '0') shell.lock(true);
+  if (askLogin) shell.lock(true);
   welcome();
   autoUpdateCheck();
 }

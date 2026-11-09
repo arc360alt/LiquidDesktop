@@ -318,12 +318,66 @@ const render = {
   focus() {
     return [hero('focus', 'Focus', 'Focus silences notifications so you can concentrate.'), h('div.group', row('Do Not Disturb', toggle('dnd')))];
   },
-  lock() {
-    return [
+  async lock() {
+    const out = [
       hero('lock', 'Lock Screen', 'Lock with ⌃⌘Q / Ctrl+Alt+Q, from the system menu, or a hot corner.'),
       h('div.group', row('Require password to unlock', toggle('requirePassword'), isNative ? 'Checked against your Linux account password.' : 'Unavailable in the browser preview.'),
         row('Lock now', h('button.btn', { onclick: () => import('../shell.js').then(({ shell }) => shell.lock()) }, 'Lock Screen'))),
     ];
+    if (!api.sddm?.status) return out;
+    // ---- the login screen (display manager / SDDM theme)
+    let st;
+    try { st = await api.sddm.status(); } catch (e) { return [...out, h('div.group-title', 'Login Screen'), h('div.group', row('Couldn’t read the login screen settings', h('span.muted', e.message)))]; }
+    const sudo = async () => {
+      if (!(await api.sddm.sudoStatus()).needed) return true;
+      for (let i = 0; i < 3; i++) {
+        const pw = await prompt('Enter your password', '', { type: 'password', ok: 'Authenticate', message: 'Changing the login screen needs administrator rights (sudo).' });
+        if (pw == null) return false;
+        if (await api.sddm.sudoCheck(pw)) return true;
+        await alertDialog({ title: 'Incorrect password', message: 'Try again.' });
+      }
+      return false;
+    };
+    const apply = async (opts, label) => {
+      if (!(await sudo())) return;
+      busy.hidden = false; busy.textContent = label || 'Applying…';
+      try {
+        const r = await api.sddm.apply(opts);
+        const left = r.problems.filter((p) => p.level === 'error');
+        alertDialog(left.length ? { title: 'Almost there', message: left.map((p) => p.text).join('\n\n') }
+          : { title: 'Login screen updated', message: opts.switchDm ? 'SDDM is now your login manager. Restart your computer to see the new login screen.' : 'You’ll see it the next time you log in.' });
+      } catch (e) { alertDialog({ title: 'Couldn’t change the login screen', message: e.message }); }
+      rerender();
+    };
+    const busy = h('div.muted', { hidden: true, style: { padding: '8px 14px' } });
+    const fixAll = () => {
+      const p = Object.fromEntries(st.problems.map((x) => [x.id, x]));
+      return apply({ theme: st.ours, switchDm: !!p.dm, install: !!p.missing, deps: p.deps?.pkgs || [] }, 'Fixing the login screen…');
+    };
+    const ok = !st.problems.length;
+    const icon = (lvl) => h('span', { style: { width: '18px', flex: 'none', color: lvl === 'error' ? '#ff453a' : lvl === 'warn' ? '#ff9f0a' : '#30d158', fontWeight: 700 } }, lvl === 'ok' ? '✓' : '!');
+    out.push(h('div.group-title', 'Login Screen'),
+      h('div.group',
+        row('Login manager', h('span.muted', st.dm.name)),
+        row('Login screen theme', h('span.muted', st.current ? (st.themes.find((t) => t.id === st.current)?.name || st.current) : 'SDDM default'), st.source ? `Set in ${st.source}` : ''),
+        ok ? h('div.row', icon('ok'), h('div.label', 'The LiquidDesktop login screen is set up correctly.'))
+          : h('div', ...st.problems.map((p) => h('div.row', icon(p.level), h('div.label', h('small', { style: { fontSize: '12.5px', opacity: 1 } }, p.text))))),
+        busy,
+        !ok ? h('div.row', h('div.label', h('small', 'One administrator password covers every fix below.')), h('button.btn.primary', { onclick: fixAll }, 'Fix Problems')) : null,
+        row('Ask for my password again after logging in', h('select.field.square', { style: { height: '26px', minWidth: '210px' }, onchange: (e) => store.set('bootLogin', e.target.value) },
+          ...[['auto', 'Not after the LiquidDesktop login'], ['always', 'Always'], ['never', 'Never']].map(([v, l]) => h('option', { value: v, selected: (store.get('bootLogin') || 'auto') === v }, l))),
+          st.usingOurs ? 'You log in through the LiquidDesktop login screen, so LiquidDesktop won’t ask again.' : 'LiquidDesktop shows its own login screen when it starts unless you came in through its login screen')),
+      st.errors?.length ? h('div.group-title', 'Recent login screen messages') : null,
+      st.errors?.length ? h('div.group', h('pre', { style: { margin: 0, padding: '10px 14px', fontSize: '11px', whiteSpace: 'pre-wrap', maxHeight: '160px', overflow: 'auto' } }, st.errors.join('\n'))) : null);
+    // gallery of installed SDDM themes
+    if (st.themes.length) {
+      out.push(h('div.group-title', 'Login Screen Themes'),
+        h('div.sddm-grid', ...st.themes.map((t) => h('div.sddm-card' + (t.id === st.current ? '.sel' : ''), {
+          title: t.description || t.name,
+          onclick: () => (t.id === st.current && !t.notInstalled ? null : apply({ theme: t.id, install: !!t.notInstalled, switchDm: st.dm.id !== 'sddm', deps: t.id === st.ours ? (st.problems.find((p) => p.id === 'deps')?.pkgs || []) : [] }, `Switching to ${t.name}…`)),
+        }, t.preview ? h('img', { src: t.preview }) : h('div.sddm-nopv', t.name[0]), h('span', t.name + (t.notInstalled ? ' — click to install' : ''))))));
+    }
+    return out;
   },
   async mouse() {
     let info = { backend: 'none', devices: [], config: { all: {}, devices: {} }, defaults: {} };

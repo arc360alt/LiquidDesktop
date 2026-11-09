@@ -84,6 +84,8 @@ package() {
   local dest="$pkgdir/usr/lib/$_name"
   install -dm755 "$dest"
   cp -a main renderer session tools package.json "$dest/"
+  # the login theme, so Settings › Lock Screen can (re)install it
+  install -dm755 "$dest/packaging" && cp -a packaging/sddm "$dest/packaging/"
   cp -r node_modules "$dest/"
   rm -rf "$dest/node_modules/.package-lock.json" "$dest/tools/shot.js"
   chmod 755 "$dest/session/liquid-desktop" "$dest/session/liquid-desktop-session" "$dest/session/liquid-desktop-update" \

@@ -216,4 +216,16 @@ function register() {
   h('store:launchFlatpak', (id) => { spawn('flatpak', ['run', id], { detached: true, stdio: 'ignore' }).unref(); return true; });
 }
 
-module.exports = { register };
+/** Run a shell script as root with the remembered sudo password (or passwordless sudo). */
+function sudoScript(script) {
+  return new Promise((resolve) => {
+    const c = spawn('sudo', ['-S', '-p', '', 'sh', '-c', script], { env: { ...process.env, LC_ALL: 'C' } });
+    let out = '';
+    c.stdout.on('data', (d) => (out += d)); c.stderr.on('data', (d) => (out += d));
+    c.on('exit', (code) => resolve({ ok: code === 0, out: out.trim() }));
+    c.on('error', (e) => resolve({ ok: false, out: e.message }));
+    c.stdin.end((sudoPass || '') + '\n');
+  });
+}
+
+module.exports = { register, sudoStatus, checkSudo, sudoScript };

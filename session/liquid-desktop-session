@@ -14,7 +14,7 @@ CUR_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/LiquidDesktop/cursor-theme"
 [ -r "$CUR_FILE" ] && read -r SAVED_THEME SAVED_SIZE < "$CUR_FILE"
 DEFAULT_CURSOR=LiquidCursor; [ -d "$HERE/session/cursors/MacOS-Tahoe-Cursor/cursors" ] && DEFAULT_CURSOR=MacOS-Tahoe-Cursor
 export XCURSOR_THEME="${XCURSOR_THEME_OVERRIDE:-${SAVED_THEME:-$DEFAULT_CURSOR}}"
-export XCURSOR_SIZE="${SAVED_SIZE:-${XCURSOR_SIZE:-24}}"
+export XCURSOR_SIZE="${SAVED_SIZE:-48}"
 export XCURSOR_PATH="$HERE/session/cursors:$HOME/.local/share/icons:$HOME/.icons:/usr/share/icons:/usr/share/pixmaps"
 unset ELECTRON_RUN_AS_NODE WAYLAND_DISPLAY
 

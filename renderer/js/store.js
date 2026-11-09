@@ -62,7 +62,7 @@ export const defaults = {
   browserAutofill: true,
   windowTiling: true,
   cursorTheme: 'MacOS-Tahoe-Cursor',
-  cursorSize: 24,
+  cursorSize: 32,
   zoomAction: 'fill',       // green button: fill | fill-nodock | fullscreen
 };
 

@@ -48,7 +48,7 @@ function render(full) {
 
 function dockItem(id, { special } = {}) {
   const app = special ? { id: 'launchpad', builtin: true, name: 'Apps' } : catalog.find(id);
-  const el = h('div.dock-item', { 'data-app': id, draggable: !special }, appIcon(app, 'icon'), h('i.dot'));
+  const el = h('div.dock-item', { 'data-app': id }, appIcon(app, 'icon'), h('i.dot'));
   if (wm.appWindows(id).length) el.classList.add('running');
   el.addEventListener('mouseenter', () => showTip(el, special ? 'Apps' : app.name));
   el.addEventListener('mouseleave', hideTip);
@@ -83,27 +83,52 @@ function dockItem(id, { special } = {}) {
     if (m) m.style.top = r.top - m.offsetHeight - 10 + 'px';
   });
   // drag to reorder pinned items, or out of the dock to remove
-  el.addEventListener('dragstart', (e) => { e.dataTransfer.setData('text/dock-app', id); e.dataTransfer.effectAllowed = 'move'; setTimeout(() => el.classList.add('dragging')); hideTip(); });
-  el.addEventListener('dragend', (e) => {
-    el.classList.remove('dragging');
-    const r = dock.getBoundingClientRect();
-    if (e.clientY < r.top - 80 && store.get('dockPinned').includes(id) && !wm.appWindows(id).length) {
-      el.classList.add('poof');
-      setTimeout(() => store.set('dockPinned', store.get('dockPinned').filter((p) => p !== id)), 300);
-    }
+  // Drag to reorder pinned items, or up out of the Dock to remove one. Done by hand rather than with
+  // HTML drag-and-drop: a native drag starts after ~4px, so a click with a slightly moving finger or
+  // mouse turned into a drag and the click was lost. Here a drag needs a deliberate 12px.
+  let suppressClick = false;
+  el.addEventListener('pointerdown', (e) => {
+    if (special || e.button !== 0) return;
+    const sx = e.clientX, sy = e.clientY;
+    let dragging = false;
+    el.setPointerCapture?.(e.pointerId);
+    const move = (ev) => {
+      if (!dragging && Math.hypot(ev.clientX - sx, ev.clientY - sy) < 12) return;
+      if (!dragging) { dragging = true; hideTip(); el.classList.add('dock-drag'); }
+      el.style.transform = `translate(${ev.clientX - sx}px, ${ev.clientY - sy}px)`;
+      const out = ev.clientY < dock.getBoundingClientRect().top - 80 && store.get('dockPinned').includes(id) && !wm.appWindows(id).length;
+      el.classList.toggle('dock-drag-out', out);
+    };
+    const up = (ev) => {
+      el.removeEventListener('pointermove', move); el.removeEventListener('pointerup', up); el.removeEventListener('pointercancel', up);
+      if (!dragging) return;
+      suppressClick = true; setTimeout(() => (suppressClick = false), 0);
+      el.style.transform = ''; el.classList.remove('dock-drag', 'dock-drag-out');
+      const pinned = store.get('dockPinned');
+      if (ev.type === 'pointerup' && ev.clientY < dock.getBoundingClientRect().top - 80 && pinned.includes(id) && !wm.appWindows(id).length) {
+        el.classList.add('poof');
+        setTimeout(() => store.set('dockPinned', store.get('dockPinned').filter((p) => p !== id)), 300);
+        return;
+      }
+      if (ev.type !== 'pointerup') return;
+      // drop next to the pinned item under the pointer
+      const target = [...items.querySelectorAll('.dock-item[data-app]')].find((x) => {
+        if (x === el) return false;
+        const r = x.getBoundingClientRect();
+        return ev.clientX >= r.left && ev.clientX <= r.right;
+      });
+      const tid = target?.dataset.app;
+      if (!tid || !pinned.includes(tid)) return;
+      const list = pinned.filter((p) => p !== id);
+      let i = list.indexOf(tid);
+      const r = target.getBoundingClientRect();
+      if (ev.clientX > r.left + r.width / 2) i++;
+      list.splice(i, 0, id);
+      store.set('dockPinned', list);
+    };
+    el.addEventListener('pointermove', move); el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
   });
-  el.addEventListener('dragover', (e) => { if (e.dataTransfer.types.includes('text/dock-app')) e.preventDefault(); });
-  el.addEventListener('drop', (e) => {
-    const src = e.dataTransfer.getData('text/dock-app');
-    if (!src || src === id) return;
-    e.preventDefault();
-    const list = store.get('dockPinned').filter((p) => p !== src);
-    const r = el.getBoundingClientRect();
-    let i = list.indexOf(id);
-    if (i < 0) i = list.length; else if (e.clientX > r.left + r.width / 2) i++;
-    list.splice(i, 0, src);
-    store.set('dockPinned', list);
-  });
+  el.addEventListener('click', (e) => { if (suppressClick) { e.stopImmediatePropagation(); suppressClick = false; } }, true);
   return el;
 }
 

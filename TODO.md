@@ -1,0 +1,5 @@
+- Make dragging apps around in the dock work a bit better
+- Make the icons in the file explorer look better and not have that extra icon on them thats off-center or fix the icon so its actualy centered and the right size
+- Make it so you can click on the account in the settings at the top and you can configure settings about your user
+- Improve the activity monitor and make it work and function better
+- Make a proper login theme for SSDM or somthing so it looks better when logging in

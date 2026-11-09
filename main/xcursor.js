@@ -69,7 +69,7 @@ function glyphCursor(X) {
 }
 
 /** Resolves to a cursor id for `name` (default left_ptr). */
-function loadCursor(X, root, name = 'left_ptr', size = Number(process.env.XCURSOR_SIZE) || 24) {
+function loadCursor(X, root, name = 'left_ptr', size = Number(process.env.XCURSOR_SIZE) || 48) {
   return new Promise((resolve) => {
     let img = null;
     try { const f = findCursorFile(name); if (f) img = parseXcursor(fs.readFileSync(f), size); } catch { img = null; }

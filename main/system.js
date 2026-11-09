@@ -468,9 +468,9 @@ function register({ getWindow, mode }) {
   h('sys:inputDevices', () => input.devices());
   h('sys:inputApply', (cfg) => input.applyConfig(cfg));
   h('sys:cursorThemes', () => xcursor.listThemes());
-  h('sys:cursorCss', (theme, size) => xcursor.themeCss(theme, size || 24));
+  h('sys:cursorCss', (theme, size) => xcursor.themeCss(theme, size || 48));
   h('sys:cursorApply', async (theme, size) => {
-    size = Math.max(16, Math.min(96, Number(size) || 24));
+    size = Math.max(16, Math.min(96, Number(size) || 48));
     // apps started from now on inherit it; the choice is remembered for the next session start
     process.env.XCURSOR_THEME = theme; process.env.XCURSOR_SIZE = String(size);
     fs.mkdirSync(app.getPath('userData'), { recursive: true });

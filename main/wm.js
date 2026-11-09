@@ -43,6 +43,25 @@ const SHORTCUTS = [
   ['media-play', 0, 'Play'], ['media-next', 0, 'Next'], ['media-prev', 0, 'Prev'],
 ];
 
+// WM_NORMAL_HINTS → client size limits. Layout: flags, x, y, w, h, min w/h (flag 16), max w/h (flag 32),
+// …, base w/h (flag 256). min == max means the window can't be resized (a fixed-size dialog).
+function sizeHints(h) {
+  const r = { minW: 0, minH: 0, maxW: 0, maxH: 0, fixed: false };
+  if (!h || h.length < 9) return r;
+  if (h[0] & 16) { r.minW = h[5]; r.minH = h[6]; } else if ((h[0] & 256) && h.length > 16) { r.minW = h[15]; r.minH = h[16]; }
+  if (h[0] & 32) { r.maxW = h[7] > 0 && h[7] < 32768 ? h[7] : 0; r.maxH = h[8] > 0 && h[8] < 32768 ? h[8] : 0; }
+  r.fixed = !!(r.maxW && r.maxH && r.minW === r.maxW && r.minH === r.maxH);
+  return r;
+}
+function clampToHints(w, cw, ch) {
+  const s = w.hints || {};
+  if (s.minW) cw = Math.max(cw, s.minW);
+  if (s.minH) ch = Math.max(ch, s.minH);
+  if (s.maxW) cw = Math.min(cw, s.maxW);
+  if (s.maxH) ch = Math.min(ch, s.maxH);
+  return [cw, ch];
+}
+
 class WindowManager extends EventEmitter {
   constructor() {
     super();
@@ -245,7 +264,8 @@ class WindowManager extends EventEmitter {
     }
     if (w.fullscreen || w.maximized) { if (w.kind === 'native') this.sendConfigureNotify(w); return; }
     const c = this.clientRect(w);
-    const nx = M & 1 ? ev.x : c.x, ny = M & 2 ? ev.y : c.y, nw = M & 4 ? ev.width : c.w, nh = M & 8 ? ev.height : c.h;
+    const nx = M & 1 ? ev.x : c.x, ny = M & 2 ? ev.y : c.y;
+    const [nw, nh] = clampToHints(w, M & 4 ? ev.width : c.w, M & 8 ? ev.height : c.h);
     this.setClientRect(w, nx, ny, nw, nh);
     if (w.kind === 'native' && !(M & 12)) this.sendConfigureNotify(w);
   }
@@ -267,6 +287,18 @@ class WindowManager extends EventEmitter {
   async onProperty(ev) {
     const w = this.byXid.get(ev.wid);
     if (!w || ev.wid !== w.client) return;
+    if (ev.atom === this.A.WM_NORMAL_HINTS) {
+      // the app changed its min/max size: keep the window inside it
+      w.hints = sizeHints(await this.getCardinals(w.client, 'WM_NORMAL_HINTS'));
+      if (w.hints.minW) w.minW = Math.max(80, w.hints.minW);
+      if (w.hints.minH) w.minH = Math.max(40, w.hints.minH);
+      w.resizable = !w.hints.fixed;
+      if (!w.fullscreen && !w.maximized) {
+        const c = this.clientRect(w), [cw, ch] = clampToHints(w, c.w, c.h);
+        if (cw !== c.w || ch !== c.h) { this.setClientRect(w, c.x, c.y, cw, ch); this.changed(w); }
+      }
+      return;
+    }
     if (ev.atom === this.A._NET_WM_NAME || ev.atom === this.A.WM_NAME) {
       const t = await this.getTitle(w.client);
       if (t && t !== w.title) { w.title = t; this.changed(w); }
@@ -352,12 +384,13 @@ class WindowManager extends EventEmitter {
     if (!g) return;
     // apps that draw their own title bar (GTK headerbars, Electron frameless…) are not framed
     const csd = motif.length >= 3 && (motif[0] & 2) && motif[2] === 0;
-    const minW = hints.length > 6 && (hints[0] & 16) ? hints[5] : 120, minH = hints.length > 6 && (hints[0] & 16) ? hints[6] : 60;
+    const sh = sizeHints(hints);
+    const minW = sh.minW || 120, minH = sh.minH || 60;
     const hasPos = hints.length && (hints[0] & 5);
     const w = this.newWindow({
       kind: csd ? 'csd' : 'native', client: wid, frame: wid, title: title || cls[1] || 'Window', wmClass: cls,
       protocols: new Set(protocols), minW: Math.max(80, minW), minH: Math.max(40, minH), transientFor: transient[0] || 0,
-      x: g.xPos, y: g.yPos, w: g.width, h: g.height, resizable: true, dialog: types.includes(A._NET_WM_WINDOW_TYPE_DIALOG) || !!transient[0],
+      x: g.xPos, y: g.yPos, w: g.width, h: g.height, hints: sh, resizable: !sh.fixed, dialog: types.includes(A._NET_WM_WINDOW_TYPE_DIALOG) || !!transient[0],
     });
     this.X.ChangeWindowAttributes(wid, { eventMask: EM.PropertyChange | EM.StructureNotify, borderPixel: 0 });
     this.X.ConfigureWindow(wid, { borderWidth: 0 });
@@ -374,8 +407,9 @@ class WindowManager extends EventEmitter {
         this.X.ReparentWindow(wid, frameXid, EDGE, TB);
       } else w.kind = 'csd';
     }
-    // initial size/position: frame wraps the client's requested size
-    const cw = g.width, ch = g.height;
+    // initial size/position: frame wraps the client's requested size — within its min/max size hints
+    // (some toolkits create the window at 1×1 and rely on the WM to apply the minimum size)
+    const [cw, ch] = clampToHints(w, g.width, g.height);
     if (w.kind === 'native') { w.w = cw + EDGE * 2; w.h = ch + TB + EDGE; } else { w.w = cw; w.h = ch; }
     if (!hasPos || w.dialog) { w.x = null; w.y = null; } else { w.x = g.xPos; w.y = Math.max(this.workarea.top, g.yPos); }
     this.placeIfNeeded(w);

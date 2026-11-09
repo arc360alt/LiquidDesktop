@@ -191,6 +191,7 @@ export function initTheme() {
   });
   setInterval(applyTheme, 60_000);
   switchToTahoeCursors();
+  biggerDefaultCursor();
   let t;
   addEventListener('resize', () => { clearTimeout(t); t = setTimeout(() => { currentWall = ''; applyWallpaper(); }, 300); });
 }
@@ -209,7 +210,7 @@ function hueSat(hex) {
 // The web UI draws its own cursors; any installed theme is turned into CSS cursors by the back end.
 let cursorKey = '';
 export function applyCursors() {
-  const theme = store.get('cursorTheme') || 'MacOS-Tahoe-Cursor', size = store.get('cursorSize') || 24;
+  const theme = store.get('cursorTheme') || 'MacOS-Tahoe-Cursor', size = store.get('cursorSize') || 48;
   const key = theme + ':' + size;
   if (key === cursorKey || !window.sys?.sys?.cursorCss) return;
   cursorKey = key;
@@ -228,6 +229,16 @@ function switchToTahoeCursors() {
     store.set('cursorTahoeSwitched', true);
     if (store.get('cursorTheme') !== 'LiquidCursor') return;
     store.set('cursorTheme', 'MacOS-Tahoe-Cursor');
-    window.sys.sys.cursorApply?.('MacOS-Tahoe-Cursor', store.get('cursorSize') || 24).catch(() => {});
+    window.sys.sys.cursorApply?.('MacOS-Tahoe-Cursor', store.get('cursorSize') || 48).catch(() => {});
   }).catch(() => {});
+}
+
+// One-time: the default cursor size went from 24 to 48. The macOS Tahoe theme only has 32/48/64/96px
+// images, so 24 and 32 both showed its smallest (too small) size. Anyone still at 32 or below moves up.
+function biggerDefaultCursor() {
+  if (store.get('cursorSize48') || !(layer === 'full' || layer === 'shell') || !window.sys?.sys?.cursorApply) return;
+  store.set('cursorSize48', true);
+  if ((store.get('cursorSize') || 48) <= 32) store.set('cursorSize', 48);
+  // also rewrites the size saved for the login session (it may still say 24)
+  window.sys.sys.cursorApply(store.get('cursorTheme') || 'MacOS-Tahoe-Cursor', store.get('cursorSize') || 48).catch(() => {});
 }

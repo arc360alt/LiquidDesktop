@@ -304,13 +304,13 @@ const render = {
       const card = h('div.cursor-card' + (t.id === curTheme ? '.sel' : ''), h('div.cursor-pv', ...t.preview.map((src) => h('img', { src }))), h('span', t.name));
       card.addEventListener('click', async () => {
         store.set('cursorTheme', t.id);
-        const r = await api.sys.cursorApply(t.id, store.get('cursorSize') || 24).catch(() => null);
+        const r = await api.sys.cursorApply(t.id, store.get('cursorSize') || 48).catch(() => null);
         rerender();
         if (r?.scope === 'session') import('../shell.js').then(({ shell }) => shell.notify({ app: 'settings', title: `Cursor: ${t.name}`, body: 'New windows use it right away; apps that were already open may need a restart.' }));
       });
       return card;
     }));
-    const size = h('input.slider', { type: 'range', min: 16, max: 64, step: 8, value: store.get('cursorSize') || 24 });
+    const size = h('input.slider', { type: 'range', min: 16, max: 64, step: 8, value: store.get('cursorSize') || 48 });
     const paintSize = () => size.style.setProperty('--v', ((size.value - 16) / 48) * 100 + '%');
     paintSize();
     size.addEventListener('input', paintSize);

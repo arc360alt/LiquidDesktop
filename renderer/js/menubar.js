@@ -138,6 +138,26 @@ function renderStatus() {
   wifiEl.title = w?.ssid || (w?.wired ? 'Ethernet' : 'Not connected');
 }
 
+/* ---------------------------------------------- hiding while a window is full screen */
+let mbRevealed = false, mbTimer, mbEdge;
+const mbCovered = () => { const w = wm.focused; return !!w && !w.minimized && !!w.fullscreen; };
+export function menubarHidden() { return !!bar?.classList.contains('autohidden'); }
+function applyMenubar() {
+  const cov = mbCovered();
+  if (!cov) mbRevealed = false;
+  bar.classList.toggle('autohidden', cov && !mbRevealed);
+  // brought back over a full-screen window: give it a material so it stays readable
+  bar.classList.toggle('revealed', cov && mbRevealed);
+}
+function concealMenubar(delay) {
+  clearTimeout(mbTimer);
+  mbTimer = setTimeout(() => {
+    if (bar.matches(':hover') || document.querySelector('.menu')) return concealMenubar(400);
+    mbRevealed = false; applyMenubar();
+  }, delay);
+}
+export function revealMenubar() { mbRevealed = true; applyMenubar(); concealMenubar(1600); }
+
 export function initMenubar() {
   bar = $('#menubar');
   const logoItem = h('div.mb-item.mb-logo', { html: logo() });
@@ -157,8 +177,18 @@ export function initMenubar() {
   setInterval(tick, 1000);
   renderAppMenus();
   bus.on('focus', renderAppMenus);
+  bus.on('focus', applyMenubar);
+  bar.addEventListener('mouseenter', () => clearTimeout(mbTimer));
+  bar.addEventListener('mouseleave', () => { if (mbRevealed) concealMenubar(500); });
+  // in a window: rest the pointer at the top edge to bring the menu bar back (never while the pointer is locked)
+  addEventListener('mousemove', (e) => {
+    clearTimeout(mbEdge);
+    if (!menubarHidden() || document.pointerLockElement || e.clientY > 1) return;
+    mbEdge = setTimeout(revealMenubar, 220);
+  });
   bus.on('windows', () => {
     renderAppMenus();
+    applyMenubar();
     // give the bar a material when a window touches it so text stays readable
     const touching = wm.windows.some((w) => w.space === wm.currentSpace && !w.minimized && w.y <= 34 && !w.fullscreen);
     bar.classList.toggle('solid', touching);

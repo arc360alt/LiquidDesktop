@@ -14,7 +14,7 @@ const bar = $('.fr-bar'), title = $('.win-title');
 
 $('.tl-close').addEventListener('click', (e) => { e.stopPropagation(); op('close'); });
 $('.tl-min').addEventListener('click', (e) => { e.stopPropagation(); op('minimize'); });
-$('.tl-max').addEventListener('click', (e) => { e.stopPropagation(); op('toggleMaximize'); });
+$('.tl-max').addEventListener('click', (e) => { e.stopPropagation(); op('zoom', store.get('zoomAction') || 'fill'); });
 for (const b of document.querySelectorAll('.traffic button')) b.addEventListener('mousedown', (e) => e.stopPropagation());
 
 // hovering the green button shows the Move & Resize menu (drawn by the shell, since this window is tiny)

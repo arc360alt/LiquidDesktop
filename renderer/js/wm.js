@@ -42,7 +42,7 @@ class Win extends Emitter {
     this.traffic = h('div.traffic',
       h('button.tl-close', { title: 'Close', html: '<svg viewBox="0 0 10 10"><path d="M2.5 2.5l5 5M7.5 2.5l-5 5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>', onclick: (e) => { e.stopPropagation(); this.close(); } }),
       h('button.tl-min', { title: 'Minimize', html: '<svg viewBox="0 0 10 10"><path d="M2 5h6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>', onclick: (e) => { e.stopPropagation(); this.minimize(); } }),
-      h('button.tl-max' + (app.resizable === false ? '.disabled' : ''), { title: 'Zoom', html: '<svg viewBox="0 0 10 10"><path d="M2.2 6.6V2.2h4.4zM7.8 3.4v4.4H3.4z" fill="currentColor"/></svg>', onclick: (e) => { e.stopPropagation(); if (app.resizable !== false) e.altKey ? this.toggleFullscreen() : this.toggleMaximize(); } }));
+      h('button.tl-max' + (app.resizable === false ? '.disabled' : ''), { title: 'Zoom', html: '<svg viewBox="0 0 10 10"><path d="M2.2 6.6V2.2h4.4zM7.8 3.4v4.4H3.4z" fill="currentColor"/></svg>', onclick: (e) => { e.stopPropagation(); if (app.resizable !== false) e.altKey ? this.toggleFullscreen() : this.zoom(); } }));
     // hovering the green button shows the tiling menu, like macOS 26
     let hoverT;
     const maxBtn = this.traffic.lastChild;
@@ -179,6 +179,14 @@ class Win extends Emitter {
     bus.emit('windows');
   }
 
+  /** The green button: what it does is chosen in Settings › Desktop & Dock (double-clicking the title bar always fills). */
+  zoom(mode = store.get('zoomAction') || 'fill') {
+    if (EMBED) return S.send('appwin:self', 'zoom', mode);
+    if (mode === 'fullscreen') return this.toggleFullscreen();
+    if (mode === 'fill-nodock') return this.tile === 'fill-nodock' ? this.toggleMaximize() : this.tileTo('fill-nodock');
+    return this.toggleMaximize();
+  }
+
   tileTo(kind) {
     if (EMBED) return S.send('appwin:self', 'tile', kind);
     if (!this.maximized && !this.tile) this.restoreFrame = { x: this.x, y: this.y, w: this.w, h: this.h };
@@ -190,10 +198,11 @@ class Win extends Emitter {
       tl: [a.x + g, a.y + g, half, vh], tr: [a.x + g * 2 + half, a.y + g, half, vh],
       bl: [a.x + g, a.y + g * 2 + vh, half, vh], br: [a.x + g * 2 + half, a.y + g * 2 + vh, half, vh],
       center: [a.x + a.w * 0.15, a.y + a.h * 0.1, a.w * 0.7, a.h * 0.8],
+      'fill-nodock': [0, MENUBAR, innerWidth, innerHeight - MENUBAR],
     };
     const f = frames[kind];
     this.tile = kind === 'center' ? null : kind;
-    this.maximized = kind === 'fill';
+    this.maximized = kind === 'fill' || kind === 'fill-nodock';
     this.animateFrame(...f);
     bus.emit('windows');
   }

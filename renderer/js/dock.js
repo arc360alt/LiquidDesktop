@@ -175,13 +175,31 @@ function applySizes() {
 }
 
 /* ---------------------------------------------- autohide */
-let hideTimer;
-function updateHidden(forceShow) {
-  const auto = store.get('dockAutohide');
-  if (!auto) return wrap.classList.remove('hidden');
-  if (forceShow) { clearTimeout(hideTimer); wrap.classList.remove('hidden'); }
-  else { clearTimeout(hideTimer); hideTimer = setTimeout(() => { if (!dock.matches(':hover') && !document.querySelector('.menu')) wrap.classList.add('hidden'); }, 600); }
+// The Dock hides when auto-hide is on, or while the focused window covers it (full screen, or the
+// "fill and hide the Dock" zoom). Resting the pointer at the bottom edge reveals it.
+let hideTimer, revealed = false, lastCovered = false, edgeTimer;
+const covered = () => { const w = wm.focused; return !!w && !w.minimized && (w.fullscreen || w.tile === 'fill-nodock') && (w.space ?? wm.currentSpace) === wm.currentSpace; };
+export function dockHidden() { return wrap?.classList.contains('hidden') || wrap?.classList.contains('hidden-full'); }
+function applyHidden() {
+  const cov = covered();
+  if (cov !== lastCovered) { lastCovered = cov; if (cov) revealed = false; }
+  const hide = (store.get('dockAutohide') || cov) && !revealed;
+  wrap.classList.toggle('hidden', hide && !cov);
+  wrap.classList.toggle('hidden-full', hide && cov);
 }
+export function revealDock() {
+  revealed = true; clearTimeout(hideTimer); applyHidden();
+  // if the pointer never makes it onto the Dock, tuck it away again
+  hideTimer = setTimeout(() => concealDock(), 1600);
+}
+function concealDock(delay = 0) {
+  clearTimeout(hideTimer);
+  hideTimer = setTimeout(() => {
+    if (dock.matches(':hover') || document.querySelector('.menu')) return concealDock(400);
+    revealed = false; applyHidden();
+  }, delay);
+}
+function updateHidden(forceShow) { if (forceShow) { revealed = true; clearTimeout(hideTimer); applyHidden(); } else concealDock(600); }
 
 export function initDock() {
   wrap = $('#dock-wrap');
@@ -192,18 +210,25 @@ export function initDock() {
   attachLens(dock, { strength: 46, edge: 20 });
   dock.addEventListener('mousemove', (e) => { mouseX = e.clientX; dock.classList.add('hovering'); requestAnimationFrame(applySizes); });
   dock.addEventListener('mouseleave', () => { mouseX = null; dock.classList.remove('hovering'); applySizes(); updateHidden(); });
-  dock.addEventListener('mouseenter', () => updateHidden(true));
-  addEventListener('mousemove', (e) => { if (store.get('dockAutohide') && e.clientY >= innerHeight - 4) updateHidden(true); });
+  dock.addEventListener('mouseenter', () => { if (!dockHidden()) updateHidden(true); });
+  // in a window (no window manager): watch the pointer reach the bottom edge — but never while a page or
+  // game has locked the pointer, and only after it rests there a moment
+  addEventListener('mousemove', (e) => {
+    clearTimeout(edgeTimer);
+    if (!dockHidden() || document.pointerLockElement || e.clientY < innerHeight - 3) return;
+    edgeTimer = setTimeout(() => revealDock(), 250);
+  });
   render();
-  updateHidden();
-  bus.on('windows', render);
+  applyHidden();
+  bus.on('windows', () => { render(); applyHidden(); });
+  bus.on('focus', applyHidden);
   bus.on('catalog', render);
   bus.on('icons-changed', render);
   bus.on('fs-changed', checkTrash);
   bus.on('native-launched', (id) => { const el = $(`.dock-item[data-app="${CSS.escape(id)}"]`); bounce(id, el); });
   store.on('change', (k) => {
     if (['dockPinned', 'dockSize', 'dockMagnify', 'dockMagSize'].includes(k)) render();
-    if (k === 'dockAutohide') updateHidden();
+    if (k === 'dockAutohide') { revealed = false; applyHidden(); }
   });
   checkTrash();
   setInterval(checkTrash, 15000);

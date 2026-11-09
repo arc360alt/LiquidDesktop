@@ -188,8 +188,8 @@ const APP_ICONS = {
 };
 
 export function trashIcon(full) {
-  // drawn in 22–78 × 20–94; shifted up so it sits centred like the other (8–92) icons
-  return `<svg viewBox="0 -7 100 100"><defs><linearGradient id="tg" x1="0" x2="1"><stop offset="0" stop-color="#fff" stop-opacity=".55"/><stop offset=".5" stop-color="#fff" stop-opacity=".25"/><stop offset="1" stop-color="#fff" stop-opacity=".5"/></linearGradient></defs>
+  // the can is drawn in 22–78 × 20–94; the viewBox starts 7 lower so it sits centred like the other (8–92) icons
+  return `<svg viewBox="0 7 100 100"><defs><linearGradient id="tg" x1="0" x2="1"><stop offset="0" stop-color="#fff" stop-opacity=".55"/><stop offset=".5" stop-color="#fff" stop-opacity=".25"/><stop offset="1" stop-color="#fff" stop-opacity=".5"/></linearGradient></defs>
     ${full ? '<path d="M28 24c6-8 18-10 22-4 6-6 18-4 21 4 3 6-6 10-22 10S23 31 28 24z" fill="#fff" opacity=".9"/><path d="M36 20l10 6M58 17l-6 9" stroke="#bbb" stroke-width="2"/>' : ''}
     <path d="M22 26h56l-6 62a6 6 0 0 1-6 5.5H34a6 6 0 0 1-6-5.5z" fill="url(#tg)" stroke="rgba(255,255,255,.75)" stroke-width="1.5"/>
     <ellipse cx="50" cy="26" rx="28" ry="5" fill="rgba(255,255,255,.35)" stroke="rgba(255,255,255,.9)" stroke-width="1.5"/>

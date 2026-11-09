@@ -124,6 +124,10 @@ function register() {
   // look like Chrome to websites (Electron's user agent makes some sites refuse to work)
   s.setUserAgent(s.getUserAgent().replace(/\s(Electron|liquid-desktop|LiquidDesktop)\/\S+/gi, ''));
   s.setPermissionRequestHandler((_wc, perm, cb) => cb(['fullscreen', 'clipboard-sanitized-write', 'notifications', 'pointerLock', 'clipboard-read'].includes(perm)));
+  // fill gaps in Electron's extension APIs inside extension service workers (see ext-sw-preload.js)
+  try {
+    if (s.registerPreloadScript) s.registerPreloadScript({ type: 'service-worker', id: 'liquid-ext-compat', filePath: path.join(__dirname, 'ext-sw-preload.js') });
+  } catch (e) { console.warn('[browser] service worker preload', e.message); }
   loadSavedExtensions();
 
   s.on('will-download', (_e, item, wc) => {

@@ -460,3 +460,6 @@
 /* the remove badge sits half outside the widget's corner */
 .desk-widget { overflow: visible; }
 .desk-widget .remove { left: -9px; top: -9px; }
+
+#menubar.revealed { background: rgba(var(--glass-rgb), 0.6); -webkit-backdrop-filter: blur(30px) saturate(1.8); backdrop-filter: blur(30px) saturate(1.8); color: var(--text); text-shadow: none; }
+#menubar.revealed .mb-item:hover, #menubar.revealed .mb-item.open { background: rgba(128, 128, 128, 0.18); }

@@ -6,13 +6,15 @@ import { $, $$, bus } from './util.js';
 import { session as S } from './layer.js';
 import { store } from './store.js';
 import { closeMenu } from './menus.js';
+import { dockHidden, revealDock } from './dock.js';
+import { menubarHidden, revealMenubar } from './menubar.js';
 
 const INTERACTIVE = ['#menubar', '#dock', '.dock-item', '.menu', '.cc', '#nc.open', '#toasts > *', '#switcher', '#spotlight .bar',
   '#spotlight .chips > *', '#spotlight .results:not([hidden])', '#launcher', '#widget-gallery', '.global-alert-layer .alert', '#mission', '#lock', '#boot', '.quicklook'];
 const MODAL = ['.menu', '.cc', '#nc.open', '#spotlight-layer', '#launcher-layer', '.global-alert-layer', '#mission', '#lock', '#boot', '#switcher', '#widget-gallery', '.quicklook'];
 const KEYBOARD = ['#spotlight-layer', '#launcher-layer', '#lock', '.global-alert-layer'];
 // glass that gets a real blur behind it
-const GLASS = ['.glass', '#menubar.solid', '#mission', '.snap-preview'];
+const GLASS = ['.glass', '#menubar.solid', '#menubar.revealed', '#mission', '.snap-preview'];
 const RADII = [0, 6, 10, 14, 18, 22, 26, 30, 36];   // must match the rules in session/picom.conf
 
 const visible = (el) => {
@@ -24,7 +26,7 @@ const visible = (el) => {
   return { b, cs };
 };
 
-let lastKey = '', lastKb = null, lastWork = '';
+let lastKey = '', lastKb = null, lastWork = '', lastEdges = '';
 function measure() {
   const dpr = devicePixelRatio || 1;
   const px = (b) => [Math.floor(b.left * dpr), Math.floor(b.top * dpr), Math.ceil(b.width * dpr), Math.ceil(b.height * dpr)];
@@ -49,6 +51,8 @@ function measure() {
   if (key !== lastKey) { lastKey = key; S.send('shell:regions', input, modal, blur); }
   const kb = KEYBOARD.some((s) => $(s));
   if (kb !== lastKb) { lastKb = kb; S.send('shell:focus', kb); }
+  const edges = JSON.stringify({ bottom: dockHidden(), top: menubarHidden() });
+  if (edges !== lastEdges) { lastEdges = edges; S.send('shell:edges', JSON.parse(edges)); }
   const work = JSON.stringify([30, store.get('dockAutohide') ? 0 : store.get('dockSize') + 22]);
   if (work !== lastWork) { lastWork = work; S.send('shell:workarea', ...JSON.parse(work)); }
 }
@@ -88,4 +92,5 @@ export function initShellShape() {
     Object.assign(el.style, { left: r[0] + 'px', top: r[1] + 'px', width: r[2] + 'px', height: r[3] + 'px', zIndex: 7000 });
   });
   bus.on('lock', (on) => S.send('shell:locked', on));
+  S.on('session:edge', (side) => (side === 'bottom' ? revealDock() : revealMenubar()));
 }

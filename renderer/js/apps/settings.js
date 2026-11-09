@@ -123,6 +123,8 @@ const render = {
       h('div.group',
         row('Show files on the desktop', toggle('showDesktopIcons')),
         row('Drag windows to screen edges to tile', toggle('windowTiling')),
+        row('Clicking a window’s green button', select('zoomAction', [['fill', 'Fills the screen'], ['fill-nodock', 'Fills the screen and hides the Dock'], ['fullscreen', 'Goes full screen (hides menu bar and Dock)']]),
+          'Double-clicking a title bar always fills the screen. Apps and web pages that go full screen themselves (videos, games) always use full screen. Rest the pointer at the bottom or top edge to bring back a hidden Dock or menu bar.'),
         row('Desktops (Spaces)', h('span.muted', `${wm.spaceEls.length}  `), 'Add or remove them in Mission Control (F3).'),
         row('Widgets', h('button.btn', { onclick: () => import('../desktop.js').then((m) => m.editWidgets()) }, 'Edit Widgets…'))),
       h('div.group-title', 'Hot Corners'),

@@ -109,6 +109,14 @@ class WindowManager extends EventEmitter {
     // an input-only "catcher" below the shell: while a popover is open, clicks outside it land here
     this.catcher = X.AllocID();
     X.CreateWindow(this.catcher, this.root, 0, 0, this.sw, this.sh, 0, 0, x11.InputOnly, 0, { overrideRedirect: 1, eventMask: EM.ButtonPress });
+    // thin invisible strips along the bottom/top edge: resting the pointer there reveals a hidden Dock / menu bar
+    this.edges = {};
+    for (const side of ['bottom', 'top']) {
+      const id = X.AllocID();
+      const hgt = side === 'bottom' ? 2 : 1;
+      X.CreateWindow(id, this.root, 0, side === 'bottom' ? this.sh - hgt : 0, this.sw, hgt, 0, 0, x11.InputOnly, 0, { overrideRedirect: 1, eventMask: EM.EnterWindow | EM.LeaveWindow });
+      this.edges[side] = { id, armed: false, timer: null };
+    }
     // Shape extension, for the shell's drawable/clickable regions
     await new Promise((res) => X.require('shape', (err, Shape) => { this.Shape = err ? null : Shape; res(); }));
     // a normal arrow on the desktop and window edges (the bare X server shows an "X")
@@ -202,6 +210,8 @@ class WindowManager extends EventEmitter {
       case 'KeyPress': return this.onKey(ev, true);
       case 'KeyRelease': return this.onKey(ev, false);
       case 'MappingNotify': return this.setupKeys();
+      case 'EnterNotify': return this.onEdge(ev.wid, true);
+      case 'LeaveNotify': return this.onEdge(ev.wid, false);
     }
   }
 
@@ -458,6 +468,7 @@ class WindowManager extends EventEmitter {
       fill: [a.x + g, a.y + g, a.w - g * 2, a.h - g * 2], left: [a.x + g, a.y + g, hw, a.h - g * 2], right: [a.x + g * 2 + hw, a.y + g, hw, a.h - g * 2],
       tl: [a.x + g, a.y + g, hw, hh], tr: [a.x + g * 2 + hw, a.y + g, hw, hh], bl: [a.x + g, a.y + g * 2 + hh, hw, hh], br: [a.x + g * 2 + hw, a.y + g * 2 + hh, hw, hh],
       center: [a.x + a.w * 0.15, a.y + a.h * 0.08, a.w * 0.7, a.h * 0.84],
+      'fill-nodock': [0, this.workarea.top, this.sw, this.sh - this.workarea.top],
     }[kind];
   }
 
@@ -513,6 +524,7 @@ class WindowManager extends EventEmitter {
     for (const w of this.stack) if (w.space === this.space && !w.minimized) order.push(w.frame);
     for (const o of this.others) order.push(o);
     if (this.catcherOn) order.push(this.catcher);
+    for (const e of Object.values(this.edges || {})) if (e.armed) order.push(e.id);
     for (const b of this.blurPool || []) if (b.mapped) order.push(b.id);
     if (this.shell) order.push(this.shell);
     for (const xid of order) X.ConfigureWindow(xid, { stackMode: 0 });
@@ -555,10 +567,32 @@ class WindowManager extends EventEmitter {
     if (w.maximized || w.tile) {
       const r = w.restoreRect || { x: w.x + 60, y: w.y + 60, w: w.w * 0.7, h: w.h * 0.7 };
       w.maximized = false; w.tile = null;
-      Object.assign(w, r);
-      this.applyGeometry(w);
+      this.animateTo(w, { x: r.x, y: r.y, w: r.w, h: r.h });
     } else this.tile(id, 'fill');
     this.emit('changed');
+  }
+
+  /** The green button: fill (default), fill and hide the Dock, or real full screen — chosen in Settings. */
+  zoom(id, mode = 'fill') {
+    const w = this.windows.get(id);
+    if (!w) return;
+    if (mode === 'fullscreen') return this.setFullscreen(id, !w.fullscreen);
+    if (mode === 'fill-nodock') { if (w.tile === 'fill-nodock') return this.toggleMaximize(id); return this.tile(id, 'fill-nodock'); }
+    return this.toggleMaximize(id);
+  }
+
+  /** Move/resize with a short ease-out animation (zoom, tiling, full screen, restore). */
+  animateTo(w, target, done) {
+    if (w.anim) clearInterval(w.anim);
+    const from = { x: w.x, y: w.y, w: w.w, h: w.h }, t0 = Date.now(), D = 210;
+    const ease = (t) => 1 - Math.pow(1 - t, 3);
+    w.anim = setInterval(() => {
+      if (!this.windows.has(w.id)) { clearInterval(w.anim); return; }
+      const k = Math.min(1, (Date.now() - t0) / D), e = ease(k);
+      Object.assign(w, { x: Math.round(from.x + (target.x - from.x) * e), y: Math.round(from.y + (target.y - from.y) * e), w: Math.round(from.w + (target.w - from.w) * e), h: Math.round(from.h + (target.h - from.h) * e) });
+      this.applyGeometry(w);
+      if (k >= 1) { clearInterval(w.anim); w.anim = null; Object.assign(w, target); this.applyGeometry(w); done?.(); }
+    }, 16);
   }
 
   tile(id, kind) {
@@ -567,8 +601,8 @@ class WindowManager extends EventEmitter {
     if (w.fullscreen) this.setFullscreen(id, false);
     if (!w.maximized && !w.tile) w.restoreRect = { x: w.x, y: w.y, w: w.w, h: w.h };
     const [x, y, ww, hh] = this.tileRect(kind).map(Math.round);
-    Object.assign(w, { x, y, w: ww, h: hh, tile: kind === 'center' ? null : kind, maximized: kind === 'fill' });
-    this.applyGeometry(w);
+    Object.assign(w, { tile: kind === 'center' ? null : kind, maximized: kind === 'fill' || kind === 'fill-nodock' });
+    this.animateTo(w, { x, y, w: ww, h: hh });
     this.emit('changed');
   }
 
@@ -577,9 +611,13 @@ class WindowManager extends EventEmitter {
     if (!w || !!w.fullscreen === on) return;
     if (on) {
       w.preFull = { x: w.x, y: w.y, w: w.w, h: w.h };
-      Object.assign(w, { fullscreen: true, x: 0, y: 0, w: this.sw, h: this.sh });
-    } else Object.assign(w, { fullscreen: false }, w.preFull || {});
-    this.applyGeometry(w);
+      w.fullscreen = true;
+      this.animateTo(w, { x: 0, y: 0, w: this.sw, h: this.sh });
+    } else {
+      w.fullscreen = false;
+      const p = w.preFull || { x: w.x + 60, y: w.y + 60, w: w.w * 0.7, h: w.h * 0.7 };
+      this.animateTo(w, { x: p.x, y: p.y, w: p.w, h: p.h });
+    }
     const b = Buffer.alloc(on ? 4 : 0); if (on) b.writeUInt32LE(this.A._NET_WM_STATE_FULLSCREEN);
     this.X.ChangeProperty(0, w.client, this.A._NET_WM_STATE, this.A.ATOM, 32, b);
     this.activate(id);
@@ -743,6 +781,34 @@ class WindowManager extends EventEmitter {
       if (b.mapped) { b.mapped = false; b.geo = ''; X.UnmapWindow(b.id); }
     }
     if (restack) for (const b of this.blurPool) if (b.mapped) X.ConfigureWindow(b.id, { sibling: this.shell, stackMode: 1 });
+  }
+
+  /** Arm/disarm the screen-edge strips (only while the Dock or menu bar is hidden). */
+  setEdges({ top, bottom }) {
+    let changed = false;
+    for (const [side, on] of [['top', !!top], ['bottom', !!bottom]]) {
+      const e = this.edges[side];
+      if (e.armed === on) continue;
+      e.armed = on; changed = true;
+      if (on) this.X.MapWindow(e.id); else { this.X.UnmapWindow(e.id); clearTimeout(e.timer); }
+    }
+    if (changed) this.restack();
+  }
+  onEdge(wid, entered) {
+    const side = Object.keys(this.edges || {}).find((k) => this.edges[k].id === wid);
+    if (!side) return;
+    const e = this.edges[side];
+    clearTimeout(e.timer);
+    if (!entered) return;
+    // the pointer has to rest at the edge for a moment, and nobody may be holding the pointer:
+    // games that lock the cursor grab it, and a Dock popping up then would be a nuisance
+    e.timer = setTimeout(() => {
+      this.X.GrabPointer(e.id, false, 0, 1, 1, 0, 0, 0, (err, status) => {
+        if (err || status !== 0) return;          // AlreadyGrabbed / frozen: someone else owns the pointer
+        this.X.UngrabPointer(0);
+        this.emit('edge', side);
+      });
+    }, side === 'bottom' ? 280 : 220);
   }
 
   setWorkarea(top, bottom) {

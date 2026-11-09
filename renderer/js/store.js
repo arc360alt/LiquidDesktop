@@ -46,6 +46,7 @@ export const defaults = {
   weatherCity: null,        // { name, lat, lon }
   browserHome: 'start',
   windowTiling: true,
+  zoomAction: 'fill',       // green button: fill | fill-nodock | fullscreen
 };
 
 class Store extends Emitter {

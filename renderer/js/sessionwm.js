@@ -61,6 +61,7 @@ class RemoteWin {
   toggleMaximize() { S.send('wm:toggleMaximize', this.id); }
   tileTo(kind) { S.send('wm:tile', this.id, kind); }
   toggleFullscreen() { S.send('wm:fullscreen', this.id); }
+  zoom(mode = store.get('zoomAction') || 'fill') { S.send('wm:zoom', this.id, mode); }
 }
 
 let state = { windows: [], space: 0, spaces: store.get('spaces') || 2 };

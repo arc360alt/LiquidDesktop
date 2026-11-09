@@ -108,6 +108,7 @@ async function startSession({ preload }) {
   wm.on('changed', broadcast);
   wm.on('shortcut', (name) => toShell('session:shortcut', name));
   wm.on('outside-click', (p) => toShell('session:outside', p));
+  wm.on('edge', (side) => toShell('session:edge', side));
   wm.on('snap-preview', (r) => toShell('session:snap', r));
   wm.on('quit-app', (w) => toShell('session:shortcut', 'quit', w.id));
   wm.on('close-app-window', (w) => { const bw = appWindows.get(w.id); if (bw && !bw.isDestroyed()) bw.webContents.send('appwin:close'); });
@@ -165,7 +166,7 @@ async function startSession({ preload }) {
     const id = idOfSender(e);
     if (!id) return;
     ({ activate: () => wm.activate(id), minimize: () => wm.minimize(id), toggleMaximize: () => wm.toggleMaximize(id), tile: () => wm.tile(id, arg),
-      fullscreen: () => { const w = wm.windows.get(id); if (w) wm.setFullscreen(id, !w.fullscreen); }, beginMove: () => wm.beginMove(id),
+      fullscreen: () => { const w = wm.windows.get(id); if (w) wm.setFullscreen(id, !w.fullscreen); }, zoom: () => wm.zoom(id, arg), beginMove: () => wm.beginMove(id),
       beginResize: () => wm.beginResize(id, arg), moveToSpace: () => wm.moveToSpace(id, arg) })[op]?.();
   });
   handle('appwin:id', (e) => idOfSender(e));
@@ -173,11 +174,13 @@ async function startSession({ preload }) {
   on('shell:regions', (input, modal, blur) => { wm.setShellInput(input, modal); wm.setBlurRegions(blur); });
   on('shell:focus', (onOff) => wm.focusShell(onOff));
   on('shell:workarea', (top, bottom) => wm.setWorkarea(top, bottom));
+  on('shell:edges', (e) => wm.setEdges(e));
+  on('wm:zoom', (id, mode) => wm.zoom(id, mode));
   on('shell:locked', (v) => wm.setLocked(v));
   on('shell:notify', (n) => toShell('session:notify', n));
   on('shell:windowMenu', (id, x, y, kind) => toShell('session:windowMenu', id, x, y, kind));
   on('frame:op', (id, op, arg) => {
-    ({ activate: () => wm.activate(id), close: () => wm.close(id), minimize: () => wm.minimize(id), toggleMaximize: () => wm.toggleMaximize(id),
+    ({ activate: () => wm.activate(id), close: () => wm.close(id), minimize: () => wm.minimize(id), toggleMaximize: () => wm.toggleMaximize(id), zoom: () => wm.zoom(id, arg),
       beginMove: () => wm.beginMove(id), beginResize: () => wm.beginResize(id, arg) })[op]?.();
   });
 

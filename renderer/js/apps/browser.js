@@ -148,6 +148,12 @@ class BrowserView {
   }
 
   cur() { return this.tabs[this.active]; }
+  // the loading bar belongs to whichever tab is showing
+  syncProgress() {
+    const t = this.cur();
+    if (t?.loading && !t.page) { this.progress.style.opacity = 1; this.progress.style.width = this.progress.style.width === '0px' || !this.progress.style.width ? '25%' : this.progress.style.width; }
+    else { this.progress.style.opacity = 0; this.progress.style.width = '0'; }
+  }
   focusUrl() { this.url.focus(); }
 
   /* ---------------------------------------------- tabs */
@@ -164,6 +170,7 @@ class BrowserView {
     const t = this.tabs[i];
     if (!t) return;
     if (t.url) closedTabs.push(t.url);
+    t.loading = false;
     t.wv?.remove(); t.page?.remove();
     this.tabs.splice(i, 1);
     if (!this.tabs.length) return this.win.close();
@@ -176,6 +183,7 @@ class BrowserView {
     this.typing = false;
     this.tabs.forEach((t, j) => { if (t.wv) t.wv.style.visibility = j === i && !t.page ? 'visible' : 'hidden'; if (t.page) t.page.hidden = j !== i; });
     this.closeFind();
+    this.syncProgress();
     this.renderTabs(); this.syncUrl();
     this.checkPasswordsForTab();
   }
@@ -288,6 +296,7 @@ class BrowserView {
     if (!PAGES[name]) name = 'start';
     t.page?.remove();
     t.pageName = name;
+    t.loading = false;
     t.title = PAGES[name];
     t.favicon = null;
     t.page = h('div.br-page' + (name === 'start' ? '.br-start' : ''));
@@ -506,8 +515,10 @@ class BrowserView {
   }
 
   /* ---------------------------------------------- passwords */
+  activeTabId() { const t = this.tabs.find((x, i) => i === this.active && x.wv && x.ready) || this.tabs.find((x) => x.wv && x.ready && x.url.startsWith('http')); try { return t ? t.wv.getWebContentsId() : null; } catch { return null; } }
   async onPageMessage(t, channel, data) {
     if (!isNative) return;
+    if (channel === 'ext-active-tab?') { t.wv.send('ext-active-tab', this.activeTabId()); return; }
     if (channel === 'pw-request') {
       const creds = await B.invoke('browser:pwFor', data).catch(() => []);
       t.creds = creds;
@@ -577,14 +588,16 @@ class BrowserView {
     wv.src = `chrome-extension://${e.id}/${e.popup}`;
     const pop = h('div.br-ext-popup.glass.panel', wv);
     pop.style.top = r.bottom - wr.top + 8 + 'px';
-    pop.style.left = Math.max(8, Math.min(r.left - wr.left - 180, wr.width - 400)) + 'px';
+    pop.style.right = Math.max(8, wr.right - r.right - 8) + 'px';
     this.win.el.querySelector('.win-clip').append(pop);
-    // size the popup to its content once it loads
-    wv.addEventListener('dom-ready', () => {
-      wv.executeJavaScript('[document.documentElement.scrollWidth, document.documentElement.scrollHeight]').then(([w, hh]) => {
-        pop.style.width = clamp(w, 180, 780) + 'px'; pop.style.height = clamp(hh, 80, 580) + 'px';
-      }).catch(() => {});
-    });
+    wv.addEventListener('ipc-message', (ev) => { if (ev.channel === 'ext-active-tab?') wv.send('ext-active-tab', this.activeTabId()); });
+    // size the popup to the extension's own content (like Chrome does), and keep it fitted as it changes
+    const fit = () => wv.executeJavaScript(`(() => { const d = document.documentElement, prev = d.style.width; d.style.width = 'max-content';
+      const w = Math.ceil(d.getBoundingClientRect().width); d.style.width = prev; return [w, Math.ceil(Math.max(d.scrollHeight, document.body ? document.body.scrollHeight : 0))]; })()`)
+      .then(([w, hh]) => { pop.style.width = clamp(w, 120, 800) + 'px'; pop.style.height = clamp(hh, 40, 600) + 'px'; pop.style.opacity = 1; }).catch(() => { pop.style.opacity = 1; });
+    pop.style.opacity = 0;
+    wv.addEventListener('dom-ready', () => { fit(); setTimeout(fit, 250); setTimeout(fit, 800); });
+    wv.addEventListener('did-stop-loading', fit);
     this.popup = pop;
     setTimeout(() => document.addEventListener('mousedown', this.popupOutside = (ev) => { if (!pop.contains(ev.target)) this.closeExtensionPopup(); }, true));
   }

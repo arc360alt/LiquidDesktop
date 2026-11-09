@@ -385,6 +385,15 @@ class WindowManager extends EventEmitter {
     // apps that draw their own title bar (GTK headerbars, Electron frameless…) are not framed
     const csd = motif.length >= 3 && (motif[0] & 2) && motif[2] === 0;
     const sh = sizeHints(hints);
+    // background helpers (e.g. Sober's "sober_services") map a 1×1 window that isn't meant to be seen:
+    // let it be, without a frame, Dock icon or menu bar entry. A real window that starts at 1×1 says
+    // how big it wants to be with a minimum size (handled below), so it's still managed.
+    if (g.width <= 2 && g.height <= 2 && !sh.minW && !sh.minH) {
+      this.X.MapWindow(wid);
+      this.others.add(wid);
+      this.restack();
+      return;
+    }
     const minW = sh.minW || 120, minH = sh.minH || 60;
     const hasPos = hints.length && (hints[0] & 5);
     const w = this.newWindow({

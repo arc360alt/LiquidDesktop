@@ -3,3 +3,6 @@
 - Make it so you can click on the account in the settings at the top and you can configure settings about your user
 - Improve the activity monitor and make it work and function better
 - Make a proper login theme for SSDM or somthing so it looks better when logging in
+- Make the deuflat size of the terminal window larger to fix this issue where some text is cut off in the terminal (especily when updating the OS the last password prompt is hidden unless you resize the window to be 1 row larger)
+- Make the defualt icons look better, especilly the settings icon
+- When the system is updated make it automaticly prompt the user to log out of their session

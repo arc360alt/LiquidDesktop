@@ -26,6 +26,7 @@ app.whenReady().then(async () => {
     setInterval(() => console.log('[sw running]', JSON.stringify(sw.getAllRunning()).slice(0, 300)), 5000);
   }
   require('../main/appstore').register();
+  require('../main/tray').register({ resolveIcon: require('../main/system').resolveIcon });
   win.webContents.on('console-message', (e) => { const m = e.message ?? e; if (/error|LiquidDesktop/i.test(String(m))) console.log('[console]', m); });
   await win.loadFile(path.join(__dirname, '../renderer/index.html'), { query: { mode: 'windowed' } });
   for (const s of steps) {

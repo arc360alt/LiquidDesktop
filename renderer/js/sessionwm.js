@@ -6,7 +6,7 @@ import { h, $, $$, bus } from './util.js';
 import { api } from './sys.js';
 import { session as S, layer } from './layer.js';
 import { catalog } from './catalog.js';
-import { store } from './store.js';
+import { store, dockReserve } from './store.js';
 import { appIcon, sym } from './icons.js';
 import { showMenu } from './menus.js';
 import { wallpaperFor } from './theme.js';
@@ -183,7 +183,7 @@ export async function installSessionWM() {
     removeSpace() { const n = Math.max(1, state.spaces - 1); store.set('spaces', n); S.send('wm:setSpaces', n); },
     moveToSpace(w, i) { S.send('wm:moveToSpace', w.id, i); },
     spaceNames() { return Array.from({ length: state.spaces }, (_, i) => `Desktop ${i + 1}`); },
-    workArea() { return { x: 0, y: 30, w: innerWidth, h: innerHeight - 30 - (store.get('dockAutohide') ? 0 : store.get('dockSize') + 22) }; },
+    workArea() { return { x: 0, y: 30, w: innerWidth, h: innerHeight - 30 - dockReserve() }; },
     mission, closeMission,
   });
   S.on('session:windows', apply);

@@ -11,6 +11,12 @@ else
   echo "liquid-desktop-update: needs curl or wget" >&2; exit 1
 fi
 status=$?
+# tell a running LiquidDesktop the update is done, so it can offer to log out and start the new version
+case " $* " in *" --dry-run "*) ;; *)
+  if [ "$status" -eq 0 ]; then
+    D="${XDG_CONFIG_HOME:-$HOME/.config}/LiquidDesktop"; mkdir -p "$D" && date +%s > "$D/update-done"
+  fi ;;
+esac
 # when started from Settings it runs in a Terminal window: keep it open so the result can be read
 if [ -n "$LIQUID_UPDATE_PAUSE" ]; then printf '\nPress Enter to close this window.'; read -r _; fi
 exit $status

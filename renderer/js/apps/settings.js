@@ -2,7 +2,7 @@
 import { h, $$, fmtSize, fileUrl } from '../util.js';
 import { registerApp, wm } from '../wm.js';
 import { sym, appIcon, appIconSVG, logoBadge } from '../icons.js';
-import { store, defaults } from '../store.js';
+import { store, defaults, dockHideMode } from '../store.js';
 import { api, isNative } from '../sys.js';
 import { WALLPAPERS, wallpaperUrl } from '../wallpapers.js';
 import { theme, isNightTime } from '../theme.js';
@@ -18,6 +18,7 @@ const PANES = [
   ['sound', 'Sound', '#ff2d55', sym.speaker], ['network', 'Wi-Fi', '#0a84ff', sym.wifi], ['bluetooth', 'Bluetooth', '#0a84ff', sym.bluetooth],
   ['notifications', 'Notifications', '#ff3b30', sym.bell], ['focus', 'Focus', '#5e5ce6', sym.moon], ['lock', 'Lock Screen', '#1c1c1e', sym.lock],
   ['mouse', 'Mouse & Trackpad', '#8e8e93', '<svg class="sym" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="6" y="3" width="12" height="18" rx="6"/><path d="M12 3v6"/></svg>'], ['keyboard', 'Keyboard', '#8e8e93', sym.keyboard], ['terminal', 'Terminal', '#1c1c1e', sym.terminal], ['apps', 'Apps', '#5e5ce6', sym.grid],
+  ['account', 'Users & Accounts', '#0a84ff', sym.user],
 ];
 
 const toggle = (key, after) => h('label.toggle', h('input', { type: 'checkbox', checked: !!store.get(key), onchange: (e) => { store.set(key, e.target.checked); after?.(e.target.checked); } }), h('span'));
@@ -58,6 +59,13 @@ const render = {
         .map(([k, v]) => row(k, h('span.muted.ellipsis', { style: { maxWidth: '60%' } }, v || '—')))),
       h('div.group-title', 'Software Update'),
       softwareUpdateGroup(),
+      h('div.group-title', 'Screenshots'),
+      h('div.group',
+        row('Take a screenshot', h('span.muted', 'Super+Shift+S (area, window or screen) · Print Screen (whole screen)')),
+        row('Save to a folder', toggle('shotSave')),
+        row('Folder', h('div', { style: { display: 'flex', gap: '8px', alignItems: 'center' } },
+          h('input.field', { value: store.get('shotDir') || '~/Pictures/Screenshots', style: { width: '220px', height: '28px' }, onchange: (e) => store.set('shotDir', e.target.value.trim()) }))),
+        row('Copy to the clipboard', toggle('shotCopy'))),
       h('div.group-title', 'Session'),
       h('div.group',
         row('Mode', h('span.muted', i.mode === 'session' ? 'Desktop session' : i.mode === 'windowed' ? 'Windowed (testing)' : 'Browser preview')),
@@ -108,6 +116,54 @@ const render = {
       h('div.group', grid),
     ];
   },
+  async account() {
+    let a;
+    try { a = await api.sys.account(); } catch (e) { return [hero('account', 'Users & Accounts', 'Your account isn’t available here.')]; }
+    if (a.avatar) store.set('userAvatar', a.avatar);
+    const initials = (a.fullName || a.user).split(/\s+/).map((s) => s[0]).join('').slice(0, 2).toUpperCase();
+    const pic = h('div.acct-pic', a.avatar ? h('img', { src: a.avatar }) : initials);
+    const file = h('input', { type: 'file', accept: 'image/*', style: { display: 'none' }, onchange: async () => {
+      const f = file.files[0]; if (!f) return;
+      const img = new Image(); img.src = URL.createObjectURL(f); await img.decode().catch(() => {});
+      const c = document.createElement('canvas'); c.width = c.height = 256;
+      const side = Math.min(img.naturalWidth, img.naturalHeight);
+      c.getContext('2d').drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2, side, side, 0, 0, 256, 256);
+      const url = c.toDataURL('image/png');
+      try { await api.sys.setAvatar(url); store.set('userAvatar', url); rerender(); } catch (e) { alertDialog({ title: 'Couldn’t change your picture', message: e.message }); }
+    } });
+    const name = h('input.field', { value: a.fullName, style: { width: '220px', height: '28px' } });
+    const saveName = async () => {
+      const v = name.value.trim();
+      if (!v || v === a.fullName) return;
+      try { await api.sys.setRealName(v); a.fullName = v; import('../shell.js').then(({ shell }) => { if (shell.info) shell.info.fullName = v; }); rerender(); }
+      catch (e) { alertDialog({ title: 'Couldn’t change your name', message: e.message }); name.value = a.fullName; }
+    };
+    name.addEventListener('change', saveName);
+    name.addEventListener('keydown', (e) => e.key === 'Enter' && name.blur());
+    const changePw = async () => {
+      const cur = h('input.field', { type: 'password', placeholder: 'Current password' }), n1 = h('input.field', { type: 'password', placeholder: 'New password' }), n2 = h('input.field', { type: 'password', placeholder: 'Verify' });
+      const r = await alertDialog({ title: 'Change Password', message: 'Your login password, also used for sudo and the lock screen.', content: h('div', { style: { display: 'grid', gap: '8px', marginTop: '6px' } }, cur, n1, n2),
+        buttons: [{ label: 'Cancel', value: 'c' }, { label: 'Change Password', value: 'ok', primary: true }] });
+      if (r.button !== 'ok') return;
+      if (!n1.value || n1.value !== n2.value) return alertDialog({ title: 'The new passwords don’t match', message: 'Type the same new password twice.' });
+      const res = await api.sys.changePassword(cur.value, n1.value).catch((e) => ({ ok: false, error: e.message }));
+      alertDialog(res.ok ? { title: 'Password changed', message: 'Use your new password the next time you log in or unlock.' } : { title: 'Password not changed', message: res.error });
+    };
+    return [
+      h('div.acct-head', h('div.acct-pic-wrap', pic, h('button.acct-edit', { onclick: () => file.click() }, 'Edit')), file,
+        h('div', h('h2', a.fullName), h('div.muted', a.admin ? 'Admin' : 'Standard user'))),
+      h('div.group',
+        row('Full name', name, a.accountsService ? 'Shown on the login screen, lock screen and menu bar' : 'Needs AccountsService'),
+        row('Account name', h('span.muted', a.user)),
+        row('Home folder', h('span.muted', a.home)),
+        row('Login shell', h('span.muted', a.shell || '—')),
+        row('Groups', h('span.muted', { style: { maxWidth: '300px', textAlign: 'right' } }, a.groups.join(', ')))),
+      h('div.group',
+        row('Password', h('button.btn', { onclick: changePw }, 'Change…')),
+        row('Picture', h('div', { style: { display: 'flex', gap: '8px' } }, h('button.btn', { onclick: () => file.click() }, 'Choose…'),
+          a.avatar ? h('button.btn', { onclick: () => alertDialog({ title: 'Picture', message: 'Your picture is saved as ~/.face and given to AccountsService, so the login screen shows it too.' }) }, 'Info') : null))),
+    ];
+  },
   dock() {
     const corners = [['none', '—'], ['mission', 'Mission Control'], ['desktop', 'Show Desktop'], ['launchpad', 'Apps'], ['notifications', 'Notification Center'], ['spotlight', 'Spotlight'], ['lock', 'Lock Screen']];
     const corner = (k, label) => h('select.field.square', { style: { height: '26px' }, onchange: (e) => store.set('hotCorners', { ...store.get('hotCorners'), [k]: e.target.value }) },
@@ -118,7 +174,9 @@ const render = {
         row('Size', range('dockSize', 36, 80, 1, (v) => v + 'px')),
         row('Magnification', toggle('dockMagnify')),
         row('Magnified size', range('dockMagSize', 48, 128, 1, (v) => v + 'px')),
-        row('Automatically hide and show the Dock', toggle('dockAutohide'))),
+        row('Automatically hide the Dock', h('select.field.square', { style: { height: '26px', minWidth: '200px' }, onchange: (e) => { store.set('dockHideMode', e.target.value); store.set('dockAutohide', e.target.value === 'always'); } },
+          ...[['never', 'Never'], ['always', 'Always'], ['smart', 'When a window is in the way']].map(([v, l]) => h('option', { value: v, selected: dockHideMode() === v }, l))),
+          'Smart: the Dock steps aside only while a window overlaps it or is full screen')),
       h('div.group-title', 'Desktop & Windows'),
       h('div.group',
         row('Show files on the desktop', toggle('showDesktopIcons')),
@@ -530,7 +588,13 @@ registerApp({
     const search = h('input.field', { placeholder: 'Search', style: { height: '30px', width: '100%' } });
     sb.append(h('div.search-field', { html: sym.search, style: { width: '100%', marginBottom: '8px' } }, search));
     const userRow = h('div.sb-item', { style: { height: '50px', marginBottom: '6px' } });
-    api.sys.info().then((i) => { userRow.innerHTML = ''; userRow.append(h('div', { style: { width: '34px', height: '34px', borderRadius: '50%', background: 'linear-gradient(#a1a1aa,#71717a)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 600 } }, (i.fullName || 'U')[0]), h('div', h('b', i.fullName), h('div.muted', { style: { fontSize: '11px' } }, i.host))); }).catch(() => {});
+    const drawUser = (i) => {
+      userRow.innerHTML = '';
+      const av = store.get('userAvatar');
+      userRow.append(h('div.acct-mini', av ? h('img', { src: av }) : (i.fullName || 'U')[0]), h('div', h('b', i.fullName), h('div.muted', { style: { fontSize: '11px' } }, 'Users & Accounts')));
+    };
+    userRow.addEventListener('click', () => show('account'));
+    api.sys.info().then((i) => { drawUser(i); store.on('change:userAvatar', () => drawUser(i)); }).catch(() => {});
     sb.append(userRow);
     const items = h('div');
     sb.append(items);

@@ -48,7 +48,10 @@ optdepends=(
   'flatpak: install apps from Flathub in the App Store'
   'pacman-contrib: check for Arch Linux updates in the App Store (checkupdates)'
   'archlinux-appstream-data: names, icons and descriptions for Arch Linux apps in the App Store'
+  'sddm: the LiquidDesktop login screen (installed and selected automatically)'
+  'qt6-svg: icons on the LiquidDesktop login screen'
 )
+backup=('etc/sddm.conf.d/zz-liquid-desktop.conf')
 makedepends=('git' 'npm' 'nodejs')
 provides=("$_name")
 conflicts=("$_name")
@@ -97,6 +100,11 @@ package() {
   install -Dm644 packaging/liquid-desktop.xsession.desktop "$pkgdir/usr/share/xsessions/liquid-desktop.desktop"
   # app menu entry for the testing window
   install -Dm644 packaging/liquid-desktop.desktop "$pkgdir/usr/share/applications/liquid-desktop.desktop"
+
+  # login screen (SDDM theme), switched on by a drop-in that sorts after other SDDM settings
+  install -dm755 "$pkgdir/usr/share/sddm/themes/liquid-desktop"
+  cp -a packaging/sddm/liquid-desktop/. "$pkgdir/usr/share/sddm/themes/liquid-desktop/"
+  install -Dm644 packaging/sddm/zz-liquid-desktop.conf "$pkgdir/etc/sddm.conf.d/zz-liquid-desktop.conf"
 
   # cursor theme, also selectable in other desktops
   install -dm755 "$pkgdir/usr/share/icons"

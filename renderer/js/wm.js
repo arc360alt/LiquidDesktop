@@ -1,7 +1,7 @@
 // Window manager: windows, focus, drag/resize, snapping & tiling, minimize/zoom, Spaces, Mission Control.
 import { h, $, $$, clamp, Emitter, bus, sleep } from './util.js';
 import { sym, appIcon } from './icons.js';
-import { store } from './store.js';
+import { store, dockReserve } from './store.js';
 import { showMenu } from './menus.js';
 import { wallpaperFor } from './theme.js';
 import { layer, session as S } from './layer.js';
@@ -389,7 +389,7 @@ export const wm = {
   },
 
   workArea() {
-    const dockH = store.get('dockAutohide') ? 0 : store.get('dockSize') + 22;
+    const dockH = dockReserve();
     return { x: 0, y: MENUBAR, w: innerWidth, h: innerHeight - MENUBAR - dockH };
   },
 

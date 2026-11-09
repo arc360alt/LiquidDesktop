@@ -1,7 +1,7 @@
 // The Dock: pinned + running apps, magnification, bounce, minimized windows, Trash, drag-to-reorder.
 import { h, $, $$, bus, clamp } from './util.js';
 import { appIcon, sym } from './icons.js';
-import { store } from './store.js';
+import { store, dockHideMode } from './store.js';
 import { wm } from './wm.js';
 import { catalog } from './catalog.js';
 import { showMenu } from './menus.js';
@@ -20,6 +20,7 @@ function label(id) { return catalog.find(id)?.name || id; }
 // between mouse-down and mouse-up, and restarted the launch bounce mid-hop.)
 const cache = new Map();   // key → { el, sig }
 function render(full) {
+  if (dragActive) return;   // an icon is being dragged: the drop renders
   if (full) cache.clear();
   const pinned = store.get('dockPinned').filter((id) => catalog.find(id));
   const running = wm.runningApps().filter((id) => !pinned.includes(id) && catalog.find(id));
@@ -90,41 +91,63 @@ function dockItem(id, { special } = {}) {
   el.addEventListener('pointerdown', (e) => {
     if (special || e.button !== 0) return;
     const sx = e.clientX, sy = e.clientY;
+    const grab = sx - el.getBoundingClientRect().left;
     let dragging = false;
     el.setPointerCapture?.(e.pointerId);
+    const zone = () => [...items.children].filter((x) => x.dataset.app && x.dataset.app !== 'launchpad' && x.dataset.app !== 'trash' && x.classList.contains('dock-item') && !x.classList.contains('minimized-win'));
+    const follow = (ev) => {
+      el.style.transform = '';
+      const left = el.getBoundingClientRect().left;
+      el.style.transform = `translate(${ev.clientX - grab - left}px, ${Math.min(0, ev.clientY - sy)}px) scale(1.06)`;
+    };
     const move = (ev) => {
       if (!dragging && Math.hypot(ev.clientX - sx, ev.clientY - sy) < 12) return;
-      if (!dragging) { dragging = true; hideTip(); el.classList.add('dock-drag'); }
-      el.style.transform = `translate(${ev.clientX - sx}px, ${ev.clientY - sy}px)`;
+      if (!dragging) { dragging = true; dragActive = true; mouseX = null; hideTip(); el.classList.add('dock-drag'); applySizes(); }
       const out = ev.clientY < dock.getBoundingClientRect().top - 80 && store.get('dockPinned').includes(id) && !wm.appWindows(id).length;
-      el.classList.toggle('dock-drag-out', out);
+      if (out !== el.classList.contains('dock-drag-out')) { el.classList.toggle('dock-drag-out', out); out ? showTip(el, 'Remove') : hideTip(); }
+      if (!out) {
+        // live reorder: once the pointer passes the middle of a neighbour, swap places (the others slide)
+        const list = zone(), i = list.indexOf(el);
+        const next = list[i + 1], prev = list[i - 1];
+        const mid = (x) => { const r = x.getBoundingClientRect(); return r.left + r.width / 2; };
+        let moveTo = null;
+        if (next && ev.clientX > mid(next)) moveTo = next.nextSibling;
+        else if (prev && ev.clientX < mid(prev)) moveTo = prev;
+        if (moveTo !== null) {
+          const before = new Map(list.map((x) => [x, x.getBoundingClientRect().left]));
+          items.insertBefore(el, moveTo);
+          for (const x of list) {
+            if (x === el) continue;
+            const dx = before.get(x) - x.getBoundingClientRect().left;
+            if (!dx) continue;
+            x.animate([{ transform: `translateX(${dx}px)` }, { transform: 'none' }], { duration: 180, easing: 'cubic-bezier(.2,.8,.2,1)' });
+          }
+        }
+      }
+      follow(ev);
+      if (out) el.style.transform = `translate(${ev.clientX - sx}px, ${ev.clientY - sy}px)`;
     };
     const up = (ev) => {
       el.removeEventListener('pointermove', move); el.removeEventListener('pointerup', up); el.removeEventListener('pointercancel', up);
       if (!dragging) return;
+      dragActive = false;
       suppressClick = true; setTimeout(() => (suppressClick = false), 0);
-      el.style.transform = ''; el.classList.remove('dock-drag', 'dock-drag-out');
+      const wasOut = el.classList.contains('dock-drag-out');
+      el.style.transform = ''; el.classList.remove('dock-drag', 'dock-drag-out'); hideTip();
       const pinned = store.get('dockPinned');
-      if (ev.type === 'pointerup' && ev.clientY < dock.getBoundingClientRect().top - 80 && pinned.includes(id) && !wm.appWindows(id).length) {
+      if (ev.type === 'pointerup' && wasOut) {
         el.classList.add('poof');
         setTimeout(() => store.set('dockPinned', store.get('dockPinned').filter((p) => p !== id)), 300);
         return;
       }
-      if (ev.type !== 'pointerup') return;
-      // drop next to the pinned item under the pointer
-      const target = [...items.querySelectorAll('.dock-item[data-app]')].find((x) => {
-        if (x === el) return false;
-        const r = x.getBoundingClientRect();
-        return ev.clientX >= r.left && ev.clientX <= r.right;
-      });
-      const tid = target?.dataset.app;
-      if (!tid || !pinned.includes(tid)) return;
-      const list = pinned.filter((p) => p !== id);
-      let i = list.indexOf(tid);
-      const r = target.getBoundingClientRect();
-      if (ev.clientX > r.left + r.width / 2) i++;
-      list.splice(i, 0, id);
-      store.set('dockPinned', list);
+      // the new order is what the Dock shows now; dropped among pinned apps, a running app becomes pinned
+      const order = zone().map((x) => x.dataset.app);
+      const lastPinned = Math.max(...order.map((a, i) => (pinned.includes(a) && a !== id ? i : -1)));
+      const keep = pinned.includes(id) || order.indexOf(id) <= lastPinned;
+      const next = order.filter((a) => pinned.includes(a) || (a === id && keep));
+      for (const p of pinned) if (!next.includes(p)) next.push(p);   // pinned apps not in view (shouldn't happen)
+      if (JSON.stringify(next) !== JSON.stringify(pinned)) store.set('dockPinned', next); else render();
+      applySizes();
     };
     el.addEventListener('pointermove', move); el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
   });
@@ -209,9 +232,9 @@ function showTip(el, text) {
 function hideTip() { tip?.remove(); tip = null; }
 
 /* ---------------------------------------------- magnification */
-let mouseX = null;
+let mouseX = null, dragActive = false;
 function applySizes() {
-  const base = store.get('dockSize'), max = store.get('dockMagnify') ? store.get('dockMagSize') : base;
+  const base = store.get('dockSize'), max = store.get('dockMagnify') && !dragActive ? store.get('dockMagSize') : base;
   dock.style.setProperty('--dock-size', base + 'px');
   const els = $$('.dock-item', items);
   const range = base * 2.6;
@@ -242,10 +265,20 @@ function applySizes() {
 let hideTimer, revealed = false, lastCovered = false, edgeTimer;
 const covered = () => { const w = wm.focused; return !!w && !w.minimized && (w.fullscreen || w.tile === 'fill-nodock') && (w.space ?? wm.currentSpace) === wm.currentSpace; };
 export function dockHidden() { return wrap?.classList.contains('hidden') || wrap?.classList.contains('hidden-full'); }
+// smart hide: is a window on this desktop in the Dock's space? (window geometry comes in screen pixels in a session)
+function overlapped() {
+  if (!dock) return false;
+  const k = isSession ? devicePixelRatio || 1 : 1;
+  const r = dock.getBoundingClientRect();
+  const top = innerHeight - (store.get('dockSize') + 22), left = r.left - 4, right = r.right + 4;
+  return wm.windows.some((w) => !w.minimized && (w.space ?? wm.currentSpace) === wm.currentSpace && w.w && w.h
+    && w.x / k < right && (w.x + w.w) / k > left && (w.y + w.h) / k > top);
+}
 function applyHidden() {
   const cov = covered();
   if (cov !== lastCovered) { lastCovered = cov; if (cov) revealed = false; }
-  const hide = (store.get('dockAutohide') || cov) && !revealed;
+  const mode = dockHideMode();
+  const hide = (mode === 'always' || cov || (mode === 'smart' && overlapped())) && !revealed;
   wrap.classList.toggle('hidden', hide && !cov);
   wrap.classList.toggle('hidden-full', hide && cov);
 }
@@ -290,8 +323,9 @@ export function initDock() {
   bus.on('native-launched', (id) => { const el = $(`.dock-item[data-app="${CSS.escape(id)}"]`); bounce(id, el); });
   store.on('change', (k) => {
     if (['dockPinned', 'dockSize', 'dockMagnify', 'dockMagSize'].includes(k)) render();
-    if (k === 'dockAutohide') { revealed = false; applyHidden(); }
+    if (k === 'dockAutohide' || k === 'dockHideMode') { revealed = false; applyHidden(); }
   });
   checkTrash();
   setInterval(checkTrash, 15000);
+  setInterval(() => { if (dockHideMode() === 'smart' && !dock.matches(':hover')) applyHidden(); }, 400);
 }

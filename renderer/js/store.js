@@ -17,6 +17,8 @@ export const defaults = {
   dockMagnify: true,
   dockMagSize: 84,
   dockAutohide: false,
+  shotSave: true, shotCopy: true, shotDir: '', shotMode: 'area',
+  dockHideMode: null,       // never | always | smart (hide only while a window is in the way); null = from dockAutohide
   dockPinned: ['files', 'browser', 'terminal', 'notes', 'calendar', 'weather', 'appstore', 'monitor', 'calculator', 'settings'],
   showRecents: true,
   showDesktopIcons: true,
@@ -76,7 +78,15 @@ class Store extends Emitter {
   get(k) { return this.s[k]; }
   set(k, v) {
     this.s[k] = v;
-    try { localStorage.setItem(KEY, JSON.stringify(this.s)); } catch { /* storage full or blocked */ }
+    // Write only this key on top of what's stored now: in a session several windows (desktop, shell,
+    // apps) share these settings, and saving our whole copy could undo another window's newer change
+    // (a widget that was just moved jumped back, for example).
+    try {
+      let cur = {};
+      try { cur = JSON.parse(localStorage.getItem(KEY) || '{}'); } catch { /* corrupt: rewrite */ }
+      cur[k] = v;
+      localStorage.setItem(KEY, JSON.stringify(cur));
+    } catch { /* storage full or blocked */ }
     this.emit('change', k, v);
     this.emit('change:' + k, v);
   }
@@ -96,6 +106,10 @@ class Store extends Emitter {
   }
 }
 export const store = new Store();
+/** How the Dock hides: 'never', 'always' (auto-hide) or 'smart' (only while a window overlaps it). */
+export function dockHideMode() { return store.get('dockHideMode') || (store.get('dockAutohide') ? 'always' : 'never'); }
+/** Screen space kept free for the Dock at the bottom (none when it hides). */
+export function dockReserve() { return dockHideMode() === 'never' ? store.get('dockSize') + 22 : 0; }
 store.listen();
 if (!store.get('appstorePinned')) {
   const p = store.get('dockPinned');

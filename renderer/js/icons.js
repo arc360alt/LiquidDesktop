@@ -127,10 +127,11 @@ const gearPath = (cx, cy, ro, ri, n) => {
 // Each app icon: bg gradient, a "tone" (its signature color for dark/tinted styles) and a draw(c) that uses roles:
 // c.fg (glyph on the plate), c.paper (light surfaces), c.ink (marks on paper), c.ac / c.ac2 (accent colors).
 const APP_ICONS = {
-  files: { bg: ['#6fd0ff', '#1677ff'], tone: '#3aa0ff', c: { fg: '#fff', ac: '#c9ecff', ac2: '#0b5bd3', paper: '#fff', ink: '#1677ff' },
-    draw: (c) => `<path d="M24 36a6 6 0 0 1 6-6h13l5 5h22a6 6 0 0 1 6 6v25a6 6 0 0 1-6 6H30a6 6 0 0 1-6-6z" fill="${c.ac}" opacity=".85"/>
-      <path d="M22 44a6 6 0 0 1 6-6h44a6 6 0 0 1 6 6v22a6 6 0 0 1-6 6H28a6 6 0 0 1-6-6z" fill="${c.fg}"/>
-      <path d="M40 55c2.5 3 7 4.5 10 4.5s7.5-1.5 10-4.5" stroke="${c.ac2}" stroke-width="3" fill="none" stroke-linecap="round" opacity=".8"/>` },
+  files: { bg: ['#7fd4ff', '#1a73f0'], tone: '#3aa0ff', c: { fg: '#fff', ac: '#cdeeff', ac2: '#0b5bd3', paper: '#fff', ink: '#1677ff' },
+    draw: (c) => `<path d="M21 33a6 6 0 0 1 6-6h14.5l5.5 5.5h26a6 6 0 0 1 6 6V68a6 6 0 0 1-6 6H27a6 6 0 0 1-6-6z" fill="${c.ac}" opacity=".9"/>
+      <path d="M19 42a6 6 0 0 1 6-6h50a6 6 0 0 1 6 6v26a7 7 0 0 1-7 7H26a7 7 0 0 1-7-7z" fill="${c.fg}"/>
+      <path d="M19.6 42.5a6 6 0 0 1 6-6h49" stroke="${c.ac}" stroke-width="1.4" fill="none"/>
+` },
   browser: { bg: ['#ffffff', '#dfe7f2'], tone: '#2f8cff', paper: true, c: { fg: '#fff', ac: '#0a7cff', ac2: '#5ad1ff', paper: '#fff', ink: '#0a7cff' },
     draw: (c) => `<defs><linearGradient id="gb${uid}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${c.ac2}"/><stop offset="1" stop-color="${c.ac}"/></linearGradient></defs>
       <circle cx="50" cy="50" r="29" fill="url(#gb${uid})"/>
@@ -159,10 +160,16 @@ const APP_ICONS = {
     draw: (c) => `<g fill="${c.fg}"><circle cx="31" cy="31" r="8"/><circle cx="50" cy="31" r="8"/><circle cx="31" cy="50" r="8" opacity=".6"/><circle cx="50" cy="50" r="8" opacity=".6"/><circle cx="31" cy="69" r="8" opacity=".6"/><circle cx="50" cy="69" r="8" opacity=".6"/></g>
       <g fill="${c.ac}"><circle cx="69" cy="31" r="8"/><circle cx="69" cy="50" r="8"/><circle cx="69" cy="69" r="8"/></g>
       <g stroke="#fff" stroke-width="2.4" stroke-linecap="round"><path d="M66 50h6M66 69h6M66 66.5h6M69 28v6M66 31h6"/></g>` },
-  settings: { bg: ['#e4e4ea', '#9a9aa2'], tone: '#8e8e93', c: { fg: '#5b5b62', ac: '#3a3a3f', ac2: '#d8d8de', paper: '#f2f2f7', ink: '#3a3a3f' },
-    draw: (c) => `<path d="${gearPath(50, 50, 33, 27, 16)}" fill="${c.fg}"/>
-      <circle cx="50" cy="50" r="22" fill="${c.ac2}"/><circle cx="50" cy="50" r="18" fill="${c.fg}"/>
-      <path d="${gearPath(50, 50, 15, 11, 10)}" fill="${c.ac2}"/><circle cx="50" cy="50" r="5" fill="${c.fg}"/>` },
+  settings: { bg: ['#f4f4f7', '#a9a9b1'], tone: '#8e8e93', tintedC: (a) => ({ fg: a, ac: '#1a1a1e', ac2: a, paper: '#2c2c30', ink: a }), c: { fg: '#5d5d65', ac: '#2f2f35', ac2: '#e6e6eb', paper: '#f2f2f7', ink: '#3a3a3f' },
+    // a machined gear: toothed outer ring, a bright inner ring, and a spoked hub
+    draw: (c) => `<defs>
+        <linearGradient id="sg${uid}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${c.fg}"/><stop offset="1" stop-color="${c.ac}"/></linearGradient>
+        <linearGradient id="sr${uid}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${c.ac2}"/><stop offset="1" stop-color="${c.ac2}" stop-opacity=".55"/></linearGradient></defs>
+      <path d="${gearPath(50, 50, 37, 31, 22)}" fill="url(#sg${uid})"/>
+      <circle cx="50" cy="50" r="27.5" fill="url(#sr${uid})"/>
+      <circle cx="50" cy="50" r="23" fill="url(#sg${uid})"/>
+      <g stroke="${c.ac2}" stroke-width="3.6" stroke-linecap="round">${Array.from({ length: 8 }, (_, i) => { const a = (i * Math.PI) / 4, x1 = 50 + 9 * Math.cos(a), y1 = 50 + 9 * Math.sin(a), x2 = 50 + 19 * Math.cos(a), y2 = 50 + 19 * Math.sin(a); return `<path d="M${x1.toFixed(1)} ${y1.toFixed(1)}L${x2.toFixed(1)} ${y2.toFixed(1)}"/>`; }).join('')}</g>
+      <circle cx="50" cy="50" r="9.5" fill="url(#sr${uid})"/><circle cx="50" cy="50" r="4" fill="${c.ac}"/>` },
   texteditor: { bg: ['#ffffff', '#ececf0'], tone: '#5e5ce6', paper: true, c: { fg: '#fff', ac: '#5e5ce6', ac2: '#ff9f0a', paper: '#fff', ink: '#aeaeb2' },
     draw: (c) => `<g stroke="${c.ink}" stroke-width="2.4" stroke-linecap="round"><path d="M22 28h48M22 38h56M22 48h40M22 58h52M22 68h30"/></g>
       <path d="M58 76l22-22 6 6-22 22-9 3z" fill="${c.ac}"/><path d="M80 54l4-4a4 4 0 0 1 6 6l-4 4z" fill="${c.ac2}"/>` },
@@ -199,7 +206,7 @@ export function trashIcon(full) {
 const ICON_MODES = {
   dark: (spec) => ({ bg: ['#3a3a3f', '#141417'], c: { ...spec.c, fg: spec.paper ? spec.c.fg : spec.tone, paper: '#2c2c30', ink: spec.paper ? '#d1d1d6' : spec.c.ink } }),
   clear: (spec) => ({ bg: ['rgba(255,255,255,.34)', 'rgba(255,255,255,.12)'], c: { fg: 'rgba(255,255,255,.95)', ac: 'rgba(255,255,255,.85)', ac2: 'rgba(255,255,255,.55)', paper: 'rgba(255,255,255,.25)', ink: 'rgba(255,255,255,.9)' } }),
-  tinted: (spec) => { const a = store.get('accent'); return { bg: ['#2e2e33', '#121215'], c: { fg: a, ac: a, ac2: a + 'aa', paper: '#2c2c30', ink: a } }; },
+  tinted: (spec) => { const a = store.get('accent'); return { bg: ['#2e2e33', '#121215'], c: spec.tintedC ? spec.tintedC(a) : { fg: a, ac: a, ac2: a + 'aa', paper: '#2c2c30', ink: a } }; },
 };
 
 export function appIconSVG(id, mode = store.get('iconStyle')) {
@@ -212,7 +219,8 @@ export function appIconSVG(id, mode = store.get('iconStyle')) {
     <linearGradient id="hl${n}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity="${clear ? 0.35 : 0.28}"/><stop offset=".5" stop-color="#fff" stop-opacity="0"/></linearGradient>
     <clipPath id="cp${n}"><rect x="8" y="8" width="84" height="84" rx="19.5"/></clipPath></defs>
     <rect x="8" y="8" width="84" height="84" rx="19.5" fill="url(#bg${n})"/>
-    <g clip-path="url(#cp${n})">${spec.draw(m.c)}</g>
+    <filter id="ds${n}" x="-10%" y="-10%" width="120%" height="125%"><feDropShadow dx="0" dy="1.4" stdDeviation="1.3" flood-color="#000" flood-opacity="${spec.paper ? 0.12 : 0.22}"/></filter>
+    <g clip-path="url(#cp${n})"><g filter="url(#ds${n})">${spec.draw(m.c)}</g></g>
     <rect x="8" y="8" width="84" height="84" rx="19.5" fill="url(#hl${n})"/>
     <rect x="8.5" y="8.5" width="83" height="83" rx="19" fill="none" stroke="#fff" stroke-opacity="${clear ? 0.7 : 0.35}" stroke-width="1"/>
   </svg>`;
@@ -240,6 +248,11 @@ export function appIcon(app, cls = '') {
 
 /* ------------------------------------------------------------------ file icons */
 const FOLDER_GLYPHS = { Desktop: sym.desktop, Documents: sym.doc, Downloads: sym.download, Pictures: sym.photo, Music: sym.music, Videos: sym.video, Home: sym.home, Public: sym.user, Templates: sym.doc };
+// the symbol embossed on special folders (Desktop, Documents…): a 22px glyph centred on the folder's front
+function folderGlyph(g) {
+  const inner = g.replace(/^\s*<svg[^>]*>/, '').replace(/<\/svg>\s*$/, '');
+  return `<svg x="21" y="24" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#2f8bd0" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" opacity=".7">${inner}</svg>`;
+}
 export function folderIcon(name) {
   const g = FOLDER_GLYPHS[name];
   return `<svg viewBox="0 0 64 64"><defs><linearGradient id="fb" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8fd3ff"/><stop offset="1" stop-color="#4fb0f5"/></linearGradient>
@@ -247,7 +260,7 @@ export function folderIcon(name) {
     <path d="M4 13a4 4 0 0 1 4-4h14l4 4h30a4 4 0 0 1 4 4v32a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4z" fill="url(#fb)"/>
     <path d="M4 21a4 4 0 0 1 4-4h48a4 4 0 0 1 4 4v28a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4z" fill="url(#ff)"/>
     <path d="M4.5 21.5a4 4 0 0 1 4-4h47" stroke="#fff" stroke-opacity=".7" stroke-width="1" fill="none"/>
-    ${g ? `<g transform="translate(22 25) scale(.83)" color="#3d97d8" opacity=".85">${g.replace('class="sym"', '')}</g>` : ''}</svg>`;
+    ${g ? folderGlyph(g) : ''}</svg>`;
 }
 const EXT_COLORS = {
   pdf: '#ff3b30', zip: '#8e8e93', gz: '#8e8e93', xz: '#8e8e93', tar: '#8e8e93', '7z': '#8e8e93', rar: '#8e8e93', deb: '#a2845e', rpm: '#a2845e', appimage: '#5e5ce6',

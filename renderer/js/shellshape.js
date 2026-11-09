@@ -4,15 +4,15 @@
 //   • where its glass surfaces are, so the WM can put a blur window (blurred by picom) behind each one
 import { $, $$, bus } from './util.js';
 import { session as S } from './layer.js';
-import { store } from './store.js';
+import { store, dockReserve } from './store.js';
 import { closeMenu } from './menus.js';
 import { dockHidden, revealDock } from './dock.js';
 import { menubarHidden, revealMenubar } from './menubar.js';
 
 const INTERACTIVE = ['#menubar', '#dock', '.dock-item', '.menu', '.cc', '#nc.open', '#toasts > *', '#switcher', '#spotlight .bar',
-  '#spotlight .chips > *', '#spotlight .results:not([hidden])', '#launcher', '#widget-gallery', '.global-alert-layer .alert', '#mission', '#lock', '#boot', '.quicklook'];
-const MODAL = ['.menu', '.cc', '#nc.open', '#spotlight-layer', '#launcher-layer', '.global-alert-layer', '#mission', '#lock', '#boot', '#switcher', '#widget-gallery', '.quicklook'];
-const KEYBOARD = ['#spotlight-layer', '#launcher-layer', '#lock', '.global-alert-layer'];
+  '#spotlight .chips > *', '#spotlight .results:not([hidden])', '#launcher', '#widget-gallery', '.global-alert-layer .alert', '#mission', '#lock', '#boot', '.quicklook', '#shot-layer'];
+const MODAL = ['.menu', '.cc', '#nc.open', '#spotlight-layer', '#launcher-layer', '.global-alert-layer', '#mission', '#lock', '#boot', '#switcher', '#widget-gallery', '.quicklook', '#shot-layer'];
+const KEYBOARD = ['#spotlight-layer', '#launcher-layer', '#lock', '.global-alert-layer', '#shot-layer'];
 // glass that gets a real blur behind it
 const GLASS = ['.glass', '#menubar.solid', '#menubar.revealed', '#mission', '.snap-preview'];
 const RADII = [0, 6, 10, 14, 18, 22, 26, 30, 36];   // must match the rules in session/picom.conf
@@ -53,7 +53,7 @@ function measure() {
   if (kb !== lastKb) { lastKb = kb; S.send('shell:focus', kb); }
   const edges = JSON.stringify({ bottom: dockHidden(), top: menubarHidden() });
   if (edges !== lastEdges) { lastEdges = edges; S.send('shell:edges', JSON.parse(edges)); }
-  const work = JSON.stringify([30, store.get('dockAutohide') ? 0 : store.get('dockSize') + 22]);
+  const work = JSON.stringify([30, dockReserve()]);
   if (work !== lastWork) { lastWork = work; S.send('shell:workarea', ...JSON.parse(work)); }
 }
 

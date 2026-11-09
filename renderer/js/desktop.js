@@ -49,6 +49,26 @@ async function renderIcons(force = true) {
 
 /* ---------------------------------------------- widgets */
 let widgetLayer, gallery = null;
+const WSIZE = { s: [164, 164], m: [340, 164] };
+const wsize = (type) => WSIZE[WIDGETS[type]?.size || 's'];
+// The free spot for a widget nearest to (px, py) — or the first one from the top left — keeping a gap
+// around the others and clear of the menu bar, the Dock and the desktop icons on the right.
+function freeSpot(type, px, py, skipId) {
+  const [w, h] = wsize(type), gap = 12;
+  const others = store.get('widgets').filter((x) => x.id !== skipId && WIDGETS[x.type]).map((x) => [x.x, x.y, ...wsize(x.type)]);
+  const fits = (x, y) => !others.some(([rx, ry, rw, rh]) => x < rx + rw + gap && x + w + gap > rx && y < ry + rh + gap && y + h + gap > ry);
+  const maxX = innerWidth - w - 130, maxY = innerHeight - h - 110;
+  let best = null, bestD = Infinity;
+  for (let y = 48; y <= maxY; y += 12) {
+    for (let x = 36; x <= maxX; x += 12) {
+      if (!fits(x, y)) continue;
+      if (px == null) return [x, y];                      // first free spot, reading order
+      const d = (x - px) ** 2 + (y - py) ** 2;
+      if (d < bestD) { bestD = d; best = [x, y]; }
+    }
+  }
+  return best || [px ?? 36, py ?? 48];
+}
 function renderWidgets() {
   widgetLayer.innerHTML = '';
   for (const w of store.get('widgets')) {
@@ -71,7 +91,10 @@ function renderWidgets() {
       };
       const up = () => {
         removeEventListener('mousemove', mv); removeEventListener('mouseup', up); el.classList.remove('dragging');
-        if (moved) store.set('widgets', store.get('widgets').map((x) => (x.id === w.id ? { ...x, x: w.x, y: w.y } : x)));
+        if (!moved) return;
+        // dropped on top of another widget: slide to the nearest free spot
+        [w.x, w.y] = freeSpot(w.type, w.x, w.y, w.id);
+        store.set('widgets', store.get('widgets').map((x) => (x.id === w.id ? { ...x, x: w.x, y: w.y } : x)));
       };
       addEventListener('mousemove', mv); addEventListener('mouseup', up);
     });
@@ -98,8 +121,8 @@ function applyEditing(on) {
     const item = h('div.wg-item', buildWidget(type), h('span', def.name));
     item.addEventListener('click', () => {
       const list = store.get('widgets');
-      const n = list.length;
-      store.set('widgets', [...list, { id: 'w' + Date.now(), type, x: 40 + (n % 4) * 176, y: 50 + Math.floor(n / 4) * 176 }]);
+      const [x, y] = freeSpot(type);
+      store.set('widgets', [...list, { id: 'w' + Date.now(), type, x, y }]);
     });
     gallery.append(item);
   }

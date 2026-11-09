@@ -191,6 +191,10 @@ function startJob(sender, job) {
   child.stdout.on('data', onData);
   child.stderr.on('data', onData);
   child.on('error', (err) => send({ done: true, ok: false, error: err.message }));
+  child.on('exit', (code) => {
+    // a system-wide update finished: let the desktop offer to log out (see watchUpdates in system.js)
+    if (code === 0 && job.action === 'update' && !job.id) { try { fs.writeFileSync(path.join(require('electron').app.getPath('userData'), 'update-done'), String(Date.now())); } catch { /* ignore */ } }
+  });
   child.on('exit', (code) => send({ done: true, ok: code === 0, error: code === 0 ? null : tail.split('\n').filter(Boolean).slice(-3).join('\n') }));
   return id;
 }

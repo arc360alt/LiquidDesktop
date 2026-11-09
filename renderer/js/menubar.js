@@ -169,7 +169,9 @@ export function initMenubar() {
   const search = h('div.mb-item', { html: sym.search, title: 'Spotlight (Alt+Space)', onclick: () => shell.spotlight() });
   const cc = h('div.mb-item', { html: sym.controls, title: 'Control Center', onclick: (e) => { e.stopPropagation(); shell.toggleControlCenter(); } });
   clockEl = h('div.mb-item', { onclick: () => shell.toggleNotificationCenter() });
-  statusArea = h('div#mb-status', battEl, wifiEl, search, cc, clockEl);
+  const trayArea = h('div#mb-tray');
+  statusArea = h('div#mb-status', trayArea, battEl, wifiEl, search, cc, clockEl);
+  initTray(trayArea);
   bar.append(logoItem, appArea, statusArea);
 
   // only touch the DOM when the text changes, so the shell doesn't repaint every second
@@ -197,4 +199,42 @@ export function initMenubar() {
   bus.on('status', renderStatus);
   bus.on('wallpaper-luma', (l) => bar.classList.toggle('dark-text', l > 0.68));
   store.on('change', (k) => { if (['clock24', 'showSeconds'].includes(k)) tick(); if (k === 'showBatteryPct') renderStatus(); });
+}
+
+/* ---------------------------------------------- system tray (apps running in the background) */
+// Left click opens/activates the app, right click shows its menu, middle click is its secondary action.
+function initTray(area) {
+  if (!api.tray?.list) return;
+  const dpr = () => (isSession ? devicePixelRatio || 1 : 1);
+  const toMenu = (key, list) => list.map((m) => (m.sep ? '-' : {
+    label: m.label, disabled: !m.enabled, checked: m.toggle ? m.checked : undefined,
+    submenu: m.children?.length ? toMenu(key, m.children) : undefined,
+    action: m.children?.length ? undefined : () => api.tray.event(key, m.id).catch(() => {}),
+  }));
+  const openMenu = async (it, el) => {
+    const r = el.getBoundingClientRect();
+    if (it.hasMenu) {
+      const list = await api.tray.menu(it.key).catch(() => null);
+      if (list?.length) { el.classList.add('open'); showMenu(toMenu(it.key, list), r.left, r.bottom + 4, { anchor: el, onClose: () => el.classList.remove('open') }); return; }
+    }
+    api.tray.contextMenu(it.key, (r.left + r.width / 2) * dpr(), r.bottom * dpr()).catch(() => {});
+  };
+  const draw = (list) => {
+    area.innerHTML = '';
+    for (const it of list || []) {
+      const el = h('div.mb-item.mb-tray-item' + (it.status === 'NeedsAttention' ? '.attention' : ''), { title: it.tooltip || it.title },
+        it.icon ? h('img', { src: it.icon, draggable: false }) : h('span', (it.title || it.id || '?')[0]));
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (it.itemIsMenu) return openMenu(it, el);
+        const r = el.getBoundingClientRect();
+        api.tray.activate(it.key, (r.left + r.width / 2) * dpr(), r.bottom * dpr(), false).catch(() => openMenu(it, el));
+      });
+      el.addEventListener('contextmenu', (e) => { e.preventDefault(); e.stopPropagation(); openMenu(it, el); });
+      el.addEventListener('auxclick', (e) => { if (e.button === 1) { const r = el.getBoundingClientRect(); api.tray.activate(it.key, r.left * dpr(), r.bottom * dpr(), true).catch(() => {}); } });
+      area.append(el);
+    }
+  };
+  api.tray.onItems?.(draw);
+  api.tray.list().then(draw).catch(() => {});
 }

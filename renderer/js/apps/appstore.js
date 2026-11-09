@@ -304,7 +304,7 @@ class Store {
         h('div.as-app-t', h('h1', a.name), h('p', a.summary || d.summary || ''), h('small', [d.developer_name || a.developer, a.verified ? '✓ Verified' : null].filter(Boolean).join(' · ')),
           h('div.as-app-actions', this.getButton(a, true),
             installed ? h('button.btn', { onclick: () => this.remove(a) }, 'Uninstall') : null,
-            (d.urls?.homepage || a.homepage || info.URL) ? h('button.btn.plain', { onclick: () => wm.open('browser', { url: d.urls?.homepage || a.homepage || info.URL }) }, 'Website') : null,
+            (d.urls?.homepage || a.homepage || info.URL) ? h('button.as-web', { onclick: () => wm.open('browser', { url: d.urls?.homepage || a.homepage || info.URL }), html: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3z"/></svg><span>Website</span>' }) : null,
             this.sourceBadge(a)))),
       h('div.as-facts', ...facts.map(([k, v]) => h('div', h('small', k.toUpperCase()), h('b', v)))),
       shots.length ? h('div.as-shots', ...shots.map((src) => h('img', { src, loading: 'lazy', onclick: () => this.viewShot(src) }))) : null,

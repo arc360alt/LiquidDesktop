@@ -26,7 +26,7 @@ if (isNative) {
 }
 
 registerApp({
-  id: 'terminal', settings: 'terminal', name: 'Terminal', size: [760, 470], minSize: [360, 200], overlayContent: true,
+  id: 'terminal', settings: 'terminal', name: 'Terminal', size: [780, 512], minSize: [360, 200], overlayContent: true,
   keywords: ['shell', 'console', 'bash', 'command line'],
   about: 'A real shell, rendered with xterm.js.',
   menus: (win) => [
@@ -77,7 +77,15 @@ registerApp({
         if (k === 'terminalScrollback') term.options.scrollback = store.get('terminalScrollback');
       })];
     const off = () => offs.forEach((f) => f());
-    const doFit = () => { try { fit.fit(); if (state.id) api.pty.resize(state.id, term.cols, term.rows); } catch { /* not visible yet */ } };
+    const doFit = () => {
+      try {
+        fit.fit();
+        // never let the last row end below the visible area (it hid prompts like sudo's password line)
+        const scr = wrap.querySelector('.xterm-screen'), clip = wrap.closest('.win-body') || wrap;
+        if (scr && term.rows > 2 && scr.getBoundingClientRect().bottom > Math.min(wrap.getBoundingClientRect().bottom, clip.getBoundingClientRect().bottom) - 2) term.resize(term.cols, term.rows - 1);
+        if (state.id) api.pty.resize(state.id, term.cols, term.rows);
+      } catch { /* not visible yet */ }
+    };
     win.on('resize', () => requestAnimationFrame(doFit));
     // refit whenever the terminal's area changes size (real window resized, maximized, tiled…)
     let fitQueued = false;

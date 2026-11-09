@@ -77,6 +77,7 @@ if [ "$ACTION" = uninstall ]; then
     run sudo rm -rf "$PREFIX"
     run sudo rm -f /usr/local/bin/liquid-desktop /usr/local/bin/liquid-desktop-session /usr/local/bin/liquid-desktop-nested /usr/local/bin/liquid-desktop-update \
       /usr/share/xsessions/liquid-desktop.desktop /usr/share/applications/liquid-desktop.desktop
+    run sudo rm -rf /usr/share/sddm/themes/liquid-desktop /etc/sddm.conf.d/zz-liquid-desktop.conf
   fi
   say "LiquidDesktop has been removed. (Your settings stay in ~/.config/LiquidDesktop.)"
   exit 0
@@ -154,6 +155,13 @@ install_generic() {
     sed "s#/usr/bin/#/usr/local/bin/#g" "$WORK/LiquidDesktop/packaging/liquid-desktop.xsession.desktop" > "$WORK/xsession.desktop"
     sudo install -Dm644 "$WORK/xsession.desktop" /usr/share/xsessions/liquid-desktop.desktop
     sudo install -Dm644 "$WORK/LiquidDesktop/packaging/liquid-desktop.desktop" /usr/share/applications/liquid-desktop.desktop
+    # the LiquidDesktop login screen, when the login manager is SDDM
+    if [ -d /usr/share/sddm ] || command -v sddm >/dev/null 2>&1; then
+      say "Installing the LiquidDesktop login screen (SDDM)…"
+      sudo mkdir -p /usr/share/sddm/themes/liquid-desktop
+      sudo cp -r "$WORK/LiquidDesktop/packaging/sddm/liquid-desktop/." /usr/share/sddm/themes/liquid-desktop/
+      sudo install -Dm644 "$WORK/LiquidDesktop/packaging/sddm/zz-liquid-desktop.conf" /etc/sddm.conf.d/zz-liquid-desktop.conf
+    fi
   else
     printf '    $ sudo install … /usr/share/xsessions/liquid-desktop.desktop\n'
   fi

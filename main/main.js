@@ -51,6 +51,7 @@ app.whenReady().then(async () => {
   session.defaultSession.setPermissionRequestHandler((_wc, perm, cb) => cb(['clipboard-sanitized-write', 'fullscreen', 'notifications'].includes(perm)));
   require('./browser').register();
   require('./appstore').register();
+  require('./tray').register({ resolveIcon: require('./system').resolveIcon });
   if (mode === 'session') {
     try {
       const { startSession } = require('./session');

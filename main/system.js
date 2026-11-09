@@ -165,6 +165,18 @@ function watchApps() {
   }, 2500);
 }
 
+// liquid-desktop-update (or an "Update All" in the App Store) leaves a marker when it succeeds:
+// tell the desktop, which offers to log out so the new version starts.
+function watchUpdates() {
+  const marker = path.join(app.getPath('userData'), 'update-done');
+  setInterval(() => {
+    if (!fs.existsSync(marker)) return;
+    try { fs.unlinkSync(marker); } catch { return; }
+    const { webContents } = require('electron');
+    for (const wc of webContents.getAllWebContents()) if (!wc.isDestroyed() && wc.getType() !== 'webview') wc.send('sys:updated');
+  }, 3000);
+}
+
 async function listApps(force) {
   if (appsCache && !force) return appsCache;
   const dirs = APP_DIRS;
@@ -338,6 +350,184 @@ function createPty(sender, { cols = 80, rows = 24, cwd, shell, login, env: extra
   return id;
 }
 
+/* ------------------------------------------------------------------ Users & Accounts */
+// Your account: picture and full name through AccountsService (what login screens such as SDDM read; a
+// user may change their own without a password), plus ~/.face for older greeters; password via passwd(1).
+const ACC = () => `/org/freedesktop/Accounts/User${os.userInfo().uid}`;
+async function accountInfo() {
+  const me = os.userInfo();
+  const pw = (await run('getent', ['passwd', me.username])).out.split(':');
+  const groups = (await run('id', ['-Gn'])).out.trim().split(/\s+/).filter(Boolean);
+  let realName = '', icon = '';
+  if (which('busctl')) {
+    const r = await run('busctl', ['get-property', 'org.freedesktop.Accounts', ACC(), 'org.freedesktop.Accounts.User', 'RealName', 'IconFile']);
+    const v = [...r.out.matchAll(/^s "(.*)"$/gm)].map((m) => m[1]);
+    realName = v[0] || ''; icon = v[1] || '';
+  }
+  realName = realName || pw[4]?.split(',')[0] || '';
+  let avatar = null;
+  for (const f of [icon, path.join(HOME, '.face.icon'), path.join(HOME, '.face')].filter(Boolean)) {
+    try { const b = fs.readFileSync(f); if (b.length) { avatar = 'data:image/png;base64,' + b.toString('base64'); break; } } catch { /* not readable */ }
+  }
+  return { user: me.username, uid: me.uid, fullName: realName || me.username, home: me.homedir, shell: me.shell || pw[6]?.trim(), groups,
+    admin: groups.some((g) => ['wheel', 'sudo', 'admin'].includes(g)), avatar, accountsService: which('busctl') ? true : false };
+}
+async function setRealName(name) {
+  name = String(name || '').trim().slice(0, 120);
+  if (!which('busctl')) throw new Error('AccountsService isn’t available');
+  const r = await run('busctl', ['call', 'org.freedesktop.Accounts', ACC(), 'org.freedesktop.Accounts.User', 'SetRealName', 's', name]);
+  if (!r.ok) throw new Error(r.err.trim() || 'Couldn’t change the name');
+  return true;
+}
+async function setAvatar(dataUrl) {
+  const m = /^data:image\/(png|jpeg);base64,(.+)$/.exec(String(dataUrl));
+  if (!m) throw new Error('Not an image');
+  const buf = Buffer.from(m[2], 'base64');
+  const face = path.join(HOME, '.face');
+  fs.writeFileSync(face, buf); fs.writeFileSync(face + '.icon', buf);
+  if (which('busctl')) await run('busctl', ['call', 'org.freedesktop.Accounts', ACC(), 'org.freedesktop.Accounts.User', 'SetIconFile', 's', face]);
+  return true;
+}
+function changePassword(current, next) {
+  // passwd only talks to a terminal: run it in one (script) and answer its three prompts
+  return new Promise((resolve) => {
+    if (!which('passwd') || !which('script')) return resolve({ ok: false, error: 'passwd isn’t available' });
+    const c = spawn('script', ['-qfec', 'passwd', '/dev/null'], { env: { ...process.env, LC_ALL: 'C' } });
+    let out = '', step = 0;
+    const answer = () => {
+      const t = out.toLowerCase();
+      const want = (t.match(/(current|old|new|retype|again)[^:]*password[^:]*:\s*$|password:\s*$/) || [])[0];
+      if (!want) return;
+      out = '';
+      c.stdin.write((step === 0 ? current : next) + '\n');
+      step++;
+    };
+    c.stdout.on('data', (d) => { out += d.toString(); answer(); });
+    const timer = setTimeout(() => c.kill(), 20000);
+    c.on('exit', (code) => {
+      clearTimeout(timer);
+      const msg = out.replace(/\r/g, '').split('\n').map((l) => l.trim()).filter((l) => l && !/password:?$/i.test(l)).pop() || '';
+      resolve(code === 0 ? { ok: true } : { ok: false, error: step <= 1 || /authentication token manipulation|authentication failure/i.test(msg) ? 'The current password is incorrect.' : msg.replace(/^passwd:\s*/, '') || 'The password wasn’t changed.' });
+    });
+  });
+}
+
+/* ------------------------------------------------------------------ Activity Monitor */
+// Live numbers from /proc, sampled between calls: per-process CPU % (of one core, like top), memory,
+// threads, disk I/O, plus system CPU/memory/swap and disk and network throughput.
+const PAGE = 4096, HZ = 100;
+let prevSample = null;
+const uidNames = (() => { let m = null; return () => { if (m) return m; m = new Map(); for (const l of (readFile('/etc/passwd') || '').split('\n')) { const f = l.split(':'); if (f.length > 2) m.set(Number(f[2]), f[0]); } return m; }; })();
+function cpuTimes() {
+  const f = (readFile('/proc/stat') || '').split('\n')[0].trim().split(/\s+/).slice(1).map(Number);
+  const [user = 0, nice = 0, system = 0, idle = 0, iowait = 0, irq = 0, softirq = 0, steal = 0] = f;
+  return { user: user + nice, system: system + irq + softirq, idle: idle + iowait, total: user + nice + system + idle + iowait + irq + softirq + steal };
+}
+function diskBytes() {
+  let r = 0, w = 0;
+  for (const l of (readFile('/proc/diskstats') || '').split('\n')) {
+    const f = l.trim().split(/\s+/);
+    if (f.length < 10 || !/^(sd[a-z]+|nvme\d+n\d+|vd[a-z]+|xvd[a-z]+|mmcblk\d+|hd[a-z]+)$/.test(f[2])) continue;
+    r += Number(f[5]) * 512; w += Number(f[9]) * 512;
+  }
+  return { r, w };
+}
+function netBytes() {
+  const ifs = {};
+  for (const l of (readFile('/proc/net/dev') || '').split('\n').slice(2)) {
+    const [name, rest] = l.split(':'); if (!rest) continue;
+    const n = name.trim(); if (n === 'lo') continue;
+    const f = rest.trim().split(/\s+/).map(Number);
+    ifs[n] = { rx: f[0], tx: f[8], rxp: f[1], txp: f[9] };
+  }
+  return ifs;
+}
+function procStats() {
+  const now = Date.now(), cpu = cpuTimes(), cores = os.cpus().length || 1;
+  const prev = prevSample, dt = prev ? Math.max(0.2, (now - prev.t) / 1000) : 1;
+  const dTotal = prev ? Math.max(1, cpu.total - prev.cpu.total) : 1;
+  const names = uidNames(), me = os.userInfo().uid;
+  const procs = [], seen = new Map();
+  let threads = 0;
+  for (const d of fs.readdirSync('/proc')) {
+    if (!/^\d+$/.test(d)) continue;
+    const pid = Number(d);
+    try {
+      const raw = fs.readFileSync(`/proc/${d}/stat`, 'utf8');
+      const close = raw.lastIndexOf(')');
+      let name = raw.slice(raw.indexOf('(') + 1, close);
+      const f = raw.slice(close + 2).split(' ');
+      const ticks = Number(f[11]) + Number(f[12]), nth = Number(f[17]), rss = Number(f[21]) * PAGE;
+      if (name.length >= 15) { try { const c = fs.readFileSync(`/proc/${d}/cmdline`, 'utf8').split('\0')[0]; if (c) name = c.split('/').pop(); } catch { /* gone */ } }
+      let uid = -1; try { uid = fs.statSync(`/proc/${d}`).uid; } catch { /* gone */ }
+      let io = null;
+      if (uid === me) { try { const t = fs.readFileSync(`/proc/${d}/io`, 'utf8'); io = { r: Number(t.match(/read_bytes:\s*(\d+)/)?.[1] || 0), w: Number(t.match(/write_bytes:\s*(\d+)/)?.[1] || 0) }; } catch { /* not allowed */ } }
+      const p0 = prev?.procs.get(pid);
+      const cpuPct = p0 ? Math.max(0, ((ticks - p0.ticks) / dTotal) * 100 * cores) : 0;
+      seen.set(pid, { ticks, io });
+      threads += nth;
+      procs.push({ pid, name, user: names.get(uid) || String(uid), mine: uid === me, cpu: Math.round(cpuPct * 10) / 10, cpuTime: ticks / HZ, threads: nth, rss, ppid: Number(f[1]), state: f[0],
+        ioR: io && p0?.io ? Math.max(0, (io.r - p0.io.r) / dt) : 0, ioW: io && p0?.io ? Math.max(0, (io.w - p0.io.w) / dt) : 0, ioTotalR: io?.r || 0, ioTotalW: io?.w || 0 });
+    } catch { /* process exited while we looked */ }
+  }
+  const mi = readFile('/proc/meminfo') || '', kb = (k) => Number(mi.match(new RegExp('^' + k + ':\\s+(\\d+)', 'm'))?.[1] || 0) * 1024;
+  const disk = diskBytes(), net = netBytes();
+  const rate = (a, b) => (prev ? Math.max(0, (a - b) / dt) : 0);
+  const netTot = Object.values(net).reduce((t, x) => ({ rx: t.rx + x.rx, tx: t.tx + x.tx }), { rx: 0, tx: 0 });
+  const prevNetTot = prev ? Object.values(prev.net).reduce((t, x) => ({ rx: t.rx + x.rx, tx: t.tx + x.tx }), { rx: 0, tx: 0 }) : netTot;
+  const out = {
+    cores, procs, threads, uptime: os.uptime(), load: os.loadavg(), battery: battery(),
+    cpu: prev ? 100 * (1 - (cpu.idle - prev.cpu.idle) / dTotal) : cpuUsage(),
+    cpuUser: prev ? (100 * (cpu.user - prev.cpu.user)) / dTotal : 0, cpuSystem: prev ? (100 * (cpu.system - prev.cpu.system)) / dTotal : 0,
+    memTotal: kb('MemTotal') || os.totalmem(), memFree: kb('MemAvailable') || os.freemem(), memCached: kb('Cached') + kb('Buffers'), swapTotal: kb('SwapTotal'), swapUsed: kb('SwapTotal') - kb('SwapFree'),
+    diskR: rate(disk.r, prev?.disk.r ?? disk.r), diskW: rate(disk.w, prev?.disk.w ?? disk.w), diskTotalR: disk.r, diskTotalW: disk.w,
+    netRx: rate(netTot.rx, prevNetTot.rx), netTx: rate(netTot.tx, prevNetTot.tx), netTotalRx: netTot.rx, netTotalTx: netTot.tx,
+    ifaces: Object.entries(net).map(([name, x]) => ({ name, rx: x.rx, tx: x.tx, rxRate: rate(x.rx, prev?.net[name]?.rx ?? x.rx), txRate: rate(x.tx, prev?.net[name]?.tx ?? x.tx) })),
+  };
+  prevSample = { t: now, cpu, procs: seen, disk, net };
+  return out;
+}
+
+/* ------------------------------------------------------------------ graphics card */
+// The GPU that actually draws the desktop: on laptops with two GPUs (or a dock / capture card) the first
+// lspci entry is often the wrong one. Tries, in order: the OpenGL renderer (glxinfo), the device Chromium
+// says is active, the card the firmware booted on (boot_vga), then the first display controller.
+let gpuCache = null;
+function prettyPci(line) {
+  // "Advanced Micro Devices, Inc. [AMD/ATI] Navi 33 [Radeon RX 7600/7600 XT/…]" → "AMD Radeon RX 7600"
+  const desc = line.replace(/^.*?(VGA compatible controller|3D controller|Display controller)[^:]*:\s*/i, '').replace(/\s*\[[0-9a-f]{4}:[0-9a-f]{4}\].*$/i, '').replace(/\s*\(rev .*\)$/, '');
+  const vendor = /nvidia/i.test(desc) ? 'NVIDIA' : /advanced micro|amd|ati\b/i.test(desc) ? 'AMD' : /intel/i.test(desc) ? 'Intel' : desc.split(/[\s,]/)[0];
+  const br = [...desc.matchAll(/\[([^\]]+)\]/g)].map((m) => m[1]).filter((b) => !/^(AMD\/ATI|AMD|NVIDIA|Intel)$/i.test(b)).pop();
+  const model = br ? br.split('/')[0].trim() : desc.replace(/^.*?(Corporation|Inc\.|Ltd\.?)\s*/i, '').replace(/\[[^\]]*\]\s*/g, '').trim();
+  return (model.toLowerCase().startsWith(vendor.toLowerCase()) ? model : `${vendor} ${model}`).trim();
+}
+async function gpuName() {
+  if (gpuCache) return gpuCache;
+  const glx = (await run('sh', ['-c', 'glxinfo -B 2>/dev/null | grep -i "renderer string"'])).out;
+  const m = glx.match(/renderer string:\s*(.+)/i);
+  if (m && !/llvmpipe|softpipe|swrast/i.test(m[1])) return (gpuCache = m[1].replace(/\s*\(.*$/, '').trim());
+  const pci = (await run('sh', ['-c', "lspci -nn 2>/dev/null | grep -iE 'vga|3d controller|display controller'"])).out.split('\n').filter(Boolean);
+  if (!pci.length) return '';
+  const byId = (v, d) => pci.find((l) => l.toLowerCase().includes(`[${v}:${d}]`));
+  const hex = (n) => Number(n).toString(16).padStart(4, '0');
+  try {
+    const info = await app.getGPUInfo('basic');
+    const act = (info.gpuDevice || []).find((g) => g.active) || null;
+    const l = act && byId(hex(act.vendorId), hex(act.deviceId));
+    if (l) return (gpuCache = prettyPci(l));
+  } catch { /* GPU info unavailable */ }
+  for (const c of (() => { try { return fs.readdirSync('/sys/class/drm').filter((x) => /^card\d+$/.test(x)); } catch { return []; } })()) {
+    try {
+      if (fs.readFileSync(`/sys/class/drm/${c}/device/boot_vga`, 'utf8').trim() !== '1') continue;
+      const v = fs.readFileSync(`/sys/class/drm/${c}/device/vendor`, 'utf8').trim().replace(/^0x/, '');
+      const d = fs.readFileSync(`/sys/class/drm/${c}/device/device`, 'utf8').trim().replace(/^0x/, '');
+      const l = byId(v, d);
+      if (l) return (gpuCache = prettyPci(l));
+    } catch { /* no boot_vga */ }
+  }
+  return (gpuCache = prettyPci(pci[0]));
+}
+
 /* ------------------------------------------------------------------ registration */
 
 function register({ getWindow, mode }) {
@@ -350,7 +540,7 @@ function register({ getWindow, mode }) {
     host: os.hostname(), home: HOME, os: osName(), kernel: os.release(), arch: os.arch(),
     cpu: os.cpus()[0]?.model || 'CPU', cores: os.cpus().length, memory: os.totalmem(), uptime: os.uptime(),
     electron: process.versions.electron, chrome: process.versions.chrome,
-    gpu: (await run('sh', ['-c', "lspci 2>/dev/null | grep -iE 'vga|3d' | head -1 | cut -d: -f3"])).out.trim(),
+    gpu: await gpuName(),
   }));
   h('sys:status', async () => {
     const [vol, br, wf, bt] = await Promise.all([volume(), brightness(), wifi(), bluetooth()]);
@@ -372,16 +562,11 @@ function register({ getWindow, mode }) {
     run('nmcli', password ? ['device', 'wifi', 'connect', ssid, 'password', password] : ['device', 'wifi', 'connect', ssid], { timeout: 30000 }));
   h('sys:airplane', (on) => which('nmcli') && run('nmcli', ['radio', 'all', on ? 'off' : 'on']));
   h('sys:bluetoothPower', (on) => which('bluetoothctl') && run('bluetoothctl', ['power', on ? 'on' : 'off']));
-  h('sys:stats', async () => {
-    const ps = await run('ps', ['-eo', 'pid,user,pcpu,pmem,rss,comm', '--sort=-pcpu', '--no-headers']);
-    const procs = ps.out.split('\n').filter(Boolean).slice(0, 120).map((l) => {
-      const [pid, user, cpu, mem, rss, ...cmd] = l.trim().split(/\s+/);
-      return { pid: Number(pid), user, cpu: Number(cpu), mem: Number(mem), rss: Number(rss) * 1024, name: cmd.join(' ') };
-    });
-    const [l1, l5, l15] = os.loadavg();
-    return { cpu: cpuUsage(), memTotal: os.totalmem(), memFree: Number((readFile('/proc/meminfo') || '').match(/MemAvailable:\s+(\d+)/)?.[1] || 0) * 1024 || os.freemem(),
-      load: [l1, l5, l15], uptime: os.uptime(), procs, battery: battery() };
-  });
+  h('sys:stats', async () => procStats());
+  h('sys:account', accountInfo);
+  h('sys:setRealName', setRealName);
+  h('sys:setAvatar', setAvatar);
+  h('sys:changePassword', changePassword);
   h('sys:kill', (pid, force) => { process.kill(pid, force ? 'SIGKILL' : 'SIGTERM'); return true; });
   h('sys:checkPassword', (password) => new Promise((resolve) => {
     if (!which('unix_chkpwd')) return resolve({ ok: true, unsupported: true });
@@ -401,21 +586,34 @@ function register({ getWindow, mode }) {
     const map = { shutdown: 'poweroff', restart: 'reboot', suspend: 'suspend' };
     if (map[action]) return run('systemctl', [map[action]]);
   });
-  h('sys:screenshot', async () => {
-    let img;
+  // the whole screen as an image (session: every monitor's pixels; testing window: just this window)
+  const captureScreen = async () => {
     if (mode === 'session') {
       const { desktopCapturer, screen } = require('electron');
-      const { width, height } = screen.getPrimaryDisplay().bounds;
-      const [src] = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width, height } });
-      img = src.thumbnail;
-    } else img = await getWindow().webContents.capturePage();
-    const dir = path.join(HOME, 'Pictures', 'Screenshots');
-    await fsp.mkdir(dir, { recursive: true });
-    const d = new Date(), pad = (n) => String(n).padStart(2, '0');
-    const file = path.join(dir, `Screenshot ${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} at ${pad(d.getHours())}.${pad(d.getMinutes())}.${pad(d.getSeconds())}.png`);
-    await fsp.writeFile(file, img.toPNG());
-    return file;
-  });
+      const d = screen.getPrimaryDisplay(), sf = d.scaleFactor || 1;
+      const [src] = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: Math.round(d.bounds.width * sf), height: Math.round(d.bounds.height * sf) } });
+      return src.thumbnail;
+    }
+    return getWindow().webContents.capturePage();
+  };
+  // save and/or copy a screenshot, as set in Settings › General › Screenshots
+  const saveShot = async (img, opts = {}) => {
+    const { nativeImage } = require('electron');
+    if (typeof img === 'string') img = nativeImage.createFromDataURL(img);
+    let file = null;
+    if (opts.copy !== false) clipboard.writeImage(img);
+    if (opts.save !== false) {
+      const dir = (opts.dir || '').replace(/^~(?=\/|$)/, HOME) || path.join(HOME, 'Pictures', 'Screenshots');
+      await fsp.mkdir(dir, { recursive: true });
+      const d = new Date(), pad = (n) => String(n).padStart(2, '0');
+      file = path.join(dir, `Screenshot ${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} at ${pad(d.getHours())}.${pad(d.getMinutes())}.${pad(d.getSeconds())}.png`);
+      await fsp.writeFile(file, img.toPNG());
+    }
+    return { file, copied: opts.copy !== false };
+  };
+  h('sys:screenshot', async (opts) => (await saveShot(await captureScreen(), opts)).file);
+  h('sys:capture', async () => (await captureScreen()).toDataURL());
+  h('sys:saveScreenshot', (dataUrl, opts) => saveShot(dataUrl, opts));
 
   h('fs:home', () => HOME);
   h('fs:list', listDir);
@@ -452,6 +650,7 @@ function register({ getWindow, mode }) {
 
   h('apps:list', listApps);
   watchApps();
+  watchUpdates();
   h('apps:iconFor', (name) => resolveIcon(name) || resolveIcon(String(name).toLowerCase()));
   h('apps:info', (file) => { const e = parseDesktopFile(file); return { id: 'desktop:' + path.basename(file), file, name: e.Name || path.basename(file), exec: e.Exec, terminal: e.Terminal === 'true', icon: resolveIcon(e.Icon), categories: [], keywords: [] }; });
   h('apps:launch', (exec, terminal) => launchExec(exec, terminal));
@@ -533,4 +732,4 @@ function register({ getWindow, mode }) {
   app.on('before-quit', () => { for (const c of ptys.values()) c.kill(); });
 }
 
-module.exports = { register };
+module.exports = { register, resolveIcon };

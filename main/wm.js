@@ -27,7 +27,7 @@ const TB = 36;          // title bar height of native frames
 const EDGE = 4;         // resize border around native frames
 
 // keysyms used for global shortcuts
-const KS = { space: 0x20, Tab: 0xff09, F3: 0xffc0, F4: 0xffc1, F11: 0xffc8, q: 0x71, w: 0x77, m: 0x6d, f: 0x66, 3: 0x33, Print: 0xff61,
+const KS = { space: 0x20, s: 0x73, Tab: 0xff09, F3: 0xffc0, F4: 0xffc1, F11: 0xffc8, q: 0x71, w: 0x77, m: 0x6d, f: 0x66, 3: 0x33, Print: 0xff61,
   Left: 0xff51, Up: 0xff52, Right: 0xff53, Down: 0xff54, F4alt: 0xffc1, Alt_L: 0xffe9, Alt_R: 0xffea, Super_L: 0xffeb, Super_R: 0xffec,
   VolUp: 0x1008ff13, VolDown: 0x1008ff11, Mute: 0x1008ff12, BrightUp: 0x1008ff02, BrightDown: 0x1008ff03, Play: 0x1008ff14, Next: 0x1008ff17, Prev: 0x1008ff16 };
 
@@ -35,7 +35,7 @@ const SHORTCUTS = [
   ['spotlight', ALT, 'space'], ['spotlight', SUPER, 'space'],
   ['switcher-next', ALT, 'Tab'], ['switcher-prev', ALT | SHIFT, 'Tab'], ['switcher-next', SUPER, 'Tab'],
   ['mission', 0, 'F3'], ['mission', CTRL, 'Up'], ['launcher', 0, 'F4'], ['desktop', 0, 'F11'],
-  ['lock', CTRL | ALT, 'q'], ['lock', CTRL | SUPER, 'q'], ['screenshot', 0, 'Print'], ['screenshot', ALT | SHIFT, '3'],
+  ['lock', CTRL | ALT, 'q'], ['lock', CTRL | SUPER, 'q'], ['screenshot', 0, 'Print'], ['screenshot', ALT | SHIFT, '3'], ['screenshot-tool', SUPER | SHIFT, 's'],
   ['close', ALT, 'w'], ['close', ALT, 'F4alt'], ['minimize', ALT, 'm'], ['quit', ALT, 'q'], ['fullscreen', CTRL | ALT, 'f'],
   ['tile-left', ALT | SHIFT, 'Left'], ['tile-right', ALT | SHIFT, 'Right'], ['tile-fill', ALT | SHIFT, 'Up'], ['tile-center', ALT | SHIFT, 'Down'],
   ['space-left', CTRL | ALT, 'Left'], ['space-right', CTRL | ALT, 'Right'],

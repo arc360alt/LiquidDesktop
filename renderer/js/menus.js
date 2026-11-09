@@ -119,7 +119,7 @@ export function alertDialog(opts, container) {
     }
     const box = h('div.alert.glass.panel.sheen',
       opts.icon ? h('div.a-icon', { html: opts.icon }) : null,
-      h('h3', opts.title || ''), opts.message ? h('p', opts.message) : null, input,
+      h('h3', opts.title || ''), opts.message ? h('p', opts.message) : null, input, opts.content || null,
       h('div.a-btns' + (btns.length > 2 ? '.stack' : ''), btns));
     layer.append(box);
     layer.addEventListener('mousedown', (e) => e.stopPropagation());
@@ -129,6 +129,7 @@ export function alertDialog(opts, container) {
       if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); const p = (opts.buttons || []).find((b) => b.primary); done(p ? (p.value ?? p.label) : 'ok'); }
     };
     document.addEventListener('keydown', key, true);
+    if (!input && opts.content) setTimeout(() => opts.content.querySelector('input')?.focus(), 30);
     if (input) setTimeout(() => {
       input.focus();
       if (opts.input.select === 'stem') { const i = input.value.lastIndexOf('.'); input.setSelectionRange(0, i > 0 ? i : input.value.length); }

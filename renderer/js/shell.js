@@ -52,14 +52,8 @@ export const shell = {
     }
   },
 
-  async screenshot() {
-    const flash = $('#flash');
-    flash.classList.remove('go'); void flash.offsetWidth; flash.classList.add('go');
-    try {
-      const file = await api.sys.screenshot();
-      if (file) routedNotify({ app: 'preview', title: 'Screenshot saved', body: file.replace(shell.home, '~'), action: () => wm.open('preview', { path: file }) });
-    } catch (e) { routedNotify({ app: 'preview', title: 'Screenshot failed', body: e.message }); }
-  },
+  async screenshot() { (await import('./screenshot.js')).screenshotNow(); },
+  async screenshotTool() { (await import('./screenshot.js')).screenshotTool(); },
 
   async power(action) {
     const session = shell.info?.mode === 'session';
@@ -84,6 +78,20 @@ export const shell = {
     api.sys.power(action);
   },
 
+  // after a successful system/LiquidDesktop update: the new version starts at the next login
+  async updatedPrompt() {
+    if (shell._updPrompt) return;
+    shell._updPrompt = true;
+    const r = await alertDialog({ icon: logo('currentColor').replace('<svg', '<svg style="color:var(--accent)"'), title: 'Updates installed',
+      message: 'Log out and back in to start using the updated software. Apps you have open will be closed.',
+      buttons: [{ label: 'Later', value: 'later' }, { label: 'Log Out', value: 'ok', primary: true }] });
+    shell._updPrompt = false;
+    if (r.button !== 'ok') return;
+    document.body.style.transition = 'opacity .6s'; document.body.style.opacity = '0';
+    await sleep(600);
+    api.sys.power('logout');
+  },
+
   /* ---------------------------------------------- lock screen */
   locked: false,
   lock(atBoot = false) {
@@ -106,7 +114,7 @@ export const shell = {
     const pw = h('div.pw.glass', input, h('button', { html: sym.chevronRight, onclick: () => submit() }));
     const hint = h('div.hint', atBoot ? `Welcome to LiquidDesktop` : '');
     const lockEl = h('div#lock', { style: { backgroundImage: `url("${wallpaperFor()}")` } }, dateEl, timeEl,
-      h('div.l-user', h('div.avatar', initials), h('div.uname', info.fullName || info.user), pw, hint),
+      h('div.l-user', h('div.avatar', store.get('userAvatar') ? h('img', { src: store.get('userAvatar'), style: { width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' } }) : initials), h('div.uname', info.fullName || info.user), pw, hint),
       h('div.l-actions',
         h('button.glass', { html: sym.moon, title: 'Sleep', onclick: () => shell.info?.mode === 'session' && api.sys.power('suspend') }),
         h('button.glass', { html: sym.restart, title: 'Restart', onclick: () => api.sys.power('restart') }),
@@ -146,6 +154,7 @@ function onKey(e) {
   if (k === 'F4') { take(); launchpad(); return; }
   if (k === 'F11') { take(); wm.toggleDesktop(); return; }
   if (k === 'PrintScreen' || (cmd && e.shiftKey && (k === '#' || k === '3' || e.code === 'Digit3'))) { take(); shell.screenshot(); return; }
+  if (e.metaKey && e.shiftKey && e.code === 'KeyS') { take(); shell.screenshotTool(); return; }
   if (e.ctrlKey && cmd && (k === 'q' || k === 'Q')) { take(); shell.lock(); return; }
   if (e.ctrlKey && e.shiftKey && (k === 'F' || k === 'f') && !e.altKey) { take(); api.shell.toggleFullscreen(); return; }
   if (e.ctrlKey && cmd && !e.shiftKey && (k === 'f' || k === 'F') && wm.focused) { take(); wm.focused.toggleFullscreen(); return; }
@@ -211,6 +220,7 @@ export function initSessionShell({ windowMenu }) {
       case 'mission': return wm.mission();
       case 'lock': return shell.lock();
       case 'screenshot': return shell.screenshot();
+      case 'screenshot-tool': return shell.screenshotTool();
       case 'switcher-next': return switcherStep(1);
       case 'switcher-prev': return switcherStep(-1);
       case 'switcher-commit': return switcherCommit();

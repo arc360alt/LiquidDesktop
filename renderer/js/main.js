@@ -48,6 +48,7 @@ async function bootFull() {
   $('#boot-logo').innerHTML = logoBadge();
   progress(10);
   await common();
+  api.sys.onUpdated?.(() => shell.updatedPrompt());
   progress(35);
   wm.init();
   initMenubar();
@@ -73,6 +74,7 @@ async function bootShell() {
   $('#boot-logo').innerHTML = logoBadge();
   progress(15);
   await common();
+  api.sys.onUpdated?.(() => shell.updatedPrompt());
   const { installSessionWM, windowMenu } = await import('./sessionwm.js');
   const { initShellShape } = await import('./shellshape.js');
   await catalog.load();

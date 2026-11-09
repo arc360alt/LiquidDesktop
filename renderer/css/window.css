@@ -244,7 +244,18 @@ body.resizing-win, body.resizing-win * { cursor: inherit; }
 .mon-foot .stat { font-size: 12px; display: grid; grid-template-columns: auto auto; gap: 3px 12px; align-content: center; }
 .mon-foot .stat dt { color: var(--text-2); }
 .mon-foot .stat dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
-.mon-foot canvas { flex: 1; min-width: 0; height: 100%; border-radius: 8px; background: rgba(0, 0, 0, 0.85); }
+.mon-foot { height: 132px; }
+.mon-graph { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.mon-graph canvas { flex: 1; min-height: 0; width: 100%; border-radius: 8px; background: rgba(0, 0, 0, 0.85); }
+.mon-legend { display: flex; gap: 14px; font-size: 11px; color: var(--text-2); }
+.mon-legend span { display: flex; align-items: center; gap: 5px; }
+.mon-legend i { width: 8px; height: 8px; border-radius: 2px; }
+.mon-legend b { font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }
+.mon th { cursor: var(--cur-default, default); user-select: none; }
+.mon-arrow { font-size: 10px; }
+.mon-tabs { display: flex; padding: 2px; border-radius: 9px; background: rgba(120, 120, 128, 0.14); margin-left: 6px; }
+.mon-tabs button { border: 0; background: none; font: inherit; font-size: 12.5px; font-weight: 500; padding: 4px 12px; border-radius: 7px; color: var(--text); }
+.mon-tabs button.on { background: var(--win-content); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18); }
 
 /* ---------------------------------------------------------------- Calendar */
 .cal { flex: 1; display: flex; flex-direction: column; padding-top: 52px; background: var(--win-content); min-width: 0; }
@@ -463,6 +474,11 @@ body.mission-open #spaces { z-index: 7550; }
 .as-app-t p { margin: 3px 0; font-size: 15px; color: var(--text-2); }
 .as-app-t small { color: var(--text-2); }
 .as-app-actions { display: flex; align-items: center; gap: 10px; margin-top: 14px; }
+.as-web { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 15px; border: 0; border-radius: 999px; cursor: var(--cur-pointer, pointer);
+  background: rgba(120, 120, 128, 0.16); color: var(--accent); font: inherit; font-size: 13.5px; font-weight: 600; }
+.as-web svg { width: 15px; height: 15px; }
+.as-web:hover { background: rgba(120, 120, 128, 0.26); }
+.as-web:active { transform: scale(0.95); }
 .as-facts { display: flex; overflow-x: auto; padding: 14px 0; border-bottom: 0.5px solid var(--separator); }
 .as-facts > div { flex: 1; min-width: 110px; display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center; padding: 0 10px; }
 .as-facts > div + div { border-left: 0.5px solid var(--separator); }
@@ -487,3 +503,16 @@ body.mission-open #spaces { z-index: 7550; }
 .cursor-card.sel span { color: var(--text); font-weight: 600; }
 .cursor-pv { height: 44px; display: flex; align-items: center; gap: 10px; padding: 6px 12px; border-radius: 8px; background: linear-gradient(135deg, #8ec5ff, #5b8fd9); }
 .cursor-pv img { width: 26px; height: 26px; image-rendering: auto; }
+
+/* Settings › Users & Accounts */
+.acct-head { display: flex; align-items: center; gap: 18px; margin: 6px 4px 18px; }
+.acct-head h2 { margin: 0 0 2px; font-size: 20px; }
+.acct-pic-wrap { position: relative; }
+.acct-pic, .acct-mini { border-radius: 50%; overflow: hidden; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 600; background: linear-gradient(#a1a1aa, #71717a); flex: none; }
+.acct-pic { width: 76px; height: 76px; font-size: 28px; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2); }
+.acct-mini { width: 34px; height: 34px; }
+.acct-pic img, .acct-mini img { width: 100%; height: 100%; object-fit: cover; }
+.acct-edit { position: absolute; left: 50%; bottom: -4px; transform: translateX(-50%); border: 0; border-radius: 999px; padding: 2px 9px; font: inherit; font-size: 10.5px; font-weight: 600;
+  background: rgba(0, 0, 0, 0.55); color: #fff; opacity: 0; transition: opacity 0.15s; }
+.acct-pic-wrap:hover .acct-edit { opacity: 1; }
+.alert input.field { width: 100%; box-sizing: border-box; height: 30px; }

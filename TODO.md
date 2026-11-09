@@ -2,7 +2,9 @@
 - Make the icons in the file explorer look better and not have that extra icon on them thats off-center or fix the icon so its actualy centered and the right size
 - Make it so you can click on the account in the settings at the top and you can configure settings about your user
 - Improve the activity monitor and make it work and function better
-- Make a proper login theme for SSDM or somthing so it looks better when logging in
-- Make the deuflat size of the terminal window larger to fix this issue where some text is cut off in the terminal (especily when updating the OS the last password prompt is hidden unless you resize the window to be 1 row larger)
+- Make a proper login theme for SSDM or somthing so it looks better when logging in (Make this theme automaticly install and apply itself when this update is installed)
+- Make the deuflat size of the terminal window larger to fix this issue where some text is cut off in the terminal (especily when updating the OS the last password prompt is hidden unless you resize the window to be 1 row larger), so claude just make the window 1 row larger on each side and that will fix the issue.
 - Make the defualt icons look better, especilly the settings icon
 - When the system is updated make it automaticly prompt the user to log out of their session
+- Make the website button in the appstore have a backround instead of having none wich looks kinda wierd/broken
+- Add a proper toolbar so apps that stay open in the backround (like discord or OBS when its recording) have a toolbar thing in the topbar that you can click on and right click on to see the options it has like on KDE plasma and other DE's

@@ -9,3 +9,4 @@
 - Make the website button in the appstore have a backround instead of having none wich looks kinda wierd/broken
 - Add a proper toolbar so apps that stay open in the backround (like discord or OBS when its recording) have a toolbar thing in the topbar that you can click on and right click on to see the options it has like on KDE plasma and other DE's
 - Adding another widget sometimes just adds the widget on top of another one, and I am unable to move widgets too on the desktop
+- Add a screenshot tool that activates with Super+Shift+S like on windows and lets you take a screenshot of an area, window, or fullscreen and saves the screenshot to a folder and copies it to your clipboard (both configurable in settings)

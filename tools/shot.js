@@ -15,6 +15,8 @@ app.whenReady().then(async () => {
     offscreen: true, preload: path.join(__dirname, '../main/preload.js'), contextIsolation: true, webviewTag: true, sandbox: false } });
   win.webContents.setFrameRate(30);
   system.register({ getWindow: () => win, mode: 'windowed' });
+  require('../main/browser').register();
+  require('../main/appstore').register();
   win.webContents.on('console-message', (e) => { const m = e.message ?? e; if (/error|LiquidDesktop/i.test(String(m))) console.log('[console]', m); });
   await win.loadFile(path.join(__dirname, '../renderer/index.html'), { query: { mode: 'windowed' } });
   for (const s of steps) {

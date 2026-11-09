@@ -42,6 +42,7 @@ function renderNC() {
   nc.append(h('div.nc-head', { style: { marginTop: '6px' } }, h('span', 'Widgets')));
   const grid = h('div.nc-widgets', buildWidget('upcoming'), buildWidget('calendar'), buildWidget('weather'), buildWidget('system'), buildWidget('clock'));
   nc.append(grid);
+  nc.append(h('button.nc-edit.glass.panel', { onclick: () => { toggleNotificationCenter(false); import('./desktop.js').then((m) => m.editWidgets()); } }, 'Edit Widgets'));
 }
 
 export function toggleNotificationCenter(force) {

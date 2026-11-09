@@ -16,6 +16,7 @@ const FRAME = path.join(__dirname, '..', 'renderer', 'frame.html');
 const xidOf = (bw) => { const b = bw.getNativeWindowHandle(); return b.length >= 8 ? Number(b.readBigUInt64LE(0)) : b.readUInt32LE(0); };
 
 async function startSession({ preload }) {
+  await require('./displays').restoreSaved().catch(() => {});
   const wm = new WindowManager();
   await wm.start();
   const { width: sw, height: sh } = screen.getPrimaryDisplay().bounds;
@@ -66,7 +67,7 @@ async function startSession({ preload }) {
     bw.on('page-title-updated', (e, t) => { const mw = wm.windows.get(id); if (mw) { mw.title = t; wm.changed(mw); } });
     bw.on('closed', () => appWindows.delete(id));
     bw.webContents.setWindowOpenHandler(({ url }) => { openApp('browser', { url }); return { action: 'deny' }; });
-    bw.webContents.on('did-attach-webview', (_e, wc) => wc.setWindowOpenHandler(({ url }) => { bw.webContents.send('appwin:openUrl', url); return { action: 'deny' }; }));
+    bw.webContents.on('did-attach-webview', (_e, wc) => wc.setWindowOpenHandler(({ url }) => { bw.webContents.send('browser:newTab', url); return { action: 'deny' }; }));
     return id;
   }
 
@@ -179,6 +180,18 @@ async function startSession({ preload }) {
     ({ activate: () => wm.activate(id), close: () => wm.close(id), minimize: () => wm.minimize(id), toggleMaximize: () => wm.toggleMaximize(id),
       beginMove: () => wm.beginMove(id), beginResize: () => wm.beginResize(id, arg) })[op]?.();
   });
+
+  // resolution / monitor changes: the desktop and shell layers follow the primary display
+  const relayout = () => {
+    const b = screen.getPrimaryDisplay().bounds;
+    for (const bw of [desktop, shell]) if (!bw.isDestroyed()) bw.setBounds(b);
+    wm.sw = b.width; wm.sh = b.height;
+    wm.setCardinal(wm.root, '_NET_DESKTOP_GEOMETRY', [b.width, b.height]);
+    wm.updateWorkarea();
+    for (const w of wm.windows.values()) if (w.maximized || w.tile || w.fullscreen) { if (w.fullscreen) Object.assign(w, { x: 0, y: 0, w: b.width, h: b.height }); else wm.tile(w.id, w.tile || 'fill'); wm.applyGeometry(w); }
+    wm.changed();
+  };
+  for (const ev of ['display-metrics-changed', 'display-added', 'display-removed']) screen.on(ev, () => setTimeout(relayout, 300));
 
   app.on('before-quit', () => { for (const w of wm.windows.values()) if (w.kind !== 'app') wm.close(w.id); });
   return { wm, shell, desktop, getWindow: () => shell, openApp };

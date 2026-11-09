@@ -43,7 +43,9 @@
   --panel-a: 0.56;
 
   --win-bg: #f6f6f8;
-  --win-content: #ffffff;
+  --win-rgb: 246, 246, 248;
+  --win-alpha: 0.74;
+  --win-content: rgba(255, 255, 255, 0.9);
   --win-shadow: 0 34px 90px rgba(0, 0, 0, 0.32), 0 6px 18px rgba(0, 0, 0, 0.12), 0 0 0 0.5px rgba(0, 0, 0, 0.2);
   --win-shadow-inactive: 0 18px 50px rgba(0, 0, 0, 0.18), 0 0 0 0.5px rgba(0, 0, 0, 0.14);
   --sidebar-rgb: 255, 255, 255;
@@ -77,7 +79,9 @@
   --glass-shadow: 0 10px 40px rgba(0, 0, 0, 0.4), 0 1px 3px rgba(0, 0, 0, 0.3);
   --panel-a: 0.62;
   --win-bg: #232326;
-  --win-content: #1c1c1f;
+  --win-rgb: 35, 35, 38;
+  --win-alpha: 0.72;
+  --win-content: rgba(28, 28, 31, 0.9);
   --win-shadow: 0 34px 90px rgba(0, 0, 0, 0.6), 0 6px 18px rgba(0, 0, 0, 0.3), 0 0 0 0.5px rgba(255, 255, 255, 0.16);
   --win-shadow-inactive: 0 18px 50px rgba(0, 0, 0, 0.4), 0 0 0 0.5px rgba(255, 255, 255, 0.1);
   --sidebar-rgb: 60, 60, 66;
@@ -96,7 +100,7 @@
 /* "Tinted" glass (Settings › Appearance) — frostier, more legible */
 :root[data-glass='tinted'] { --glass-a: 0.55; --panel-a: 0.75; --glass-blur: 34px; }
 :root[data-theme='dark'][data-glass='tinted'] { --glass-a: 0.55; --panel-a: 0.75; }
-:root[data-reduce-transparency='true'] { --glass-a: 0.92; --panel-a: 0.95; --sidebar-a: 0.95; }
+:root[data-reduce-transparency='true'] { --glass-a: 0.92; --panel-a: 0.95; --sidebar-a: 0.95; --win-alpha: 1; }
 
 * { box-sizing: border-box; }
 html, body {
@@ -224,7 +228,11 @@ img { -webkit-user-drag: none; }
   -webkit-appearance: none; width: 34px; height: 22px; margin-top: -8px; border-radius: 999px; background: #fff;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25), 0 0 0 0.5px rgba(0, 0, 0, 0.08); transition: transform 0.2s var(--spring);
 }
-.slider:active::-webkit-slider-thumb { transform: scale(1.12, 1.18); background: rgba(255, 255, 255, 0.75); }
+.slider:active::-webkit-slider-thumb, .slider.dragging::-webkit-slider-thumb {
+  transform: scale(1.35, 1.55); background: rgba(255, 255, 255, 0.22);
+  -webkit-backdrop-filter: blur(1.5px) saturate(2) brightness(1.15); backdrop-filter: blur(1.5px) saturate(2) brightness(1.15);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.9), inset 0 1px 2px rgba(255, 255, 255, 0.8), 0 4px 14px rgba(0, 0, 0, 0.22);
+}
 
 /* segmented control */
 .segmented { display: inline-flex; padding: 2px; border-radius: 999px; background: var(--field); gap: 2px; box-shadow: inset 0 0 0 0.5px var(--separator); }
@@ -266,3 +274,9 @@ select.field { padding-right: 26px; -webkit-appearance: none; appearance: none;
 /* in a session the compositor blurs behind the shell's glass; a CSS blur there would only cost frames */
 :root[data-layer='shell'] .glass, :root[data-layer='shell'] .glass.lens, :root[data-layer='shell'] .tb-group,
 :root[data-layer='shell'] #launchpad, :root[data-layer='shell'] #mission, :root[data-layer='shell'] .snap-preview { -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }
+
+/* the lock screen draws its own wallpaper, so its glass can blur in-page even in a session */
+#lock .pw, #lock .l-actions button { background: rgba(255, 255, 255, 0.2); }
+:root #lock .glass, :root[data-layer='shell'] #lock .glass {
+  -webkit-backdrop-filter: blur(22px) saturate(1.7) !important; backdrop-filter: blur(22px) saturate(1.7) !important;
+}

@@ -171,6 +171,11 @@ const APP_ICONS = {
       <path d="M20 62l16-15 12 11 9-7 23 17v2a5 5 0 0 1-5 5H25a5 5 0 0 1-5-5z" fill="${c.ac}"/>
       <circle cx="63" cy="38" r="5" fill="#ffd60a"/>
       <circle cx="62" cy="64" r="11" fill="none" stroke="${c.ink}" stroke-width="4"/><path d="M70 72l9 9" stroke="${c.ink}" stroke-width="5" stroke-linecap="round"/>` },
+  appstore: { bg: ['#45b6ff', '#0d5bea'], tone: '#2f8cff', c: { fg: '#fff', ac: '#bfe6ff', ac2: '#0d5bea', paper: '#fff', ink: '#0d5bea' },
+    // an original design: a shopping bag with a download arrow
+    draw: (c) => `<path d="M30 38h40l-3.5 38a5 5 0 0 1-5 4.5h-23a5 5 0 0 1-5-4.5z" fill="${c.fg}"/>
+      <path d="M40 38v-5a10 10 0 0 1 20 0v5" stroke="${c.fg}" stroke-width="5" fill="none" stroke-linecap="round"/>
+      <path d="M50 48v18M42 59l8 8 8-8" stroke="${c.ac2}" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>` },
   launchpad: { bg: ['#55555c', '#2a2a30'], tone: '#bf5af2', c: { fg: '#fff', ac: '#ff375f', ac2: '#0a84ff', paper: '#2c2c2e', ink: '#fff' },
     draw: () => { const cols = ['#ff375f', '#ff9f0a', '#ffd60a', '#30d158', '#64d2ff', '#0a84ff', '#5e5ce6', '#bf5af2', '#ff2d55'];
       return cols.map((col, i) => `<rect x="${22 + (i % 3) * 20}" y="${22 + Math.floor(i / 3) * 20}" width="15" height="15" rx="4.5" fill="${col}"/>`).join(''); } },
@@ -183,7 +188,8 @@ const APP_ICONS = {
 };
 
 export function trashIcon(full) {
-  return `<svg viewBox="0 0 100 100"><defs><linearGradient id="tg" x1="0" x2="1"><stop offset="0" stop-color="#fff" stop-opacity=".55"/><stop offset=".5" stop-color="#fff" stop-opacity=".25"/><stop offset="1" stop-color="#fff" stop-opacity=".5"/></linearGradient></defs>
+  // drawn in 22–78 × 20–94; shifted up so it sits centred like the other (8–92) icons
+  return `<svg viewBox="0 -7 100 100"><defs><linearGradient id="tg" x1="0" x2="1"><stop offset="0" stop-color="#fff" stop-opacity=".55"/><stop offset=".5" stop-color="#fff" stop-opacity=".25"/><stop offset="1" stop-color="#fff" stop-opacity=".5"/></linearGradient></defs>
     ${full ? '<path d="M28 24c6-8 18-10 22-4 6-6 18-4 21 4 3 6-6 10-22 10S23 31 28 24z" fill="#fff" opacity=".9"/><path d="M36 20l10 6M58 17l-6 9" stroke="#bbb" stroke-width="2"/>' : ''}
     <path d="M22 26h56l-6 62a6 6 0 0 1-6 5.5H34a6 6 0 0 1-6-5.5z" fill="url(#tg)" stroke="rgba(255,255,255,.75)" stroke-width="1.5"/>
     <ellipse cx="50" cy="26" rx="28" ry="5" fill="rgba(255,255,255,.35)" stroke="rgba(255,255,255,.9)" stroke-width="1.5"/>

@@ -60,6 +60,16 @@ Then log out and choose **LiquidDesktop** on your login screen. (No login screen
 Optional extras for Control Center: `networkmanager`, `wireplumber`, `brightnessctl`, `bluez-utils`, `playerctl`.
 On other distros, `session/install-session.sh` adds the session entry for a checkout in place.
 
+## Updating
+
+Any of these get the latest version from GitHub:
+
+- **Settings › General › Software Update** → *Update Now* (it runs in a Terminal window so you can enter your password). LiquidDesktop also checks once a day and sends a notification when an update is available.
+- In a terminal: `liquid-desktop-update`
+- Or the one-liner: `curl -fsSL https://raw.githubusercontent.com/arc360alt/LiquidDesktop/main/install.sh | sh -s -- --update`
+
+Then log out and back in (or restart LiquidDesktop) to use the new version.
+
 ## What's in it
 
 **Shell**
@@ -86,7 +96,13 @@ surface gets its own SVG displacement lens, generated for its exact size, so the
 like a lens. Settings › Appearance has Clear/Tinted glass, refraction on/off, Reduce Transparency, accent colors,
 and the four macOS 26 icon styles (Default, Dark, Clear, Tinted).
 
-**Apps:** Files, Terminal (a real PTY with xterm.js), Browser (tabs, Chromium webview), Notes, Text Editor, Calculator,
+**Apps:**
+- **Browser:** tabs, favorites (add, edit, reorder), history, a password manager that saves and autofills logins (encrypted with your system keyring), downloads, find in page and settings (search engine, home page, zoom, clearing data). It also runs **Chrome extensions**: open one in the Chrome Web Store and press *Add to Browser*, or load an unpacked folder. Extension popups open from the toolbar. Extensions that need Chrome-only APIs may only partly work.
+- **App Store:** a macOS-style store for **Flathub** and **Arch Linux** apps. It has Discover (a featured carousel and shelves), Play, Create, Work, Develop, Categories, search across both sources, app pages with screenshots and release notes, one-click Get / Open / Uninstall with progress, and an Updates page (Flatpak updates, plus a full `pacman -Syu` for Arch). Flatpaks install per-user, so they don't need a password. Arch packages ask for your password once and keep it in memory for 10 minutes. It's never saved to disk.
+- **Terminal:** a real PTY with xterm.js. Settings › Terminal sets the shell, login shell, font, size, cursor style and scrollback.
+- **Files, Notes, Text Editor, Calculator, Preview, Calendar, Weather (Open-Meteo), Activity Monitor (live graph, quit and force quit), System Settings, About.**
+- **Displays:** resolution, refresh rate, rotation, position and on/off for each monitor, with a 15-second "keep these settings?" safety revert. It uses xrandr in the session (remembered across logins) or hyprctl under Hyprland.
+- **Cursors:** an original macOS-style cursor set, `LiquidCursor` (regenerate with `node tools/gen-cursors.js`). It's used by the web UI and by every app in the session, and is installed system-wide by the package.
 Preview, Calendar, Weather (Open-Meteo), Activity Monitor (live graph, quit and force quit), System Settings, and About.
 
 ## Keyboard

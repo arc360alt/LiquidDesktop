@@ -17,7 +17,7 @@ export const defaults = {
   dockMagnify: true,
   dockMagSize: 84,
   dockAutohide: false,
-  dockPinned: ['files', 'browser', 'terminal', 'notes', 'calendar', 'weather', 'monitor', 'calculator', 'settings'],
+  dockPinned: ['files', 'browser', 'terminal', 'notes', 'calendar', 'weather', 'appstore', 'monitor', 'calculator', 'settings'],
   showRecents: true,
   showDesktopIcons: true,
   widgets: [
@@ -36,6 +36,13 @@ export const defaults = {
   spaces: 2,
   terminalTheme: 'glass',   // glass | dark | light
   terminalFontSize: 13,
+  terminalShell: '',        // '' = your login shell ($SHELL)
+  terminalLogin: false,     // start it as a login shell
+  terminalFont: '',         // '' = best available monospace font
+  terminalCursor: 'bar',    // bar | block | underline
+  terminalBlink: true,
+  terminalScrollback: 5000,
+  terminalCwd: '',          // '' = home folder
   weatherCity: null,        // { name, lat, lon }
   browserHome: 'start',
   windowTiling: true,
@@ -72,6 +79,11 @@ class Store extends Emitter {
 }
 export const store = new Store();
 store.listen();
+if (!store.get('appstorePinned')) {
+  const p = store.get('dockPinned');
+  if (!p.includes('appstore')) { const i = p.indexOf('settings'); p.splice(i < 0 ? p.length : i, 0, 'appstore'); store.set('dockPinned', [...p]); }
+  store.set('appstorePinned', true);
+}
 
 // Simple per-app JSON storage (notes, calendar events, …)
 export const appData = {

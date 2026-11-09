@@ -42,6 +42,9 @@ optdepends=(
   'xorg-server-xephyr: run the session nested in a window on X11'
   'mesa-utils: GPU detection for the nested session'
   'xfce4-terminal: a native terminal for Linux apps that need one'
+  'flatpak: install apps from Flathub in the App Store'
+  'pacman-contrib: check for Arch Linux updates in the App Store (checkupdates)'
+  'archlinux-appstream-data: names, icons and descriptions for Arch Linux apps in the App Store'
 )
 makedepends=('git' 'npm' 'nodejs')
 provides=("$_name")
@@ -67,10 +70,10 @@ package() {
   cd "$_name"
   local dest="$pkgdir/usr/lib/$_name"
   install -dm755 "$dest"
-  cp -r main renderer session tools package.json "$dest/"
+  cp -a main renderer session tools package.json "$dest/"
   cp -r node_modules "$dest/"
   rm -rf "$dest/node_modules/.package-lock.json" "$dest/tools/shot.js"
-  chmod 755 "$dest/session/liquid-desktop" "$dest/session/liquid-desktop-session" \
+  chmod 755 "$dest/session/liquid-desktop" "$dest/session/liquid-desktop-session" "$dest/session/liquid-desktop-update" \
             "$dest/session/liquid-desktop-session-inner" "$dest/tools/nested.sh" "$dest/tools/xephyr-test.sh"
 
   # commands
@@ -78,11 +81,16 @@ package() {
   ln -s "/usr/lib/$_name/session/liquid-desktop" "$pkgdir/usr/bin/liquid-desktop"
   ln -s "/usr/lib/$_name/session/liquid-desktop-session" "$pkgdir/usr/bin/liquid-desktop-session"
   ln -s "/usr/lib/$_name/tools/nested.sh" "$pkgdir/usr/bin/liquid-desktop-nested"
+  ln -s "/usr/lib/$_name/session/liquid-desktop-update" "$pkgdir/usr/bin/liquid-desktop-update"
 
   # login screen entry (X11 session)
   install -Dm644 packaging/liquid-desktop.xsession.desktop "$pkgdir/usr/share/xsessions/liquid-desktop.desktop"
   # app menu entry for the testing window
   install -Dm644 packaging/liquid-desktop.desktop "$pkgdir/usr/share/applications/liquid-desktop.desktop"
+
+  # cursor theme, also selectable in other desktops
+  install -dm755 "$pkgdir/usr/share/icons"
+  cp -a session/cursors/LiquidCursor "$pkgdir/usr/share/icons/"
 
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
   install -Dm644 README.md "$pkgdir/usr/share/doc/$_name/README.md"

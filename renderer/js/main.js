@@ -29,6 +29,7 @@ import './apps/weather.js';
 import './apps/monitor.js';
 import './apps/settings.js';
 import './apps/about.js';
+import './apps/appstore.js';
 
 const progress = (p) => { const b = $('#boot .bar i'); if (b) b.style.width = p + '%'; };
 const hideBoot = () => { const b = $('#boot'); if (!b) return; b.classList.add('out'); setTimeout(() => b.remove(), 700); };
@@ -62,6 +63,7 @@ async function bootFull() {
   await sleep(450);
   hideBoot();
   welcome();
+  autoUpdateCheck();
 }
 
 /* ---------------------------------------------------------------- session layers */
@@ -86,6 +88,7 @@ async function bootShell() {
   hideBoot();
   if (store.get('requirePassword') && params.get('login') !== '0') shell.lock(true);
   welcome();
+  autoUpdateCheck();
 }
 
 async function bootDesktop() {
@@ -148,6 +151,18 @@ async function bootApp() {
   initShortcuts();
 }
 
+// once a day, quietly check GitHub for a newer LiquidDesktop
+function autoUpdateCheck() {
+  if (!isNative || Date.now() - (store.get('lastUpdateCheck') || 0) < 864e5) return;
+  setTimeout(async () => {
+    try {
+      const u = await api.sys.updateCheck();
+      store.set('lastUpdateCheck', Date.now());
+      if (!u.upToDate && u.current) notify({ app: 'settings', title: 'LiquidDesktop update available', body: `${u.behind || 'New'} change${u.behind === 1 ? '' : 's'} on GitHub. Click to update.`, timeout: 15000, action: () => wm.open('settings', { pane: 'general' }) });
+    } catch { /* offline */ }
+  }, 20000);
+}
+
 function welcome() {
   if (store.get('welcomed')) return;
   store.set('welcomed', true);
@@ -157,6 +172,8 @@ function welcome() {
 window.addEventListener('error', (e) => console.error('[LiquidDesktop]', e.error || e.message));
 window.addEventListener('unhandledrejection', (e) => console.error('[LiquidDesktop]', e.reason));
 addEventListener('dragover', (e) => e.preventDefault());
+// slider knobs turn into glass while held (see .slider.dragging in base.css)
+addEventListener('pointerdown', (e) => { if (e.target.matches?.('input.slider')) { const s = e.target; s.classList.add('dragging'); addEventListener('pointerup', () => s.classList.remove('dragging'), { once: true }); } }, true);
 addEventListener('drop', (e) => e.preventDefault());
 
 ({ full: bootFull, shell: bootShell, desktop: bootDesktop, app: bootApp })[isSession ? layer : 'full']?.();

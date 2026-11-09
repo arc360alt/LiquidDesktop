@@ -5,7 +5,8 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
-const DIRS = [path.join(os.homedir(), '.icons'), path.join(os.homedir(), '.local/share/icons'), '/usr/share/icons', '/usr/local/share/icons'];
+const DIRS = [...(process.env.XCURSOR_PATH || '').split(':').filter(Boolean).map((d) => d.replace(/^~/, os.homedir())),
+  path.join(__dirname, '..', 'session', 'cursors'), path.join(os.homedir(), '.icons'), path.join(os.homedir(), '.local/share/icons'), '/usr/share/icons', '/usr/local/share/icons'];
 
 function inherits(theme) {
   for (const d of DIRS) {
@@ -19,7 +20,7 @@ function inherits(theme) {
 }
 
 function findCursorFile(name) {
-  const start = [process.env.XCURSOR_THEME, 'default'].filter(Boolean);
+  const start = [process.env.XCURSOR_THEME, 'LiquidCursor', 'default'].filter(Boolean);
   const seen = new Set();
   const queue = [...start];
   while (queue.length) {

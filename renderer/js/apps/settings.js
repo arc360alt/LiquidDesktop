@@ -7,7 +7,7 @@ import { api, isNative } from '../sys.js';
 import { WALLPAPERS, wallpaperUrl } from '../wallpapers.js';
 import { theme, isNightTime } from '../theme.js';
 import { status } from '../status.js';
-import { prompt, confirmDialog } from '../menus.js';
+import { prompt, confirmDialog, alertDialog } from '../menus.js';
 import { bus } from '../util.js';
 
 const ACCENTS = [['Multicolor', '#0a84ff'], ['Blue', '#007aff'], ['Purple', '#af52de'], ['Pink', '#ff2d55'], ['Red', '#ff3b30'], ['Orange', '#ff9500'], ['Yellow', '#ffcc00'], ['Green', '#34c759'], ['Graphite', '#8e8e93']];
@@ -17,7 +17,7 @@ const PANES = [
   ['dock', 'Desktop & Dock', '#1c1c1e', sym.dock], ['menubar', 'Menu Bar', '#0a84ff', sym.controls], ['display', 'Displays', '#0a84ff', sym.display],
   ['sound', 'Sound', '#ff2d55', sym.speaker], ['network', 'Wi-Fi', '#0a84ff', sym.wifi], ['bluetooth', 'Bluetooth', '#0a84ff', sym.bluetooth],
   ['notifications', 'Notifications', '#ff3b30', sym.bell], ['focus', 'Focus', '#5e5ce6', sym.moon], ['lock', 'Lock Screen', '#1c1c1e', sym.lock],
-  ['keyboard', 'Keyboard', '#8e8e93', sym.keyboard], ['apps', 'Apps', '#5e5ce6', sym.grid],
+  ['keyboard', 'Keyboard', '#8e8e93', sym.keyboard], ['terminal', 'Terminal', '#1c1c1e', sym.terminal], ['apps', 'Apps', '#5e5ce6', sym.grid],
 ];
 
 const toggle = (key, after) => h('label.toggle', h('input', { type: 'checkbox', checked: !!store.get(key), onchange: (e) => { store.set(key, e.target.checked); after?.(e.target.checked); } }), h('span'));
@@ -53,9 +53,11 @@ const render = {
   async general() {
     const i = await api.sys.info().catch(() => ({}));
     return [
-      h('div.about-box', h('div.logo', { html: logoBadge() }), h('h2', 'LiquidDesktop'), h('div.ver', 'Version 0.1')),
+      h('div.about-box', h('div.logo', { html: logoBadge() }), h('h2', 'LiquidDesktop'), h('div.ver', `Version ${i.version || '—'}`)),
       h('div.group', ...[['Name', i.host], ['User', `${i.fullName} (${i.user})`], ['Chip', i.cpu], ['Memory', i.memory ? fmtSize(i.memory) : '—'], ['Graphics', i.gpu || '—'], ['System', i.os], ['Kernel', i.kernel]]
         .map(([k, v]) => row(k, h('span.muted.ellipsis', { style: { maxWidth: '60%' } }, v || '—')))),
+      h('div.group-title', 'Software Update'),
+      softwareUpdateGroup(),
       h('div.group-title', 'Session'),
       h('div.group',
         row('Mode', h('span.muted', i.mode === 'session' ? 'Desktop session' : i.mode === 'windowed' ? 'Windowed (testing)' : 'Browser preview')),
@@ -133,17 +135,85 @@ const render = {
       h('div.group', row('Use a 24-hour clock', toggle('clock24')), row('Show seconds', toggle('showSeconds')), row('Show battery percentage', toggle('showBatteryPct'))),
     ];
   },
-  display() {
+  async display() {
     const b = status.s.brightness;
-    return [
-      hero('display', 'Displays', 'Brightness, Night Shift and scaling.'),
+    let info = { backend: 'none', displays: [] };
+    try { info = await api.sys.displays(); } catch { /* backend unavailable */ }
+    const ds = info.displays;
+    const enabled = ds.filter((d) => d.enabled);
+    if (!displayState.sel || !ds.some((d) => d.name === displayState.sel)) displayState.sel = (ds.find((d) => d.primary) || ds[0])?.name;
+    const sel = ds.find((d) => d.name === displayState.sel);
+    // working copy of the selected display's settings
+    const draft = sel ? { ...sel, ...(displayState.draft?.name === sel.name ? displayState.draft : {}) } : null;
+    displayState.draft = draft;
+
+    // arrangement preview: monitors drawn to scale; click one to edit it
+    const arr = h('div.disp-arrange');
+    if (enabled.length) {
+      const ext = (d) => (d.rotation % 180 ? [d.height, d.width] : [d.width, d.height]).map((v) => v / (d.scale || 1));
+      const minX = Math.min(...enabled.map((d) => d.x)), minY = Math.min(...enabled.map((d) => d.y));
+      const maxX = Math.max(...enabled.map((d) => d.x + ext(d)[0])), maxY = Math.max(...enabled.map((d) => d.y + ext(d)[1]));
+      const k = Math.min(430 / (maxX - minX || 1), 140 / (maxY - minY || 1));
+      const box = h('div.disp-canvas', { style: { width: (maxX - minX) * k + 'px', height: (maxY - minY) * k + 'px' } });
+      for (const d of enabled) {
+        const [w, hh] = ext(d);
+        box.append(h('div.disp-mon' + (d.name === displayState.sel ? '.sel' : ''), { style: { left: (d.x - minX) * k + 'px', top: (d.y - minY) * k + 'px', width: w * k - 4 + 'px', height: hh * k - 4 + 'px' },
+          onclick: () => { displayState.sel = d.name; displayState.draft = null; rerender(); } }, h('b', d.name), h('small', `${d.width}×${d.height}`), d.primary ? h('i', 'Main') : null));
+      }
+      arr.append(box);
+    }
+    const disabledList = ds.filter((d) => !d.enabled);
+    const tabs = h('div.segmented', ...ds.map((d) => h('button' + (d.name === displayState.sel ? '.on' : ''), { onclick: () => { displayState.sel = d.name; displayState.draft = null; rerender(); } }, d.name + (d.enabled ? '' : ' (off)'))));
+
+    const out = [hero('display', 'Displays', info.backend === 'hyprland' ? 'Arrange and configure your monitors. (Running inside Hyprland: changes last until Hyprland restarts.)'
+      : info.backend === 'x11' ? 'Arrange and configure your monitors. Changes are remembered for your next login.' : 'Display configuration needs xrandr (X11) or Hyprland.')];
+    if (ds.length) {
+      out.push(h('div.group', { style: { padding: '16px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' } }, arr, ds.length > 1 ? tabs : null,
+        disabledList.length ? h('small.muted', `${disabledList.length} connected display${disabledList.length > 1 ? 's are' : ' is'} turned off — select it above to turn it on.`) : null));
+    }
+    if (draft) {
+      const mode = draft.modes.find((m) => m.width === draft.width && m.height === draft.height) || draft.modes[0];
+      const set = (patch) => { Object.assign(draft, patch); displayState.draft = draft; rerender(); };
+      const resSel = h('select.field.square', { style: { height: '28px', minWidth: '190px' }, onchange: (e) => { const m = draft.modes[+e.target.value]; set({ width: m.width, height: m.height, refresh: m.rates[0] }); } },
+        ...draft.modes.map((m, i) => h('option', { value: i, selected: m === mode }, `${m.width} × ${m.height}${i === 0 ? '  (largest)' : ''}`)));
+      const rateSel = h('select.field.square', { style: { height: '28px', minWidth: '190px' }, onchange: (e) => set({ refresh: +e.target.value }) },
+        ...(mode?.rates || []).map((r) => h('option', { value: r, selected: Math.abs(r - draft.refresh) < 0.05 }, `${r.toFixed(r % 1 ? 2 : 0)} Hz`)));
+      const scaleSel = h('select.field.square', { style: { height: '28px', minWidth: '190px' }, onchange: (e) => set({ scale: +e.target.value }) },
+        ...[1, 1.25, 1.5, 1.75, 2, 2.5, 3].map((v) => h('option', { value: v, selected: Math.abs(v - draft.scale) < 0.01 }, `${Math.round(v * 100)}%${v === 1 ? '  (default)' : ''}`)));
+      const rotSel = h('select.field.square', { style: { height: '28px', minWidth: '190px' }, onchange: (e) => set({ rotation: +e.target.value }) },
+        ...[[0, 'Standard'], [90, '90°'], [180, '180°'], [270, '270°']].map(([v, l]) => h('option', { value: v, selected: draft.rotation === v }, l)));
+      const others = enabled.filter((d) => d.name !== draft.name);
+      const posSel = others.length ? h('select.field.square', { style: { height: '28px', minWidth: '190px' }, onchange: (e) => {
+        const [where, ref] = e.target.value.split(':');
+        const o = others.find((d) => d.name === ref);
+        if (!o) return;
+        const ow = o.rotation % 180 ? o.height : o.width, oh = o.rotation % 180 ? o.width : o.height;
+        const dw = draft.rotation % 180 ? draft.height : draft.width, dh = draft.rotation % 180 ? draft.width : draft.height;
+        set({ x: where === 'right' ? o.x + ow / (o.scale || 1) : where === 'left' ? o.x - dw / (draft.scale || 1) : o.x, y: where === 'below' ? o.y + oh / (o.scale || 1) : where === 'above' ? o.y - dh / (draft.scale || 1) : o.y });
+      } }, h('option', { value: '' }, `Current (${Math.round(draft.x)}, ${Math.round(draft.y)})`),
+        ...others.flatMap((o) => [['right', 'Right of'], ['left', 'Left of'], ['above', 'Above'], ['below', 'Below']].map(([w, l]) => h('option', { value: `${w}:${o.name}` }, `${l} ${o.name}`)))) : null;
+      const changed = ['width', 'height', 'refresh', 'scale', 'rotation', 'x', 'y', 'enabled', 'primary'].some((k) => draft[k] !== sel[k]);
+      out.push(h('div.group-title', `${draft.label !== draft.name ? draft.label + ' — ' : ''}${draft.name}`),
+        h('div.group',
+          ds.length > 1 ? row('Use this display', h('label.toggle', h('input', { type: 'checkbox', checked: draft.enabled, onchange: (e) => set({ enabled: e.target.checked, ...(e.target.checked && !draft.width ? { width: draft.modes[0].width, height: draft.modes[0].height, refresh: draft.modes[0].rates[0] } : {}) }) }), h('span'))) : null,
+          draft.enabled ? row('Resolution', resSel) : null,
+          draft.enabled ? row('Refresh rate', rateSel) : null,
+          draft.enabled && info.backend === 'hyprland' ? row('Scale', scaleSel, 'Makes text and controls bigger on high-resolution screens') : null,
+          draft.enabled ? row('Rotation', rotSel) : null,
+          draft.enabled && posSel ? row('Position', posSel) : null,
+          draft.enabled && info.backend === 'x11' && ds.length > 1 ? row('Main display', h('label.toggle', h('input', { type: 'checkbox', checked: draft.primary, onchange: (e) => set({ primary: e.target.checked }) }), h('span')), 'Holds the menu bar and Dock') : null,
+          h('div.row', h('div.label', changed ? h('small', 'You have unapplied changes.') : null),
+            h('button.btn', { disabled: !changed, onclick: () => { displayState.draft = null; rerender(); } }, 'Revert'),
+            h('button.btn.primary', { disabled: !changed, onclick: () => applyDisplay(sel, draft) }, 'Apply'))));
+    }
+    out.push(h('div.group-title', 'Brightness & color'),
       h('div.group',
-        row('Brightness', b != null ? liveSlider(b, (v) => api.sys.setBrightness(v)) : liveSlider(store.get('softBrightness') ?? 100, (v) => { store.set('softBrightness', v); document.getElementById('desktop').style.filter = v >= 100 ? '' : `brightness(${0.35 + 0.65 * v / 100})`; }),
+        row('Brightness', b != null ? liveSlider(b, (v) => api.sys.setBrightness(v)) : liveSlider(store.get('softBrightness') ?? 100, (v) => { store.set('softBrightness', v); document.getElementById('desktop') && (document.getElementById('desktop').style.filter = v >= 100 ? '' : `brightness(${0.35 + 0.65 * v / 100})`); }),
           b != null ? 'Controls the backlight with brightnessctl.' : 'No backlight control found — dims the desktop instead.'),
         row('Night Shift', toggle('nightShift'), 'Warmer colors after dark, easier on the eyes.')),
       h('div.group-title', 'Window'),
-      h('div.group', row('Toggle full screen (testing window)', h('button.btn', { onclick: () => api.shell.toggleFullscreen() }, 'Toggle')), row('Resolution', h('span.muted', `${innerWidth} × ${innerHeight} @ ${devicePixelRatio}x`))),
-    ];
+      h('div.group', row('Toggle full screen (testing window)', h('button.btn', { onclick: () => api.shell.toggleFullscreen() }, 'Toggle'))));
+    return out;
   },
   sound() {
     const v = status.s.volume;
@@ -207,11 +277,35 @@ const render = {
     return [hero('keyboard', 'Keyboard Shortcuts', 'Alt stands in for ⌘ (Super works too, when your compositor lets it through).'),
       h('div.group', ...sc.map(([a, k]) => row(a, h('span.kbd', k))))];
   },
+  async terminal() {
+    const [sh, fonts] = await Promise.all([api.sys.shells().catch(() => ({ shells: [], default: '/bin/bash' })), api.sys.monoFonts().catch(() => [])]);
+    const shellOpts = [['', `Login shell (${sh.default})`], ...sh.shells.map((s) => [s, s])];
+    const fontOpts = [['', 'Automatic'], ...fonts.map((f) => [f, f])];
+    const cwd = h('input.field.square', { value: store.get('terminalCwd') || '', placeholder: 'Home folder', style: { width: '220px' } });
+    cwd.addEventListener('change', () => store.set('terminalCwd', cwd.value.trim()));
+    return [
+      hero('terminal', 'Terminal', 'How new Terminal windows start and look. Font and cursor changes apply to open windows right away.'),
+      h('div.group-title', 'Shell'),
+      h('div.group',
+        row('Shell', select('terminalShell', shellOpts), 'Takes effect in new windows'),
+        row('Run as a login shell', toggle('terminalLogin'), 'Reads ~/.bash_profile, ~/.zprofile… like a terminal login'),
+        row('Start in', cwd)),
+      h('div.group-title', 'Appearance'),
+      h('div.group',
+        row('Profile', seg('terminalTheme', [['glass', 'Glass'], ['dark', 'Dark'], ['light', 'Light']])),
+        row('Font', select('terminalFont', fontOpts)),
+        row('Font size', range('terminalFontSize', 8, 28, 1, (v) => v + ' pt')),
+        row('Cursor', seg('terminalCursor', [['bar', 'Bar'], ['block', 'Block'], ['underline', 'Underline']])),
+        row('Blinking cursor', toggle('terminalBlink')),
+        row('Scrollback', select('terminalScrollback', [[1000, '1,000 lines'], [5000, '5,000 lines'], [10000, '10,000 lines'], [50000, '50,000 lines']]))),
+      h('div.group', row('Open a Terminal', h('button.btn', { onclick: () => wm.open('terminal') }, 'New Window'))),
+    ];
+  },
   apps() {
     return [
       hero('apps', 'Apps', 'Defaults for built-in apps.'),
       h('div.group-title', 'Terminal'),
-      h('div.group', row('Profile', seg('terminalTheme', [['glass', 'Glass'], ['dark', 'Dark'], ['light', 'Light']])), row('Font size', range('terminalFontSize', 9, 24))),
+      h('div.group', h('div.row.link', { onclick: () => wm.open('settings', { pane: 'terminal' }) }, h('div.label', 'Terminal settings…', h('small', 'Shell, font, cursor, colors')), h('span.muted', '›'))),
       h('div.group-title', 'Weather'),
       h('div.group', row('Location', h('span.muted', store.get('weatherCity')?.name || 'Automatic'), 'Search for a city in the Weather app to change it.')),
     ];
@@ -219,6 +313,54 @@ const render = {
 };
 
 let rerender = () => {};
+
+// Settings › General › Software Update
+export function runUpdate(command) {
+  // runs in a Terminal window, so you can see progress and type your password if it's needed
+  wm.open('terminal', { command: `LIQUID_UPDATE_PAUSE=1 ${command}` });
+}
+function softwareUpdateGroup() {
+  const status = h('div.label', 'LiquidDesktop', h('small', 'Checking for updates…'));
+  const action = h('div', { style: { display: 'flex', gap: '8px' } });
+  const changes = h('div');
+  const group = h('div.group', h('div.row', h('div', { html: logoBadge(), style: { width: '36px', height: '36px', flex: 'none' } }), status, action), changes);
+  const check = async () => {
+    action.innerHTML = '';
+    status.lastChild.textContent = 'Checking for updates…';
+    try {
+      const u = await api.sys.updateCheck();
+      store.set('lastUpdateCheck', Date.now());
+      const ver = `Version ${u.version}${u.current ? ` (${u.current})` : ''}`;
+      if (u.upToDate) status.lastChild.textContent = `${ver} — up to date`;
+      else if (!u.current) status.lastChild.textContent = `${ver} — latest is ${u.latest}: ${u.message}`;
+      else status.lastChild.textContent = `${ver} — ${u.behind ?? 'new'} update${u.behind === 1 ? '' : 's'} available`;
+      if (!u.upToDate) action.append(h('button.btn.primary', { onclick: () => runUpdate(u.command) }, u.current ? 'Update Now' : 'Install Latest'));
+      action.append(h('button.btn', { onclick: check }, 'Check Again'));
+      changes.innerHTML = '';
+      if (!u.upToDate && u.changes?.length) changes.append(...u.changes.map((c) => h('div.row', h('div.label', h('small', '• ' + c)))));
+    } catch (err) {
+      status.lastChild.textContent = `Couldn’t check for updates (${err.message})`;
+      action.append(h('button.btn', { onclick: check }, 'Try Again'));
+    }
+  };
+  setTimeout(check, 50);
+  return group;
+}
+const displayState = { sel: null, draft: null };
+
+// apply, then ask to keep the change — it reverts by itself after 15 seconds (in case the screen went blank)
+async function applyDisplay(before, after) {
+  const r = await api.sys.setDisplay(after.name, after).catch((e) => ({ ok: false, err: e.message }));
+  if (r && r.ok === false) { alertDialog({ title: 'Couldn’t change the display', message: r.err || 'The display rejected that setting.' }); return; }
+  let n = 15, settled = false;
+  const p = alertDialog({ title: 'Keep these display settings?', message: `Reverting in ${n} seconds.`, buttons: [{ label: 'Revert', value: 'revert' }, { label: 'Keep Changes', value: 'keep', primary: true }] });
+  const t = setInterval(() => { n--; const m = document.querySelector('.global-alert-layer .alert p'); if (m) m.textContent = `Reverting in ${n} seconds.`; if (n <= 0 && !settled) document.querySelector('.global-alert-layer .btn:not(.primary)')?.click(); }, 1000);
+  const res = await p;
+  settled = true; clearInterval(t);
+  if (res.button !== 'keep') await api.sys.setDisplay(before.name, before).catch(() => {});
+  displayState.draft = null;
+  setTimeout(rerender, 400);
+}
 
 registerApp({
   id: 'settings', name: 'System Settings', size: [780, 620], minSize: [620, 420], singleton: true, overlayContent: true, hideTitle: true,

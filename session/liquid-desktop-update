@@ -1,0 +1,16 @@
+#!/bin/sh
+# Updates LiquidDesktop to the latest version from GitHub (re-runs the installer in update mode).
+#   liquid-desktop-update            update
+#   liquid-desktop-update --dry-run  show what it would do
+URL="https://raw.githubusercontent.com/arc360alt/LiquidDesktop/${LIQUID_BRANCH:-main}/install.sh"
+if command -v curl >/dev/null; then
+  curl -fsSL "$URL" | sh -s -- --update "$@"
+elif command -v wget >/dev/null; then
+  wget -qO- "$URL" | sh -s -- --update "$@"
+else
+  echo "liquid-desktop-update: needs curl or wget" >&2; exit 1
+fi
+status=$?
+# when started from Settings it runs in a Terminal window: keep it open so the result can be read
+if [ -n "$LIQUID_UPDATE_PAUSE" ]; then printf '\nPress Enter to close this window.'; read -r _; fi
+exit $status

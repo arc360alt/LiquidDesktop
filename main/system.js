@@ -302,12 +302,16 @@ function osName() {
 const ptys = new Map();
 let ptySeq = 1;
 
-function createPty(sender, { cols = 80, rows = 24, cwd } = {}) {
+function createPty(sender, { cols = 80, rows = 24, cwd, shell, login, env: extraEnv } = {}) {
   const id = ptySeq++;
   const script = path.join(__dirname, 'ptybridge.py');
-  const child = spawn('python3', ['-I', script, String(cols), String(rows), cwd || HOME], {
-    stdio: ['pipe', 'pipe', 'pipe', 'pipe'], env: launchEnv(),
+  const env = { ...launchEnv(), ...(extraEnv || {}) };
+  if (shell && fs.existsSync(shell)) env.SHELL = shell;
+  if (login) env.LIQUID_LOGIN_SHELL = '1';
+  const child = spawn('python3', ['-I', script, String(cols), String(rows), cwd && fs.existsSync(cwd) ? cwd : HOME], {
+    stdio: ['pipe', 'pipe', 'pipe', 'pipe'], env,
   });
+  child.on('error', (err) => { if (!sender.isDestroyed()) sender.send('pty:data', id, `\r\nCould not start the terminal: ${err.message}\r\n(python3 is required)\r\n`); });
   ptys.set(id, child);
   const send = (ch, ...a) => { if (!sender.isDestroyed()) sender.send(ch, ...a); };
   child.stdout.on('data', (d) => send('pty:data', id, d.toString('utf8')));
@@ -324,7 +328,7 @@ function register({ getWindow, mode }) {
   });
 
   h('sys:info', async () => ({
-    mode, user: os.userInfo().username, fullName: (await run('getent', ['passwd', os.userInfo().username])).out.split(':')[4]?.split(',')[0] || os.userInfo().username,
+    mode, version: require('../package.json').version, user: os.userInfo().username, fullName: (await run('getent', ['passwd', os.userInfo().username])).out.split(':')[4]?.split(',')[0] || os.userInfo().username,
     host: os.hostname(), home: HOME, os: osName(), kernel: os.release(), arch: os.arch(),
     cpu: os.cpus()[0]?.model || 'CPU', cores: os.cpus().length, memory: os.totalmem(), uptime: os.uptime(),
     electron: process.versions.electron, chrome: process.versions.chrome,
@@ -437,7 +441,48 @@ function register({ getWindow, mode }) {
   h('clip:write', (t) => { clipboard.writeText(String(t)); return true; });
   h('clip:read', () => clipboard.readText());
 
-  h('pty:create', (opts) => createPty(getWindow().webContents, opts));
+  // the terminal's output goes back to the window that asked for it (in a session every app is its own window)
+  ipcMain.handle('pty:create', (e, opts) => { try { return createPty(e.sender, opts); } catch (err) { return { __error: String(err.message || err) }; } });
+  const displays = require('./displays');
+  h('sys:displays', () => displays.list());
+  h('sys:setDisplay', (name, cfg) => displays.apply(name, cfg));
+  // Software Update: which commit is installed, and is GitHub ahead of it?
+  h('sys:updateCheck', async () => {
+    const { net } = require('electron');
+    const appDir = path.join(__dirname, '..');
+    const REPO = 'arc360alt/LiquidDesktop';
+    let current = null, how = 'unknown';
+    if (appDir.startsWith('/usr/lib/liquid-desktop')) {
+      how = 'package';
+      const m = (await run('pacman', ['-Q', 'liquid-desktop-git'])).out.match(/\.([0-9a-f]{7,40})-\d+\s*$/m);
+      current = m ? m[1] : null;
+    } else if (fs.existsSync(path.join(appDir, '.liquid-version'))) {
+      how = 'opt'; current = (readFile(path.join(appDir, '.liquid-version')) || '').trim() || null;
+    } else if (fs.existsSync(path.join(appDir, '.git'))) {
+      how = 'git'; current = (await run('git', ['-C', appDir, 'rev-parse', 'HEAD'])).out.trim() || null;
+    }
+    const headers = { 'User-Agent': 'LiquidDesktop-updater', Accept: 'application/vnd.github+json' };
+    const res = await net.fetch(`https://api.github.com/repos/${REPO}/commits/main`, { headers });
+    if (!res.ok) throw new Error(`GitHub returned ${res.status}`);
+    const latest = await res.json();
+    let behind = null, changes = [];
+    if (current) {
+      const c = await net.fetch(`https://api.github.com/repos/${REPO}/compare/${current}...main`, { headers });
+      if (c.ok) { const cj = await c.json(); behind = cj.ahead_by; changes = (cj.commits || []).slice(-8).reverse().map((x) => x.commit.message.split('\n')[0]); }
+    }
+    const pkg = JSON.parse(readFile(path.join(appDir, 'package.json')) || '{}');
+    return { how, version: pkg.version, current: current ? current.slice(0, 7) : null, latest: latest.sha.slice(0, 7), date: latest.commit?.committer?.date,
+      message: (latest.commit?.message || '').split('\n')[0], behind, changes,
+      upToDate: !!current && (latest.sha.startsWith(current) || behind === 0), command: how === 'git' ? `cd '${appDir}' && git pull && npm install` : 'liquid-desktop-update' };
+  });
+  h('sys:monoFonts', async () => {
+    const r = await run('fc-list', [':spacing=mono', 'family']);
+    return [...new Set(r.out.split('\n').map((l) => l.split(',')[0].trim()).filter(Boolean))].sort();
+  });
+  h('sys:shells', () => {
+    const list = (readFile('/etc/shells') || '').split('\n').map((l) => l.trim()).filter((l) => l.startsWith('/') && fs.existsSync(l));
+    return { shells: [...new Set(list)], default: process.env.SHELL || '/bin/bash' };
+  });
   ipcMain.on('pty:write', (_e, id, data) => { const c = ptys.get(id); if (c) c.stdin.write(data); });
   ipcMain.on('pty:resize', (_e, id, cols, rows) => { const c = ptys.get(id); if (c && c.stdio[3]) c.stdio[3].write(`${cols} ${rows}\n`); });
   ipcMain.on('pty:kill', (_e, id) => { const c = ptys.get(id); if (c) { c.stdin.end(); c.kill(); } });

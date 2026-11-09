@@ -33,12 +33,24 @@ function createWindowed() {
   win.once('ready-to-show', () => { win.show(); if (argv.includes('--devtools')) win.webContents.openDevTools({ mode: 'detach' }); });
   win.webContents.setWindowOpenHandler(({ url }) => { win.webContents.send('shell:openUrl', url); return { action: 'deny' }; });
   win.webContents.on('did-attach-webview', (_e, wc) => {
-    wc.setWindowOpenHandler(({ url }) => { win.webContents.send('shell:openUrl', url); return { action: 'deny' }; });
+    wc.setWindowOpenHandler(({ url }) => { win.webContents.send('browser:newTab', url); return { action: 'deny' }; });
   });
 }
 
+// every web page in the Browser app gets a small helper script (password saving/filling)
+app.on('web-contents-created', (_e, wc) => {
+  wc.on('will-attach-webview', (_ev, prefs) => {
+    prefs.preload = path.join(__dirname, 'webview-preload.js');
+    prefs.contextIsolation = true;
+    prefs.nodeIntegration = false;
+    prefs.sandbox = true;
+  });
+});
+
 app.whenReady().then(async () => {
   session.defaultSession.setPermissionRequestHandler((_wc, perm, cb) => cb(['clipboard-sanitized-write', 'fullscreen', 'notifications'].includes(perm)));
+  require('./browser').register();
+  require('./appstore').register();
   if (mode === 'session') {
     try {
       const { startSession } = require('./session');

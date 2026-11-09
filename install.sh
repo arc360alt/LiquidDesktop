@@ -12,6 +12,7 @@
 #   • openSUSE                                      → zypper + install to /opt/liquid-desktop
 #
 # Options (after `sh -s --` when piping, e.g. `curl … | sh -s -- --uninstall`):
+#   --update      update an existing install to the latest version (same as installing again)
 #   --uninstall   remove LiquidDesktop
 #   --minimal     skip the optional Control Center helpers (Wi-Fi, volume, brightness, Bluetooth, media)
 #   --dry-run     only print what would be done
@@ -25,6 +26,7 @@ ACTION=install MINIMAL="${LIQUID_MINIMAL:-}" DRY=""
 for a in "$@"; do
   case "$a" in
     --uninstall|uninstall) ACTION=uninstall ;;
+    --update|update|--upgrade) ACTION=update ;;
     --minimal) MINIMAL=1 ;;
     --dry-run) DRY=1 ;;
     -h|--help) sed -n '2,22p' "$0" 2>/dev/null | sed 's/^# \{0,1\}//'; exit 0 ;;
@@ -56,6 +58,7 @@ done
 [ -n "$LIQUID_DISTRO" ] && FAMILY="$LIQUID_DISTRO"   # override, e.g. for testing: arch | debian | fedora | suse
 [ -n "$FAMILY" ] || die "Sorry, ${PRETTY_NAME:-this distro} isn't supported by the installer yet. See the README to install by hand."
 say "Detected ${PRETTY_NAME:-$ID} ($FAMILY)${DRY:+ — dry run, nothing will be changed}"
+[ "$ACTION" = update ] && say "Updating LiquidDesktop to the latest version…"
 
 AUR_HELPER=""
 for h in yay paru; do have "$h" && { AUR_HELPER="$h"; break; }; done
@@ -69,7 +72,7 @@ if [ "$ACTION" = uninstall ]; then
   if [ -d "$PREFIX" ]; then
     say "Removing $PREFIX…"
     run sudo rm -rf "$PREFIX"
-    run sudo rm -f /usr/local/bin/liquid-desktop /usr/local/bin/liquid-desktop-session /usr/local/bin/liquid-desktop-nested \
+    run sudo rm -f /usr/local/bin/liquid-desktop /usr/local/bin/liquid-desktop-session /usr/local/bin/liquid-desktop-nested /usr/local/bin/liquid-desktop-update \
       /usr/share/xsessions/liquid-desktop.desktop /usr/share/applications/liquid-desktop.desktop
   fi
   say "LiquidDesktop has been removed. (Your settings stay in ~/.config/LiquidDesktop.)"
@@ -99,7 +102,7 @@ install_arch() {
   fi
   if [ -z "$MINIMAL" ]; then
     say "Installing Control Center helpers…"
-    run sudo pacman -S --needed --noconfirm --asdeps networkmanager wireplumber brightnessctl bluez-utils playerctl upower xorg-xwayland mesa-utils || true
+    run sudo pacman -S --needed --noconfirm --asdeps networkmanager wireplumber brightnessctl bluez-utils playerctl upower xorg-xwayland mesa-utils flatpak pacman-contrib archlinux-appstream-data || true
   fi
   BIN=/usr/bin
 }
@@ -114,17 +117,17 @@ install_generic() {
         libnss3 libgtk-3-0 libgbm1 libxss1 libxtst6 libatk-bridge2.0-0 libdrm2
       # the ALSA library was renamed on newer Ubuntu/Debian
       run sudo apt-get install -y libasound2t64 2>/dev/null || run sudo apt-get install -y libasound2
-      [ -z "$MINIMAL" ] && { run sudo apt-get install -y network-manager wireplumber brightnessctl bluez playerctl upower mesa-utils || true; }
+      [ -z "$MINIMAL" ] && { run sudo apt-get install -y network-manager wireplumber brightnessctl bluez playerctl upower mesa-utils flatpak || true; }
       ;;
     fedora)
       say "Installing dependencies with dnf…"
       run sudo dnf install -y git nodejs npm picom python3 xdg-utils xorg-x11-server-Xorg nss gtk3 mesa-libgbm alsa-lib libXScrnSaver libXtst
-      [ -z "$MINIMAL" ] && { run sudo dnf install -y NetworkManager wireplumber brightnessctl bluez playerctl upower glx-utils || true; }
+      [ -z "$MINIMAL" ] && { run sudo dnf install -y NetworkManager wireplumber brightnessctl bluez playerctl upower glx-utils flatpak || true; }
       ;;
     suse)
       say "Installing dependencies with zypper…"
       run sudo zypper --non-interactive install git nodejs npm picom python3 xdg-utils xorg-x11-server mozilla-nss gtk3-tools libgtk-3-0 libgbm1 alsa
-      [ -z "$MINIMAL" ] && { run sudo zypper --non-interactive install NetworkManager wireplumber brightnessctl bluez playerctl upower Mesa-demo-x || true; }
+      [ -z "$MINIMAL" ] && { run sudo zypper --non-interactive install NetworkManager wireplumber brightnessctl bluez playerctl upower Mesa-demo-x flatpak || true; }
       ;;
   esac
   fetch
@@ -134,6 +137,7 @@ install_generic() {
   run sudo rm -rf "$PREFIX"
   run sudo mkdir -p "$PREFIX"
   run sudo cp -r "$WORK/LiquidDesktop/." "$PREFIX/"
+  if [ -z "$DRY" ]; then git -C "$WORK/LiquidDesktop" rev-parse HEAD | sudo tee "$PREFIX/.liquid-version" >/dev/null; fi
   run sudo rm -rf "$PREFIX/.git"
   # Electron's sandbox helper must be owned by root and setuid
   run sudo chown root:root "$PREFIX/node_modules/electron/dist/chrome-sandbox"
@@ -141,6 +145,7 @@ install_generic() {
   run sudo ln -sf "$PREFIX/session/liquid-desktop" /usr/local/bin/liquid-desktop
   run sudo ln -sf "$PREFIX/session/liquid-desktop-session" /usr/local/bin/liquid-desktop-session
   run sudo ln -sf "$PREFIX/tools/nested.sh" /usr/local/bin/liquid-desktop-nested
+  run sudo ln -sf "$PREFIX/session/liquid-desktop-update" /usr/local/bin/liquid-desktop-update
   say "Adding LiquidDesktop to the login screen…"
   if [ -z "$DRY" ]; then
     sed "s#/usr/bin/#/usr/local/bin/#g" "$WORK/LiquidDesktop/packaging/liquid-desktop.xsession.desktop" > "$WORK/xsession.desktop"
@@ -160,6 +165,11 @@ for d in sddm gdm gdm3 lightdm ly lxdm greetd; do
   systemctl is-enabled "$d.service" >/dev/null 2>&1 && { DM="$d"; break; }
 done
 echo
+if [ "$ACTION" = update ]; then
+  say "LiquidDesktop is up to date."
+  echo "    Log out and back in (or restart LiquidDesktop) to use the new version."
+  exit 0
+fi
 say "LiquidDesktop is installed."
 if [ -n "$DM" ]; then
   echo "    Log out, then pick “LiquidDesktop” in the session menu of your login screen ($DM)."

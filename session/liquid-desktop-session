@@ -8,9 +8,13 @@ export XDG_SESSION_TYPE=x11
 export GDK_BACKEND=x11
 export QT_QPA_PLATFORM=xcb
 export GTK_CSD=0
+# LiquidDesktop's cursors, for the desktop itself and every app started in the session
+export XCURSOR_THEME="${XCURSOR_THEME_OVERRIDE:-LiquidCursor}"
+export XCURSOR_SIZE="${XCURSOR_SIZE:-24}"
+export XCURSOR_PATH="$HERE/session/cursors:$HOME/.local/share/icons:$HOME/.icons:/usr/share/icons:/usr/share/pixmaps"
 unset ELECTRON_RUN_AS_NODE WAYLAND_DISPLAY
 
-command -v xsetroot >/dev/null && xsetroot -cursor_name left_ptr
+command -v xsetroot >/dev/null && xsetroot -cursor_name left_ptr || true
 
 # the compositor: real blur behind the glass, rounded corners, shadows
 if command -v picom >/dev/null; then

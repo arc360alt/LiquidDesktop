@@ -28,6 +28,10 @@ export function applyTheme() {
   const a = store.get('accent');
   root.style.setProperty('--accent', a);
   root.style.setProperty('--accent-rgb', rgb(a));
+  // for tinting Linux app icons: sepia lands at ~38° hue, rotate from there to the accent's hue
+  const [hh, ss] = hueSat(a);
+  root.style.setProperty('--accent-shift', Math.round(hh - 38) + 'deg');
+  root.style.setProperty('--accent-sat', ss < 0.15 ? '0' : (2.5 + ss * 3).toFixed(2));
   $('#night-shift')?.classList.toggle('on', !!store.get('nightShift'));
   if (changed) bus.emit('theme', dark);
   applyWallpaper();
@@ -186,4 +190,14 @@ export function initTheme() {
   setInterval(applyTheme, 60_000);
   let t;
   addEventListener('resize', () => { clearTimeout(t); t = setTimeout(() => { currentWall = ''; applyWallpaper(); }, 300); });
+}
+
+function hueSat(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  const r = ((n >> 16) & 255) / 255, g = ((n >> 8) & 255) / 255, b = (n & 255) / 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min;
+  let h = 0;
+  if (d) h = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  const l = (max + min) / 2;
+  return [(h * 60 + 360) % 360, d ? d / (1 - Math.abs(2 * l - 1)) : 0];
 }

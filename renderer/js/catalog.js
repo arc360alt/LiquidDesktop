@@ -10,8 +10,8 @@ bus.on('app-launched', (id) => recordRecent(id));
 export const catalog = {
   native: [],
   extra: new Map(),   // apps known only by a running window (session mode)
-  async load() {
-    try { this.native = await api.apps.list(); } catch { this.native = []; }
+  async load(force) {
+    try { this.native = await api.apps.list(!!force); } catch { this.native = []; }
     bus.emit('catalog');
   },
   builtins() { return [...registry.values()].filter((a) => !a.hidden); },

@@ -127,7 +127,10 @@ function renderStatus() {
     const p = s.battery.percent;
     battEl.innerHTML = '';
     if (store.get('showBatteryPct')) battEl.append(h('span', `${p}%`));
-    battEl.append(h('div.batt-icon' + (p <= 15 && !s.battery.charging ? '.low' : '') + (s.battery.charging ? '.charging' : ''), h('i', { style: { width: Math.max(8, p) + '%' } })));
+    // while charging, a lightning bolt sits on the battery (like macOS)
+    const bolt = s.battery.charging ? h('span.batt-bolt', { html: '<svg viewBox="0 0 10 14"><path d="M6.2.6L1.2 8h3.3l-1 5.4L8.8 5.8H5.4z"/></svg>' }) : null;
+    battEl.append(h('div.batt-icon' + (p <= 15 && !s.battery.charging ? '.low' : '') + (s.battery.charging ? '.charging' : ''), h('i', { style: { width: Math.max(8, p) + '%' } }), bolt));
+    battEl.title = s.battery.charging ? `Charging — ${p}%` : `${p}%`;
   } else battEl.hidden = true;
   // network
   const w = s.wifi;

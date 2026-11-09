@@ -32,6 +32,7 @@ registerApp({
   menus: (win) => [
     { title: 'Shell', items: [
       { label: 'New Window', shortcut: '⌘N', action: () => wm.open('terminal') },
+      { label: 'Terminal Settings…', action: () => wm.open('settings', { pane: 'terminal' }) }, '-',
       { label: 'Clear', action: () => win?.state?.term.clear() },
       { label: 'Reset', action: () => win?.state?.term.reset() }, '-',
       { label: 'Close Window', shortcut: '⌘W', action: () => win?.close() }] },
@@ -53,9 +54,11 @@ registerApp({
     };
     let term = null;
     applyProfile();
+    const fontStack = () => (store.get('terminalFont') ? `"${store.get('terminalFont')}", ` : '') + '"JetBrains Mono", "SF Mono", "Fira Code", "DejaVu Sans Mono", "Noto Sans Mono", monospace';
     term = new Terminal({
-      fontFamily: '"JetBrains Mono", "SF Mono", "Fira Code", "DejaVu Sans Mono", monospace', fontSize: store.get('terminalFontSize'),
-      cursorBlink: true, cursorStyle: 'bar', allowTransparency: true, theme: THEMES[store.get('terminalTheme')], scrollback: 5000, macOptionIsMeta: true,
+      fontFamily: fontStack(), fontSize: store.get('terminalFontSize'),
+      cursorBlink: store.get('terminalBlink'), cursorStyle: store.get('terminalCursor'), allowTransparency: true, theme: THEMES[store.get('terminalTheme')],
+      scrollback: store.get('terminalScrollback'), macOptionIsMeta: true,
     });
     applyProfile();
     const fit = new FitAddon();
@@ -64,7 +67,16 @@ registerApp({
     const state = { term, id: null };
     win.state = state;
     state.zoom = (d) => { term.options.fontSize = d === 0 ? 13 : Math.max(8, Math.min(30, term.options.fontSize + d)); store.set('terminalFontSize', term.options.fontSize); fit.fit(); };
-    const off = store.on('change:terminalTheme', applyProfile);
+    // settings apply to open terminals right away
+    const offs = [store.on('change:terminalTheme', applyProfile),
+      store.on('change', (k) => {
+        if (k === 'terminalFont') { term.options.fontFamily = fontStack(); doFit(); }
+        if (k === 'terminalFontSize') { term.options.fontSize = store.get('terminalFontSize'); doFit(); }
+        if (k === 'terminalCursor') term.options.cursorStyle = store.get('terminalCursor');
+        if (k === 'terminalBlink') term.options.cursorBlink = store.get('terminalBlink');
+        if (k === 'terminalScrollback') term.options.scrollback = store.get('terminalScrollback');
+      })];
+    const off = () => offs.forEach((f) => f());
     const doFit = () => { try { fit.fit(); if (state.id) api.pty.resize(state.id, term.cols, term.rows); } catch { /* not visible yet */ } };
     win.on('resize', () => requestAnimationFrame(doFit));
     win.on('focus', () => term.focus());
@@ -81,7 +93,8 @@ registerApp({
       doFit();
       if (!isNative) { term.write('\x1b[1mLiquidDesktop Terminal\x1b[0m\r\n\r\nThe terminal needs the desktop backend — run \x1b[36mnpm start\x1b[0m.\r\n'); return; }
       try {
-        state.id = await api.pty.create({ cols: term.cols, rows: term.rows, cwd: args.cwd });
+        state.id = await api.pty.create({ cols: term.cols, rows: term.rows, cwd: args.cwd || store.get('terminalCwd') || undefined,
+          shell: store.get('terminalShell') || undefined, login: store.get('terminalLogin') });
         sessions.set(state.id, { write: (d) => term.write(d), exit: () => win.close(true) });
         term.onData((d) => api.pty.write(state.id, d));
         if (args.command) api.pty.write(state.id, args.command + '\n');

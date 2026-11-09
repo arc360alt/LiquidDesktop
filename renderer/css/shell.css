@@ -37,7 +37,10 @@
 .batt-icon::after { content: ''; position: absolute; right: -3.6px; top: 3px; width: 2px; height: 4px; border-radius: 0 1px 1px 0; background: currentColor; opacity: 0.5; }
 .batt-icon i { display: block; height: 100%; border-radius: 1.5px; background: currentColor; }
 .batt-icon.low i { background: #ff3b30; }
-.batt-icon.charging i { background: #34c759; }
+.batt-icon.charging i { background: currentColor; opacity: 0.4; }
+.batt-bolt { position: absolute; left: 50%; top: 50%; width: 9px; height: 12px; transform: translate(-50%, -50%); display: flex; }
+.batt-bolt svg { width: 100%; height: 100%; fill: currentColor; stroke: rgba(0, 0, 0, 0.35); stroke-width: 0.8; paint-order: stroke; }
+#menubar.dark-text .batt-bolt svg, #menubar.solid .batt-bolt svg { stroke: rgba(255, 255, 255, 0.6); }
 
 /* ---------------------------------------------------------------- dropdown + context menus */
 .menu {
@@ -117,7 +120,9 @@
 :root[data-icon-style='clear'] .app-icon.native.framed .frame { background: rgba(255, 255, 255, 0.25); backdrop-filter: blur(6px); }
 .app-icon.native.framed img { position: absolute; inset: 20%; width: 60%; height: 60%; object-fit: contain; }
 .app-icon.native:not(.framed) img { padding: 6%; object-fit: contain; }
-:root[data-icon-style='tinted'] .app-icon.native img { filter: grayscale(1) brightness(1.2); }
+/* Linux app icons follow the icon style too: tinted = recolored to the accent, clear = frosted white */
+:root[data-icon-style='tinted'] .app-icon.native img { filter: grayscale(1) sepia(1) saturate(var(--accent-sat, 5)) hue-rotate(var(--accent-shift, 180deg)) brightness(1.05); }
+:root[data-icon-style='clear'] .app-icon.native img { filter: grayscale(1) brightness(1.75) contrast(0.8); opacity: 0.92; }
 .app-icon.clear-bg { border-radius: 22.5%; backdrop-filter: blur(8px) saturate(1.6); }
 
 /* ---------------------------------------------------------------- Control Center */
@@ -438,3 +443,20 @@
 .lc-app span { max-width: 96px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lc-app.sel { background: rgba(var(--accent-rgb), 0.25); }
 .lc-empty { text-align: center; padding: 60px 0; opacity: 0.6; font-size: 15px; }
+
+/* widgets packed in Notification Center: soft, small shadows so they don't pile up into a haze */
+#nc .glass { --glass-shadow: 0 2px 10px rgba(0, 0, 0, 0.08); }
+.nc-edit { align-self: center; margin-top: 4px; height: 30px; padding: 0 16px; border-radius: 999px; border: 0; color: var(--on-glass); font-weight: 600; font-size: 12px; }
+#widget-gallery .wg-hint { position: absolute; top: -34px; left: 50%; transform: translateX(-50%); white-space: nowrap; color: #fff; font-size: 12.5px; font-weight: 500; text-shadow: 0 1px 6px rgba(0, 0, 0, 0.5); }
+#widget-gallery { overflow: visible; }
+
+/* Control Center sliders: a real knob that becomes a glass lens while you drag it */
+.cc-slider { overflow: visible; }
+.cc-slider .fill { overflow: hidden; }
+.cc-slider .fill::after { display: none; }
+.cc-slider .knob { position: absolute; top: 0; width: 30px; height: 30px; margin-left: -30px; border-radius: 999px; background: #fff; box-shadow: 0 0 6px rgba(0, 0, 0, 0.2); z-index: 3; transition: transform 0.2s var(--spring), background 0.2s; pointer-events: none; }
+.cc-slider.dragging .knob { transform: scale(1.3, 1.45); background: linear-gradient(180deg, rgba(255, 255, 255, 0.35), rgba(255, 255, 255, 0.08)) !important; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.95), inset 0 0 0 2px rgba(0, 0, 0, 0.06), inset 0 2px 4px rgba(255, 255, 255, 0.8), inset 0 -2px 5px rgba(0, 0, 0, 0.08), 0 5px 18px rgba(0, 0, 0, 0.28) !important;
+  -webkit-backdrop-filter: blur(1.5px) saturate(2) brightness(1.2); backdrop-filter: blur(1.5px) saturate(2) brightness(1.2); }
+/* the remove badge sits half outside the widget's corner */
+.desk-widget { overflow: visible; }
+.desk-widget .remove { left: -9px; top: -9px; }

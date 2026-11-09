@@ -14,7 +14,10 @@ if pid == 0:
     os.environ['TERM_PROGRAM'] = 'LiquidTerminal'
     try: os.chdir(cwd)
     except Exception: pass
-    os.execvp(shell, [shell])
+    # a login shell reads ~/.bash_profile / ~/.zprofile etc., like a real terminal login
+    argv0 = '-' + os.path.basename(shell) if os.environ.get('LIQUID_LOGIN_SHELL') else shell
+    os.environ.pop('LIQUID_LOGIN_SHELL', None)
+    os.execvp(shell, [argv0])
 
 def setsize(c, r):
     fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack('HHHH', r, c, 0, 0))

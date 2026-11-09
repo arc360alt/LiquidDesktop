@@ -8,6 +8,7 @@ import { wm } from './wm.js';
 import { buildWidget, WIDGETS } from './widgets.js';
 import { shell } from './shell.js';
 import { fileUrl } from './util.js';
+import { layer } from './layer.js';
 
 let iconsEl, places, lastSig = '';
 
@@ -82,11 +83,17 @@ function renderWidgets() {
   }
 }
 
-export function editWidgets() {
-  const desk = $('#desktop');
-  if (gallery) { gallery.remove(); gallery = null; desk.classList.remove('editing-widgets'); return; }
-  desk.classList.add('editing-widgets');
-  gallery = h('div#widget-gallery.glass.panel.sheen');
+// Edit mode is shared through settings, so in a session the gallery (in the top layer) and the widgets
+// (in the desktop layer) stay in sync.
+export function editWidgets(force) {
+  store.set('widgetEditing', force ?? !store.get('widgetEditing'));
+}
+function applyEditing(on) {
+  if (layer === 'full' || layer === 'desktop') $('#desktop')?.classList.toggle('editing-widgets', on);
+  if (layer !== 'full' && layer !== 'shell') return;
+  if (!on) { gallery?.remove(); gallery = null; return; }
+  if (gallery) return;
+  gallery = h('div#widget-gallery.glass.panel.sheen', h('div.wg-hint', 'Drag widgets on the desktop to move them · click one below to add it · − removes'));
   for (const [type, def] of Object.entries(WIDGETS)) {
     const item = h('div.wg-item', buildWidget(type), h('span', def.name));
     item.addEventListener('click', () => {
@@ -96,9 +103,11 @@ export function editWidgets() {
     });
     gallery.append(item);
   }
-  gallery.append(h('button.btn.primary', { style: { alignSelf: 'center', marginLeft: '8px' }, onclick: () => editWidgets() }, 'Done'));
+  gallery.append(h('button.btn.primary', { style: { alignSelf: 'center', marginLeft: '8px' }, onclick: () => editWidgets(false) }, 'Done'));
   document.body.append(gallery);
 }
+store.on('change:widgetEditing', applyEditing);
+if (layer === 'shell' || layer === 'full') store.s.widgetEditing = false;
 
 /* ---------------------------------------------- rubber band + desktop menu */
 function initSurface() {

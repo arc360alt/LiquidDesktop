@@ -134,7 +134,7 @@ const CATS = [
   ['System', ['System', 'Settings', 'Monitor', 'PackageManager', 'HardwareSettings', 'Security']],
 ];
 const BUILTIN_CAT = { files: 'Utilities', terminal: 'Developer Tools', browser: 'Social', notes: 'Productivity & Finance', texteditor: 'Utilities', calculator: 'Utilities',
-  preview: 'Creativity', calendar: 'Productivity & Finance', weather: 'Utilities', monitor: 'System', settings: 'System', about: 'System' };
+  preview: 'Creativity', calendar: 'Productivity & Finance', weather: 'Utilities', monitor: 'System', settings: 'System', about: 'System', appstore: 'Utilities' };
 const catOf = (a) => (a.builtin ? [BUILTIN_CAT[a.id]] : CATS.filter(([, keys]) => (a.categories || []).some((c) => keys.includes(c))).map(([n]) => n));
 
 export function launchpad() {

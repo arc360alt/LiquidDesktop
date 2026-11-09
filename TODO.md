@@ -11,3 +11,4 @@
 - Adding another widget sometimes just adds the widget on top of another one, and I am unable to move widgets too on the desktop
 - Add a screenshot tool that activates with Super+Shift+S like on windows and lets you take a screenshot of an area, window, or fullscreen and saves the screenshot to a folder and copies it to your clipboard (both configurable in settings)
 - FIx the graphics device section in the about window sometimes just showing some random device instead of your actual GPU
+- Add a smart hide feature to the dock where it only hides when a window intersects it or when a window is fullscreened over it (Configurable in settings)

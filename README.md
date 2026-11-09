@@ -102,7 +102,7 @@ and the four macOS 26 icon styles (Default, Dark, Clear, Tinted).
 - **Terminal:** a real PTY with xterm.js. Settings › Terminal sets the shell, login shell, font, size, cursor style and scrollback.
 - **Files, Notes, Text Editor, Calculator, Preview, Calendar, Weather (Open-Meteo), Activity Monitor (live graph, quit and force quit), System Settings, About.**
 - **Displays:** resolution, refresh rate, rotation, position and on/off for each monitor, with a 15-second "keep these settings?" safety revert. It uses xrandr in the session (remembered across logins) or hyprctl under Hyprland.
-- **Cursors:** an original macOS-style cursor set, `LiquidCursor` (regenerate with `node tools/gen-cursors.js`). It's used by the web UI and by every app in the session, and is installed system-wide by the package.
+- **Cursors:** the default is [MacOS Tahoe Cursor](https://github.com/witt-bit/MacOS-Tahoe-Cursor) by **MOYASH** (CC BY-NC-ND). It isn't stored in this repo: `tools/fetch-cursors.sh` downloads the official release at install time (`npm install` runs it; the Arch package uses it as a checksummed source) and installs it unmodified. If you like it, consider supporting the creator at ko-fi.com/moyash. The fallback is LiquidDesktop's own `LiquidCursor` set (regenerate with `node tools/gen-cursors.js`). Any installed cursor theme can be picked in Settings › Mouse & Trackpad.
 Preview, Calendar, Weather (Open-Meteo), Activity Monitor (live graph, quit and force quit), System Settings, and About.
 
 ## Keyboard

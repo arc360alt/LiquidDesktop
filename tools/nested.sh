@@ -23,5 +23,5 @@ else
   DEFAULT_PICOM=""
 fi
 # you are already logged in, so the nested session skips the login screen
-DISPLAY=$D LIQUID_SKIP_LOGIN=1 LIQUID_PICOM_ARGS="${LIQUID_PICOM_ARGS:-$DEFAULT_PICOM}" DBUS_SESSION_BUS_ADDRESS= "$HERE/session/liquid-desktop-session"
+DISPLAY=$D LIQUID_SKIP_LOGIN=1 LIQUID_NESTED_SESSION=1 LIQUID_PICOM_ARGS="${LIQUID_PICOM_ARGS:-$DEFAULT_PICOM}" DBUS_SESSION_BUS_ADDRESS= "$HERE/session/liquid-desktop-session"
 kill $XPID 2>/dev/null

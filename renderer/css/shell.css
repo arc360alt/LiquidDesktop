@@ -90,9 +90,14 @@
 .dock-item:active .icon { filter: drop-shadow(0 3px 5px rgba(0, 0, 0, 0.18)) brightness(0.7); }
 .dock-item .dot { position: absolute; bottom: -6px; left: 50%; width: 4px; height: 4px; margin-left: -2px; border-radius: 50%; background: var(--on-glass); opacity: 0; transition: opacity 0.3s; }
 .dock-item.running .dot { opacity: 0.75; }
-.dock-item.bounce .icon { animation: dockBounce 0.75s var(--ease) 2; }
-@keyframes dockBounce { 0%, 100% { transform: translateY(0); } 40% { transform: translateY(-34%); } 70% { transform: translateY(-4%); } }
-.dock-item.attention .icon { animation: dockBounce 0.75s var(--ease) 3; }
+/* launch bounce: decelerate up, accelerate down (like a ball), repeating until the app is up */
+.dock-item.bounce .icon { animation: dockBounce 0.62s infinite; will-change: transform; }
+@keyframes dockBounce {
+  0% { transform: translateY(0); animation-timing-function: cubic-bezier(0.25, 0.6, 0.4, 1); }
+  50% { transform: translateY(-46%); animation-timing-function: cubic-bezier(0.6, 0, 0.75, 0.4); }
+  100% { transform: translateY(0); }
+}
+.dock-item.attention .icon { animation: dockBounce 0.62s 3; }
 .dock-sep { width: 1px; align-self: stretch; margin: 6px 7px; background: rgba(var(--glass-rgb), 0); border-left: 1px solid rgba(128, 128, 128, 0.35); flex: none; }
 .dock-tip {
   position: fixed; z-index: 8500; padding: 4px 11px; border-radius: 999px; font-size: 12.5px; font-weight: 500; color: var(--on-glass); white-space: nowrap;

@@ -145,10 +145,11 @@ function listThemes() {
       const arrow = themeCursor(id, ['left_ptr', 'default', 'arrow'], 32);
       if (!arrow) continue;
       const hand = themeCursor(id, ['pointer', 'hand2', 'hand1', 'pointing_hand'], 32), text = themeCursor(id, ['text', 'xterm', 'ibeam'], 32);
-      seen.set(id, { id, name: id === 'LiquidCursor' ? 'LiquidDesktop (macOS style)' : name, preview: [arrow, hand, text].filter(Boolean).map(toPng) });
+      seen.set(id, { id, name: id === 'MacOS-Tahoe-Cursor' ? 'macOS Tahoe (by MOYASH)' : id === 'LiquidCursor' ? 'LiquidDesktop Classic' : name, preview: [arrow, hand, text].filter(Boolean).map(toPng) });
     }
   }
-  return [...seen.values()].sort((a, b) => (b.id === 'LiquidCursor') - (a.id === 'LiquidCursor') || a.name.localeCompare(b.name));
+  const rank = (t) => (t.id === 'MacOS-Tahoe-Cursor' ? 2 : t.id === 'LiquidCursor' ? 1 : 0);
+  return [...seen.values()].sort((a, b) => rank(b) - rank(a) || a.name.localeCompare(b.name));
 }
 
 /** CSS cursor values for the web UI from any installed theme (1x + 2x images). */

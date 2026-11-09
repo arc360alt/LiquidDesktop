@@ -2,6 +2,10 @@
 # Starts the Electron part of the session. Uses, in order: $LIQUID_ELECTRON, the Electron bundled in a
 # development checkout (node_modules), then the system's electron43 / electron.
 HERE="$1"
+# a private bus (started by dbus-run-session, or the nested test session) also needs our display for the
+# services it starts, such as the desktop portal used by Flatpak apps
+command -v dbus-update-activation-environment >/dev/null && dbus-update-activation-environment \
+  DISPLAY XAUTHORITY XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP XDG_SESSION_TYPE XCURSOR_THEME XCURSOR_SIZE XCURSOR_PATH GDK_BACKEND QT_QPA_PLATFORM >/dev/null 2>&1
 for E in "$LIQUID_ELECTRON" "$HERE/node_modules/electron/dist/electron" "$(command -v electron43)" "$(command -v electron)"; do
   [ -n "$E" ] && [ -x "$E" ] && exec "$E" "$HERE" --session
 done

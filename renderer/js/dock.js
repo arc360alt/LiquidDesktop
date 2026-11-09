@@ -8,23 +8,41 @@ import { showMenu } from './menus.js';
 import { attachLens } from './theme.js';
 import { api } from './sys.js';
 import { shell } from './shell.js';
+import { isSession } from './layer.js';
 
 let wrap, dock, items, tip;
-const launching = new Set();
+const launching = new Map();   // id → { start, had }
 
 function label(id) { return catalog.find(id)?.name || id; }
 
-function render() {
+// The Dock keeps its icon elements and only touches the DOM when something actually changed.
+// (Rebuilding on every window update — titles change all the time — swallowed clicks that landed
+// between mouse-down and mouse-up, and restarted the launch bounce mid-hop.)
+const cache = new Map();   // key → { el, sig }
+function render(full) {
+  if (full) cache.clear();
   const pinned = store.get('dockPinned').filter((id) => catalog.find(id));
-  const running = wm.runningApps().filter((id) => !pinned.includes(id));
+  const running = wm.runningApps().filter((id) => !pinned.includes(id) && catalog.find(id));
   const minimized = wm.windows.filter((w) => w.minimized);
-  items.innerHTML = '';
-  items.append(dockItem('launchpad', { special: true }));
-  for (const id of pinned) items.append(dockItem(id));
-  for (const id of running) items.append(dockItem(id));
-  items.append(h('div.dock-sep'));
-  for (const w of minimized) items.append(minimizedItem(w));
-  items.append(trashItem());
+  const appSig = (id) => { const a = catalog.find(id); return a ? `${a.name}|${typeof a.icon === 'string' ? a.icon.length + a.icon.slice(-40) : a.icon ? 'obj' : ''}` : ''; };
+  const want = [['launchpad', '', () => dockItem('launchpad', { special: true })]];
+  for (const id of [...pinned, ...running]) want.push(['app:' + id, appSig(id), () => dockItem(id)]);
+  want.push(['sep', '', () => h('div.dock-sep')]);
+  for (const w of minimized) want.push(['win:' + w.id, w.title + '|' + w.app?.id, () => minimizedItem(w)]);
+  want.push(['trash', String(trashFull), trashItem]);
+  const keys = new Set(want.map((x) => x[0]));
+  for (const k of [...cache.keys()]) if (!keys.has(k)) cache.delete(k);
+  const els = want.map(([k, sig, build]) => {
+    let c = cache.get(k);
+    if (!c || c.sig !== sig) { c = { el: build(), sig }; cache.set(k, c); }
+    return c.el;
+  });
+  for (const el of els) {
+    const id = el.dataset.app;
+    if (id && id !== 'launchpad' && id !== 'trash') el.classList.toggle('running', wm.appWindows(id).length > 0);
+  }
+  const cur = [...items.children];
+  if (cur.length !== els.length || cur.some((c, i) => c !== els[i])) items.replaceChildren(...els);
   applySizes();
 }
 
@@ -32,7 +50,6 @@ function dockItem(id, { special } = {}) {
   const app = special ? { id: 'launchpad', builtin: true, name: 'Apps' } : catalog.find(id);
   const el = h('div.dock-item', { 'data-app': id, draggable: !special }, appIcon(app, 'icon'), h('i.dot'));
   if (wm.appWindows(id).length) el.classList.add('running');
-  if (launching.has(id)) el.classList.add('bounce');
   el.addEventListener('mouseenter', () => showTip(el, special ? 'Apps' : app.name));
   el.addEventListener('mouseleave', hideTip);
   el.addEventListener('click', () => {
@@ -130,10 +147,30 @@ function trashItem() {
   return el;
 }
 
+// Launch bounce: hops until the app's first window shows up (or a timeout), then always lands —
+// it stops at the end of a hop, never mid-air.
 function bounce(id, el) {
-  launching.add(id);
-  el?.classList.add('bounce');
-  setTimeout(() => { launching.delete(id); $$(`.dock-item[data-app="${CSS.escape(id)}"]`).forEach((x) => x.classList.remove('bounce')); }, 1500);
+  if (!el) return;
+  launching.set(id, { start: performance.now(), had: wm.appWindows(id).length });
+  const icon = el.querySelector('.icon');
+  if (!el.classList.contains('bounce')) {
+    el.classList.add('bounce');
+    icon?.addEventListener('animationiteration', function onIter() {
+      if (!shouldLand(id)) return;
+      icon.removeEventListener('animationiteration', onIter);
+      el.classList.remove('bounce');
+      launching.delete(id);
+    });
+  }
+}
+function shouldLand(id) {
+  const l = launching.get(id);
+  if (!l) return true;
+  const t = performance.now() - l.start;
+  if (t > 9000) return true;                                         // gave up waiting for a window
+  if (wm.appWindows(id).length > l.had) return t > 500;              // the window is up
+  if (!isSession && !catalog.find(id)?.builtin) return t > 1800;     // testing window: native apps open outside it
+  return false;
 }
 
 function showTip(el, text) {
@@ -222,8 +259,8 @@ export function initDock() {
   applyHidden();
   bus.on('windows', () => { render(); applyHidden(); });
   bus.on('focus', applyHidden);
-  bus.on('catalog', render);
-  bus.on('icons-changed', render);
+  bus.on('catalog', () => render());
+  bus.on('icons-changed', () => render(true));
   bus.on('fs-changed', checkTrash);
   bus.on('native-launched', (id) => { const el = $(`.dock-item[data-app="${CSS.escape(id)}"]`); bounce(id, el); });
   store.on('change', (k) => {

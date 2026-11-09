@@ -146,13 +146,16 @@ class Store {
     const k = this.key(a);
     const draw = () => {
       const job = busy.get(k);
-      b.innerHTML = '';
       b.classList.toggle('busy', !!job);
       if (job) {
-        const p = job.percent ?? 0;
-        b.append(h('span.as-ring', { style: { '--p': p + '%' } }, h('i')));
+        // update the ring in place so the spinner doesn't restart on every progress line
+        let ring = b.querySelector('.as-ring');
+        if (!ring) { b.innerHTML = ''; ring = h('span.as-ring', h('i')); b.append(ring); }
+        const p = job.percent || 0;
+        ring.classList.toggle('spin', !p);
+        ring.style.setProperty('--p', Math.max(p, 3) + '%');
         b.title = job.line || 'Working…';
-      } else b.textContent = this.isInstalled(a) ? 'Open' : 'Get';
+      } else { b.innerHTML = ''; b.textContent = this.isInstalled(a) ? 'Open' : 'Get'; }
     };
     b.redraw = draw;
     b.dataset.key = k;
@@ -342,7 +345,7 @@ class Store {
       let id;
       try { id = await S.invoke('store:job', job); } catch (err) { busy.delete(k); this.redrawButtons(k); alertDialog({ title: 'Couldn’t start', message: err.message }, this.win.el); return resolve(false); }
       jobs.set(id, async (m) => {
-        if (!m.done) { busy.set(k, { percent: m.percent ?? busy.get(k)?.percent ?? 0, line: m.line }); this.redrawButtons(k); return; }
+        if (!m.done) { busy.set(k, { percent: Math.max(m.percent ?? 0, busy.get(k)?.percent ?? 0), line: m.line }); this.redrawButtons(k); return; }
         jobs.delete(id); busy.delete(k);
         await this.refreshInstalled();
         this.redrawButtons(k);

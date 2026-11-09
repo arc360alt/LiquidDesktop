@@ -6,6 +6,8 @@ import { appData } from './store.js';
 export function recordRecent(id) { const r = appData.get('recentApps', []).filter((x) => x !== id); r.unshift(id); appData.set('recentApps', r.slice(0, 10)); }
 
 bus.on('app-launched', (id) => recordRecent(id));
+// a new app was installed (or one removed) anywhere on the system
+try { api.apps.onChanged?.(() => catalog.load(true)); } catch { /* no host */ }
 
 export const catalog = {
   native: [],

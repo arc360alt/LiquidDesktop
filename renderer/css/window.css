@@ -415,7 +415,11 @@ body.mission-open #spaces { z-index: 7550; }
 .as-get:active { transform: scale(0.94); }
 .as-get.big { min-width: 86px; height: 32px; background: var(--accent); color: #fff; font-size: 14px; }
 .as-get.busy { background: transparent; min-width: 64px; }
-.as-ring { width: 26px; height: 26px; border-radius: 50%; background: conic-gradient(var(--accent) var(--p), rgba(128, 128, 128, 0.25) 0); display: flex; align-items: center; justify-content: center; }
+.as-ring { width: 26px; height: 26px; border-radius: 50%; background: conic-gradient(var(--accent) var(--p), rgba(128, 128, 128, 0.25) 0); display: flex; transition: --p 0.3s; align-items: center; justify-content: center; }
+.as-ring.spin { background: conic-gradient(var(--accent) 0 22%, rgba(128, 128, 128, 0.25) 0); animation: asSpin 0.9s linear infinite; }
+.as-ring.spin i { animation: asSpin 0.9s linear infinite reverse; }
+@keyframes asSpin { to { transform: rotate(360deg); } }
+@property --p { syntax: '<percentage>'; inherits: false; initial-value: 0%; }
 .as-ring i { width: 21px; height: 21px; border-radius: 50%; background: var(--win-bg); display: flex; align-items: center; justify-content: center; }
 .as-ring i::after { content: ''; width: 7px; height: 7px; border-radius: 1.5px; background: var(--accent); }
 

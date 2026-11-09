@@ -166,16 +166,27 @@ function startJob(sender, job) {
   }
   if (!cmd) throw new Error('Unknown job');
   const env = { ...process.env, LC_ALL: 'C' };
+  // flatpak and pacman only print progress (percentages) on a terminal, so run them in a pseudo-terminal
+  // via script(1). Not for the "update everything" shell, whose inner sudo reads the password: a pty would echo it.
+  if (has('script') && !job.feedPassword) {
+    const q = (x) => `'${String(x).replace(/'/g, `'\\''`)}'`;
+    args = ['-qfec', `stty cols 120 rows 40 2>/dev/null; exec ${[cmd, ...args].map(q).join(' ')}`, '/dev/null'];
+    cmd = 'script';
+  }
   const child = needsSudo ? spawn('sudo', ['-S', '-p', '', cmd, ...args], { env }) : spawn(cmd, args, { env });
   if (needsSudo || job.feedPassword) child.stdin.end((sudoPass || '') + '\n'); else child.stdin.end();
   const send = (msg) => { if (!sender.isDestroyed()) sender.send('store:progress', { job: id, ...msg }); };
   let tail = '';
   const onData = (d) => {
-    const text = d.toString();
+    const text = d.toString().replace(/\x1b\[[0-9;?]*[A-Za-z]|\x1b[()][0-9A-Za-z]|[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '');
     tail = (tail + text).slice(-4000);
     const pcts = [...text.matchAll(/(\d{1,3})%/g)].map((m) => +m[1]).filter((n) => n <= 100);
     const line = text.split(/[\r\n]+/).map((l) => l.trim()).filter(Boolean).pop();
-    send({ line, percent: pcts.length ? pcts[pcts.length - 1] : undefined });
+    // "Installing 2/3…" (flatpak) or "(2/3) installing" (pacman): fold the step into one overall percentage
+    const steps = [...tail.slice(-600).matchAll(/(?:^|[\s(])(\d+)\/(\d+)(?=[\s)…]|\.\.\.)/g)].pop();
+    let percent = pcts.length ? pcts[pcts.length - 1] : undefined;
+    if (percent !== undefined && steps && +steps[2] > 1 && +steps[1] <= +steps[2]) percent = Math.round(((+steps[1] - 1) + percent / 100) / +steps[2] * 100);
+    send({ line, percent });
   };
   child.stdout.on('data', onData);
   child.stderr.on('data', onData);

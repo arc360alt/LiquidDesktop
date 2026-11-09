@@ -18,7 +18,7 @@ pkgrel=1
 pkgdesc='A Liquid Glass desktop environment written in JavaScript (Electron UI, X11 window manager, picom compositor)'
 arch=('any')
 url='https://github.com/arc360alt/LiquidDesktop'
-license=('MIT')
+license=('MIT' 'CC-BY-NC-ND-4.0')   # LiquidDesktop is MIT; the bundled macOS Tahoe cursors are CC BY-NC-ND
 _repo="${LIQUID_REPO:-https://github.com/arc360alt/LiquidDesktop.git#branch=main}"
 
 depends=(
@@ -53,8 +53,13 @@ makedepends=('git' 'npm' 'nodejs')
 provides=("$_name")
 conflicts=("$_name")
 options=('!strip' '!debug')
-source=("$_name::git+$_repo")
-sha256sums=('SKIP')
+# the default cursors: "MacOS Tahoe Cursor" by MOYASH (CC BY-NC-ND), installed unmodified from its release
+_cursor=1.2
+source=("$_name::git+$_repo"
+        "MacOS-Tahoe-Cursor-$_cursor.zip::https://github.com/witt-bit/MacOS-Tahoe-Cursor/releases/download/$_cursor/MacOS-Tahoe-Cursor.zip")
+sha256sums=('SKIP'
+            '684b80296a0419597f7efeb5c80d3d9527f8a6639d0d98a498e62ed8fa8d8e12')
+noextract=("MacOS-Tahoe-Cursor-$_cursor.zip")
 
 pkgver() {
   cd "$_name"
@@ -67,6 +72,8 @@ build() {
   cd "$_name"
   # runtime JS dependencies only — Electron itself comes from the electron43 package
   npm ci --omit=dev --no-audit --no-fund --ignore-scripts
+  # unpack the cursor theme (checksummed above) into session/cursors/MacOS-Tahoe-Cursor
+  LIQUID_CURSOR_ZIP="$srcdir/MacOS-Tahoe-Cursor-$_cursor.zip" sh tools/fetch-cursors.sh
 }
 
 package() {
@@ -96,5 +103,7 @@ package() {
   cp -a session/cursors/LiquidCursor "$pkgdir/usr/share/icons/"
 
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  [ -f session/cursors/MacOS-Tahoe-Cursor/ReadMe.txt ] && \
+    install -Dm644 session/cursors/MacOS-Tahoe-Cursor/ReadMe.txt "$pkgdir/usr/share/licenses/$pkgname/MacOS-Tahoe-Cursor-ReadMe.txt"
   install -Dm644 README.md "$pkgdir/usr/share/doc/$_name/README.md"
 }

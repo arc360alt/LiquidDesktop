@@ -5,3 +5,5 @@ packaging/arch/pkg/
 packaging/arch/liquid-desktop/
 packaging/arch/*.pkg.tar.*
 __pycache__/
+# downloaded by tools/fetch-cursors.sh (CC BY-NC-ND, not ours to commit)
+session/cursors/MacOS-Tahoe-Cursor/

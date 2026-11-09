@@ -146,10 +146,28 @@ function parseDesktopFile(file) {
 }
 
 let appsCache = null;
+const APP_DIRS = [path.join(HOME, '.local/share/applications'), '/usr/share/applications', '/usr/local/share/applications',
+  '/var/lib/flatpak/exports/share/applications', path.join(HOME, '.local/share/flatpak/exports/share/applications')];
+
+// Installing or removing an app (App Store, pacman, flatpak in a terminal…) changes one of these folders:
+// tell every LiquidDesktop window so the launcher, Spotlight and Dock pick it up.
+function watchApps() {
+  const sig = () => APP_DIRS.map((d) => { try { const st = fs.statSync(d); return st.mtimeMs + ':' + fs.readdirSync(d).length; } catch { return '-'; } }).join('|');
+  let last = sig();
+  setInterval(() => {
+    const now = sig();
+    if (now === last) return;
+    last = now;
+    appsCache = null;
+    iconCache.clear();
+    const { webContents } = require('electron');
+    for (const wc of webContents.getAllWebContents()) if (!wc.isDestroyed() && wc.getType() !== 'webview') wc.send('apps:changed');
+  }, 2500);
+}
+
 async function listApps(force) {
   if (appsCache && !force) return appsCache;
-  const dirs = [path.join(HOME, '.local/share/applications'), '/usr/share/applications', '/usr/local/share/applications',
-    '/var/lib/flatpak/exports/share/applications', path.join(HOME, '.local/share/flatpak/exports/share/applications')];
+  const dirs = APP_DIRS;
   const seen = new Map();
   const desktopEnv = (process.env.XDG_CURRENT_DESKTOP || '').split(':');
   for (const dir of dirs) {
@@ -433,6 +451,7 @@ function register({ getWindow, mode }) {
   });
 
   h('apps:list', listApps);
+  watchApps();
   h('apps:iconFor', (name) => resolveIcon(name) || resolveIcon(String(name).toLowerCase()));
   h('apps:info', (file) => { const e = parseDesktopFile(file); return { id: 'desktop:' + path.basename(file), file, name: e.Name || path.basename(file), exec: e.Exec, terminal: e.Terminal === 'true', icon: resolveIcon(e.Icon), categories: [], keywords: [] }; });
   h('apps:launch', (exec, terminal) => launchExec(exec, terminal));

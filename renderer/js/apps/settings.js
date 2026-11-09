@@ -299,7 +299,7 @@ const render = {
 
     // cursor themes
     const themes = await api.sys.cursorThemes().catch(() => []);
-    const curTheme = store.get('cursorTheme') || 'LiquidCursor';
+    const curTheme = store.get('cursorTheme') || 'MacOS-Tahoe-Cursor';
     const grid = h('div.cursor-grid', ...themes.map((t) => {
       const card = h('div.cursor-card' + (t.id === curTheme ? '.sel' : ''), h('div.cursor-pv', ...t.preview.map((src) => h('img', { src }))), h('span', t.name));
       card.addEventListener('click', async () => {
@@ -314,7 +314,7 @@ const render = {
     const paintSize = () => size.style.setProperty('--v', ((size.value - 16) / 48) * 100 + '%');
     paintSize();
     size.addEventListener('input', paintSize);
-    size.addEventListener('change', () => { store.set('cursorSize', Number(size.value)); api.sys.cursorApply(store.get('cursorTheme') || 'LiquidCursor', Number(size.value)).catch(() => {}); });
+    size.addEventListener('change', () => { store.set('cursorSize', Number(size.value)); api.sys.cursorApply(store.get('cursorTheme') || 'MacOS-Tahoe-Cursor', Number(size.value)).catch(() => {}); });
 
     return [
       hero('mouse', 'Mouse & Trackpad', backendNote),

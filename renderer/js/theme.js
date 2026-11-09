@@ -190,6 +190,7 @@ export function initTheme() {
     if (['iconStyle', 'accent', 'uniformIcons'].includes(k)) bus.emit('icons-changed');
   });
   setInterval(applyTheme, 60_000);
+  switchToTahoeCursors();
   let t;
   addEventListener('resize', () => { clearTimeout(t); t = setTimeout(() => { currentWall = ''; applyWallpaper(); }, 300); });
 }
@@ -208,7 +209,7 @@ function hueSat(hex) {
 // The web UI draws its own cursors; any installed theme is turned into CSS cursors by the back end.
 let cursorKey = '';
 export function applyCursors() {
-  const theme = store.get('cursorTheme') || 'LiquidCursor', size = store.get('cursorSize') || 24;
+  const theme = store.get('cursorTheme') || 'MacOS-Tahoe-Cursor', size = store.get('cursorSize') || 24;
   const key = theme + ':' + size;
   if (key === cursorKey || !window.sys?.sys?.cursorCss) return;
   cursorKey = key;
@@ -216,4 +217,17 @@ export function applyCursors() {
     if (cursorKey !== key) return;
     for (const [k, v] of Object.entries(css || {})) root.style.setProperty('--cur-' + k, v);
   }).catch(() => { /* keep the built-in cursors */ });
+}
+
+// One-time switch: the macOS Tahoe cursors (by MOYASH) replaced the generated LiquidCursor as the default.
+// Anyone still on LiquidCursor moves over once the theme is installed; picking LiquidCursor again later sticks.
+function switchToTahoeCursors() {
+  if (store.get('cursorTahoeSwitched') || !(layer === 'full' || layer === 'shell') || !window.sys?.sys?.cursorThemes) return;
+  window.sys.sys.cursorThemes().then((list) => {
+    if (!list.some((t) => t.id === 'MacOS-Tahoe-Cursor')) return;   // not downloaded (yet): try again next start
+    store.set('cursorTahoeSwitched', true);
+    if (store.get('cursorTheme') !== 'LiquidCursor') return;
+    store.set('cursorTheme', 'MacOS-Tahoe-Cursor');
+    window.sys.sys.cursorApply?.('MacOS-Tahoe-Cursor', store.get('cursorSize') || 24).catch(() => {});
+  }).catch(() => {});
 }

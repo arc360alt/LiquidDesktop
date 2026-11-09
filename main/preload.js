@@ -20,6 +20,7 @@ api.pty.resize = (id, c, r) => ipcRenderer.send('pty:resize', id, c, r);
 api.pty.kill = (id) => ipcRenderer.send('pty:kill', id);
 api.pty.onData = (fn) => ipcRenderer.on('pty:data', (_e, id, d) => fn(id, d));
 api.pty.onExit = (fn) => ipcRenderer.on('pty:exit', (_e, id) => fn(id));
+api.apps.onChanged = (fn) => ipcRenderer.on('apps:changed', () => fn());
 api.shell.onOpenUrl = (fn) => ipcRenderer.on('shell:openUrl', (_e, url) => fn(url));
 // session mode: talk to the window manager (main/session.js)
 const OK = /^(wm|shell|appwin|frame):/;

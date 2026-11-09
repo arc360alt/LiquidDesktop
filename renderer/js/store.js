@@ -61,7 +61,7 @@ export const defaults = {
   browserOfferPasswords: true,
   browserAutofill: true,
   windowTiling: true,
-  cursorTheme: 'LiquidCursor',
+  cursorTheme: 'MacOS-Tahoe-Cursor',
   cursorSize: 24,
   zoomAction: 'fill',       // green button: fill | fill-nodock | fullscreen
 };

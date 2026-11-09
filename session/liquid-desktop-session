@@ -9,10 +9,11 @@ export GDK_BACKEND=x11
 export QT_QPA_PLATFORM=xcb
 export GTK_CSD=0
 # LiquidDesktop's cursors, for the desktop itself and every app started in the session
-# the cursor theme chosen in Settings › Mouse (LiquidCursor by default)
+# the cursor theme chosen in Settings › Mouse (macOS Tahoe by default, LiquidCursor if it wasn't downloaded)
 CUR_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/LiquidDesktop/cursor-theme"
 [ -r "$CUR_FILE" ] && read -r SAVED_THEME SAVED_SIZE < "$CUR_FILE"
-export XCURSOR_THEME="${XCURSOR_THEME_OVERRIDE:-${SAVED_THEME:-LiquidCursor}}"
+DEFAULT_CURSOR=LiquidCursor; [ -d "$HERE/session/cursors/MacOS-Tahoe-Cursor/cursors" ] && DEFAULT_CURSOR=MacOS-Tahoe-Cursor
+export XCURSOR_THEME="${XCURSOR_THEME_OVERRIDE:-${SAVED_THEME:-$DEFAULT_CURSOR}}"
 export XCURSOR_SIZE="${SAVED_SIZE:-${XCURSOR_SIZE:-24}}"
 export XCURSOR_PATH="$HERE/session/cursors:$HOME/.local/share/icons:$HOME/.icons:/usr/share/icons:/usr/share/pixmaps"
 unset ELECTRON_RUN_AS_NODE WAYLAND_DISPLAY
@@ -36,6 +37,40 @@ if command -v picom >/dev/null; then
   sleep 0.5
 else
   echo "liquid-desktop: picom not found — install it for blur, rounded corners and shadows" >&2
+fi
+
+# Flatpak apps (Sober, Steam, Discord…) talk to xdg-desktop-portal, which D-Bus/systemd start for us. Without
+# this session's DISPLAY they get a portal that can't open anything (or one still pointing at an earlier
+# Wayland login) and the app hangs on launch. KDE/GNOME do the same at login.
+PORTAL_VARS="DISPLAY XAUTHORITY XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP XDG_SESSION_TYPE XCURSOR_THEME XCURSOR_SIZE XCURSOR_PATH GDK_BACKEND QT_QPA_PLATFORM GTK_CSD"
+if [ -z "$LIQUID_NESTED_SESSION" ] && [ -n "$DBUS_SESSION_BUS_ADDRESS" ]; then
+  if command -v dbus-update-activation-environment >/dev/null; then
+    # shellcheck disable=SC2086
+    dbus-update-activation-environment --systemd $PORTAL_VARS >/dev/null 2>&1
+  fi
+  if command -v systemctl >/dev/null; then
+    systemctl --user unset-environment WAYLAND_DISPLAY >/dev/null 2>&1
+    # portals left running from an earlier login still use its display: restart on demand with ours
+    systemctl --user stop xdg-desktop-portal.service xdg-desktop-portal-kde.service xdg-desktop-portal-gtk.service \
+      xdg-desktop-portal-gnome.service xdg-desktop-portal-hyprland.service xdg-desktop-portal-wlr.service >/dev/null 2>&1
+  fi
+fi
+# Which portal backend serves "LiquidDesktop": one that works on X11 (KDE's, else GTK's), never a
+# Wayland-only one (Hyprland, wlroots), which would fail and leave apps waiting.
+PORTAL_CONF="${XDG_CONFIG_HOME:-$HOME/.config}/xdg-desktop-portal/liquiddesktop-portals.conf"
+if [ ! -e "$PORTAL_CONF" ] || grep -q '^# written by LiquidDesktop' "$PORTAL_CONF" 2>/dev/null; then
+  PORTALS=""
+  for P in kde gnome gtk; do [ -e "/usr/share/xdg-desktop-portal/portals/$P.portal" ] && PORTALS="$PORTALS$P;"; done
+  SECRET=""
+  for P in kwallet gnome-keyring; do [ -e "/usr/share/xdg-desktop-portal/portals/$P.portal" ] && SECRET="$SECRET$P;"; done
+  if [ -n "$PORTALS" ]; then
+    mkdir -p "$(dirname "$PORTAL_CONF")"
+    { echo '# written by LiquidDesktop at login (delete this line to keep your own edits)'
+      echo '[preferred]'
+      echo "default=$PORTALS"
+      [ -n "$SECRET" ] && echo "org.freedesktop.impl.portal.Secret=$SECRET"
+    } > "$PORTAL_CONF"
+  fi
 fi
 
 if [ -z "$DBUS_SESSION_BUS_ADDRESS" ] && command -v dbus-run-session >/dev/null; then

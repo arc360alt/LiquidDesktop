@@ -5,13 +5,14 @@
   "main": "main/main.js",
   "license": "MIT",
   "scripts": {
-    "start": "env -u ELECTRON_RUN_AS_NODE XCURSOR_THEME=LiquidCursor XCURSOR_PATH=\"$PWD/session/cursors:$HOME/.icons:/usr/share/icons\" electron . --windowed",
+    "start": "env -u ELECTRON_RUN_AS_NODE XCURSOR_THEME=MacOS-Tahoe-Cursor XCURSOR_PATH=\"$PWD/session/cursors:$HOME/.icons:/usr/share/icons\" electron . --windowed",
     "dev": "env -u ELECTRON_RUN_AS_NODE electron . --windowed --devtools",
     "session": "env -u ELECTRON_RUN_AS_NODE electron . --session",
     "shots": "env -u ELECTRON_RUN_AS_NODE electron tools/shot.js shots",
     "web": "node tools/serve.mjs",
     "nested": "tools/nested.sh",
-    "install-session": "session/install-session.sh"
+    "install-session": "session/install-session.sh",
+    "postinstall": "sh tools/fetch-cursors.sh"
   },
   "dependencies": {
     "@fontsource-variable/inter": "5.2.5",

@@ -17,6 +17,9 @@
 #   --minimal     skip the optional Control Center helpers (Wi-Fi, volume, brightness, Bluetooth, media)
 #   --dry-run     only print what would be done
 # Environment: LIQUID_REPO (git URL), LIQUID_BRANCH (default: main), LIQUID_DISTRO (force arch|debian|fedora|suse)
+# Everything runs inside main(), so when this script is piped from curl the shell reads all of it
+# before running anything (no half-run installs, no "failure writing output" from curl).
+main() {
 set -e
 
 REPO="${LIQUID_REPO:-https://github.com/arc360alt/LiquidDesktop.git}"
@@ -30,7 +33,7 @@ for a in "$@"; do
     --minimal) MINIMAL=1 ;;
     --dry-run) DRY=1 ;;
     -h|--help) sed -n '2,22p' "$0" 2>/dev/null | sed 's/^# \{0,1\}//'; exit 0 ;;
-    *) echo "Unknown option: $a" >&2; exit 2 ;;
+    *) echo "liquid-desktop installer: ignoring unknown option $a" >&2 ;;
   esac
 done
 
@@ -185,3 +188,6 @@ else
 fi
 echo "    Try it in a window:  liquid-desktop        Full session in a window:  liquid-desktop-nested"
 echo "    Remove it later:     curl -fsSL https://raw.githubusercontent.com/arc360alt/LiquidDesktop/main/install.sh | sh -s -- --uninstall"
+}
+
+main "$@"

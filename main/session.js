@@ -91,6 +91,7 @@ async function startSession({ preload }) {
     if (fb && !fb.isDestroyed()) {
       fb.webContents.send('frame:update', { title: w.title, focused: wm.focused === w, maximized: !!w.maximized || !!w.tile, fullscreen: !!w.fullscreen });
       if (fb.getTitle() !== w.title) fb.setTitle(w.title);
+      wm.raiseClient(w);   // the frame repaints after an update: keep the app's content on top
     }
   }
 

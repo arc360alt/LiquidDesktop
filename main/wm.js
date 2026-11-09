@@ -146,6 +146,7 @@ class WindowManager extends EventEmitter {
     if (v32) { this.argbVisual = v32.vid; this.argbColormap = X.AllocID(); X.CreateColormap(this.argbColormap, this.root, v32.vid, 0); }
     this.blurPool = [];
     await this.setupKeys();
+    this.startClientGuard();
     await this.adoptExisting();
   }
 
@@ -493,6 +494,19 @@ class WindowManager extends EventEmitter {
     else { w.x = x; w.y = y; w.w = cw; w.h = ch; }
     this.applyGeometry(w);
   }
+  // A native app sits inside its frame, an Electron window. Chromium draws the frame on its own surface
+  // inside that same window, and when the frame resizes or repaints it can end up stacked above the app,
+  // whose content then seems to vanish until the window is moved. Keep the app on top inside its frame:
+  // right away, once more after Chromium has caught up, and (see startClientGuard) every so often.
+  raiseClient(w, later = true) {
+    if (!w || w.kind !== 'native' || w.frame === w.client || !this.windows.has(w.id)) return;
+    try { this.X.ConfigureWindow(w.client, { stackMode: 0 }); } catch { /* gone */ }
+    if (later) { clearTimeout(w.raiseTimer); w.raiseTimer = setTimeout(() => { this.raiseClient(w, false); setTimeout(() => this.raiseClient(w, false), 250); }, 60); }
+  }
+  startClientGuard() {
+    if (this.clientGuard) return;
+    this.clientGuard = setInterval(() => { for (const w of this.windows.values()) if (w.kind === 'native' && !w.minimized) this.raiseClient(w, false); }, 1500);
+  }
   applyGeometry(w) {
     const full = w.fullscreen;
     if (w.kind === 'native') {
@@ -500,6 +514,7 @@ class WindowManager extends EventEmitter {
       this.X.ConfigureWindow(w.frame, { x: w.x, y: w.y, width: Math.max(1, w.w), height: Math.max(1, w.h) });
       this.X.ConfigureWindow(w.client, { x: inset.l, y: inset.t, width: Math.max(1, w.w - (full ? 0 : EDGE * 2)), height: Math.max(1, w.h - (full ? 0 : TB + EDGE)) });
       this.sendConfigureNotify(w);
+      this.raiseClient(w);
     } else {
       this.X.ConfigureWindow(w.client, { x: w.x, y: w.y, width: Math.max(1, w.w), height: Math.max(1, w.h) });
     }

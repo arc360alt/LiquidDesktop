@@ -274,6 +274,9 @@ select.field { padding-right: 26px; -webkit-appearance: none; appearance: none;
 /* in a session the compositor blurs behind the shell's glass; a CSS blur there would only cost frames */
 :root[data-layer='shell'] .glass, :root[data-layer='shell'] .glass.lens, :root[data-layer='shell'] .tb-group,
 :root[data-layer='shell'] #launchpad, :root[data-layer='shell'] #mission, :root[data-layer='shell'] .snap-preview { -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }
+/* menus open over other shell glass (the Apps launcher, Spotlight…), which picom's blur underneath can't see:
+   they blur what's behind them inside the shell themselves (cheap: menus are small and short-lived) */
+:root[data-layer='shell'] .menu.glass { -webkit-backdrop-filter: blur(28px) saturate(1.8) !important; backdrop-filter: blur(28px) saturate(1.8) !important; }
 
 /* the lock screen draws its own wallpaper, so its glass can blur in-page even in a session */
 #lock .pw, #lock .l-actions button { background: rgba(255, 255, 255, 0.2); }

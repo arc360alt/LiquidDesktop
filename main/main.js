@@ -52,7 +52,9 @@ app.whenReady().then(async () => {
   require('./browser').register();
   require('./appstore').register();
   require('./sddm').register();
+  require('./notifications').register({ resolveIcon: require('./system').resolveIcon });
   require('./tray').register({ resolveIcon: require('./system').resolveIcon });
+  require('./appthemes').register({ mode });   // before any app starts: Qt apps need QT_STYLE_OVERRIDE
   if (mode === 'session') {
     try {
       const { startSession } = require('./session');

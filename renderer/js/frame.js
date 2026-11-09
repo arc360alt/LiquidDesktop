@@ -20,12 +20,12 @@ for (const b of document.querySelectorAll('.traffic button')) b.addEventListener
 // hovering the green button shows the Move & Resize menu (drawn by the shell, since this window is tiny)
 let hoverT;
 const maxBtn = $('.tl-max');
-maxBtn.addEventListener('mouseenter', () => { hoverT = setTimeout(() => { const r = maxBtn.getBoundingClientRect(); S.send('shell:windowMenu', id, Math.round(screenX + r.left - 6), Math.round(screenY + r.bottom + 6), 'tile'); }, 700); });
+maxBtn.addEventListener('mouseenter', () => { hoverT = setTimeout(() => { const r = maxBtn.getBoundingClientRect(); S.send('shell:windowMenu', id, Math.round(r.left - 6), Math.round(r.bottom + 6), 'tile', true); }, 700); });
 maxBtn.addEventListener('mouseleave', () => clearTimeout(hoverT));
 
 bar.addEventListener('mousedown', (e) => { if (e.button !== 0) return; op('activate'); op('beginMove'); });
 bar.addEventListener('dblclick', () => op('toggleMaximize'));
-bar.addEventListener('contextmenu', (e) => { e.preventDefault(); S.send('shell:windowMenu', id, e.screenX, e.screenY, 'window'); });
+bar.addEventListener('contextmenu', (e) => { e.preventDefault(); S.send('shell:windowMenu', id, e.clientX, e.clientY, 'window', true); });
 for (const r of document.querySelectorAll('.rz')) r.addEventListener('mousedown', (e) => { e.preventDefault(); op('activate'); op('beginResize', r.classList[1]); });
 
 S.on('frame:update', (u) => {

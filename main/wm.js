@@ -24,7 +24,9 @@ const ANY_MODIFIER = 0x8000, ANY_BUTTON = 0;
 const SHIFT = 1, LOCK = 2, CTRL = 4, ALT = 8, NUMLOCK = 16, SUPER = 64;
 const BUTTON1 = 0x100;
 const TB = 36;          // title bar height of native frames
-const EDGE = 4;         // resize border around native frames
+const EDGE = 0;         // no visible border around native frames (resizing uses invisible handles, see HANDLE)
+const HANDLE = 6;
+const DEBUG = !!process.env.LIQUID_WM_DEBUG;       // width of the invisible resize handles along a native window's sides and bottom
 
 // keysyms used for global shortcuts
 const KS = { space: 0x20, s: 0x73, Tab: 0xff09, F3: 0xffc0, F4: 0xffc1, F11: 0xffc8, q: 0x71, w: 0x77, m: 0x6d, f: 0x66, 3: 0x33, Print: 0xff61,
@@ -86,6 +88,14 @@ class WindowManager extends EventEmitter {
         if (err) return reject(err);
         this.display = display;
         this.X = display.client;
+        // node-x11 bug: ConfigureRequest's value-mask is read from the border-width field (always 0 here),
+        // so every "please resize me" from an app looked like "change nothing". Read the real mask.
+        const unpack = this.X.unpackEvent;
+        this.X.unpackEvent = function (type, seq, extra, code, raw, headerBuf) {
+          const ev = unpack.call(this, type, seq, extra, code, raw, headerBuf);
+          if ((type & 0x7f) === 23) { try { ev.mask = raw.unpack('LLssSSSS')[7]; } catch { /* keep */ } }
+          return ev;
+        };
         this.root = display.screen[0].root;
         this.sw = display.screen[0].pixel_width;
         this.sh = display.screen[0].pixel_height;
@@ -147,6 +157,10 @@ class WindowManager extends EventEmitter {
     this.blurPool = [];
     await this.setupKeys();
     this.startClientGuard();
+    this.edgeCursors = {};
+    for (const [dir, name] of [['w', 'ew-resize'], ['e', 'ew-resize'], ['s', 'ns-resize'], ['sw', 'nesw-resize'], ['se', 'nwse-resize']]) {
+      try { this.edgeCursors[dir] = await loadCursor(X, this.root, name); } catch { /* default arrow */ }
+    }
     await this.adoptExisting();
   }
 
@@ -249,6 +263,7 @@ class WindowManager extends EventEmitter {
       }
     }
     const existing = this.byXid.get(wid);
+    if (DEBUG) console.log('[wm] map request', wid, existing ? 'existing ' + existing.id : 'new');
     if (existing) { this.restore(existing.id); return; }
     this.manageNative(wid);
   }
@@ -263,22 +278,27 @@ class WindowManager extends EventEmitter {
       if (Object.keys(opts).length) this.X.ConfigureWindow(ev.wid, opts);
       return;
     }
+    if (ev.wid === w.fb || ev.wid === w.frame) { this.applyGeometry(w); return; }   // the title bar asking for itself
     if (w.fullscreen || w.maximized) { if (w.kind === 'native') this.sendConfigureNotify(w); return; }
     const c = this.clientRect(w);
-    const nx = M & 1 ? ev.x : c.x, ny = M & 2 ? ev.y : c.y;
+    // a framed app may resize itself, but where the window sits is up to the user (and the WM)
+    const nx = M & 1 && !w.fb ? ev.x : c.x, ny = M & 2 && !w.fb ? ev.y : c.y;
     const [nw, nh] = clampToHints(w, M & 4 ? ev.width : c.w, M & 8 ? ev.height : c.h);
     this.setClientRect(w, nx, ny, nw, nh);
+    this.emit('changed');
     if (w.kind === 'native' && !(M & 12)) this.sendConfigureNotify(w);
   }
 
   onUnmap(wid) {
     const w = this.byXid.get(wid);
+    if (DEBUG && w) console.log('[wm] unmap', wid, 'of', w.id, 'client', w.client, 'ignore', w.ignoreUnmaps);
     if (!w || wid !== w.client) return;
     if (w.ignoreUnmaps > 0) { w.ignoreUnmaps--; return; }
     if (w.kind === 'app') return; // our own windows report closing through DestroyNotify
     this.unmanage(w, true);
   }
   onDestroy(wid) {
+    if (DEBUG && this.byXid.has(wid)) console.log('[wm] destroy', wid, 'of', this.byXid.get(wid).id);
     this.ours.delete(wid);
     this.others.delete(wid);
     const w = this.byXid.get(wid);
@@ -340,6 +360,14 @@ class WindowManager extends EventEmitter {
         if (ev.keycode === 1) this.beginMove(w.id); else this.beginResize(w.id, 'se');
         return;
       }
+      // a press on one of the invisible edge handles of a native window: resize
+      if (w.fb && !w.fullscreen && w.resizable && ev.keycode === 1) {
+        const x = ev.rootx - w.x, y = ev.rooty - w.y, hs = HANDLE;
+        if (y > TB) {
+          const dir = (y >= w.h - hs ? 's' : '') + (x < hs ? 'w' : x >= w.w - hs ? 'e' : '');
+          if (dir) { this.X.AllowEvents(1, 0); this.activate(w.id); this.beginResize(w.id, dir); return; }
+        }
+      }
       if (this.focused !== w) this.activate(w.id);
     }
     this.X.AllowEvents(2, 0); // ReplayPointer: let the app get its click
@@ -365,7 +393,15 @@ class WindowManager extends EventEmitter {
     return w;
   }
 
+  // GTK and others send several MapRequests while a window starts up; setting a window up takes a few
+  // round trips, so without this each request created its own frame (left behind when the app quit).
   async manageNative(wid) {
+    this.managing ||= new Set();
+    if (this.managing.has(wid)) return;
+    this.managing.add(wid);
+    try { await this.manageNativeOnce(wid); } finally { this.managing.delete(wid); }
+  }
+  async manageNativeOnce(wid) {
     const at = await this.attrs(wid);
     if (!at || at.overrideRedirect) { this.X.MapWindow(wid); return; }
     const types = await this.getAtoms(wid, '_NET_WM_WINDOW_TYPE');
@@ -411,10 +447,26 @@ class WindowManager extends EventEmitter {
       try { frameXid = await this.requestFrame(w); } catch (e) { console.error('[wm] frame', e); }
       if (!this.windows.has(w.id)) return; // vanished while we waited
       if (frameXid) {
-        w.frame = frameXid;
-        this.byXid.set(frameXid, w);
-        w.ignoreUnmaps++;           // reparenting a mapped window unmaps it
-        this.X.ReparentWindow(wid, frameXid, EDGE, TB);
+        // The frame is a plain container window of ours holding two children that never overlap: the title
+        // bar (an Electron window, TB tall) at the top and the app below it. (Putting the app inside the Electron
+        // window let Chromium's rendering cover the app's content now and then.)
+        const C = this.X.AllocID();
+        this.X.CreateWindow(C, this.root, -10000, -10000, Math.max(1, g.width), Math.max(1, g.height + TB), 0, 0, x11.InputOutput, 0,
+          { borderPixel: 0, eventMask: EM.SubstructureRedirect | EM.PropertyChange });
+        this.X.ChangeProperty(0, C, this.A.WM_NAME, this.A.STRING, 8, Buffer.from('LiquidDesktop Frame'));
+        w.frame = C; w.fb = frameXid;
+        this.byXid.set(C, w); this.byXid.set(frameXid, w);
+        this.X.ReparentWindow(frameXid, C, 0, 0);
+        if (at.mapState) w.ignoreUnmaps++;   // reparenting a window that's already showing unmaps it (only then)
+        this.X.ReparentWindow(wid, C, 0, TB);
+        // invisible resize handles over the app's edges (created last, so they sit above it)
+        w.handles = {};
+        for (const dir of ['w', 'e', 's', 'sw', 'se']) {
+          const hid = this.X.AllocID();
+          this.X.CreateWindow(hid, C, 0, 0, 1, 1, 0, 0, x11.InputOnly, 0, this.edgeCursors?.[dir] ? { cursor: this.edgeCursors[dir] } : {});
+          this.X.MapWindow(hid);
+          w.handles[dir] = hid;
+        }
       } else w.kind = 'csd';
     }
     // initial size/position: frame wraps the client's requested size — within its min/max size hints
@@ -457,6 +509,7 @@ class WindowManager extends EventEmitter {
   }
 
   unmanage(w, withdrawn) {
+    if (DEBUG) console.log('[wm] unmanage', w.id, 'withdrawn', withdrawn, 'known', this.windows.has(w.id));
     if (!this.windows.has(w.id)) return;
     this.windows.delete(w.id);
     for (const [k, v] of this.byXid) if (v === w) this.byXid.delete(k);
@@ -465,6 +518,10 @@ class WindowManager extends EventEmitter {
       this.X.ReparentWindow(w.client, this.root, w.x, w.y);
       this.X.ChangeSaveSet(false, w.client);
       this.setState(w, 0);
+    }
+    if (w.fb) {
+      this.X.ReparentWindow(w.fb, this.root, -10000, -10000);   // Electron destroys its own window (frame-gone)
+      this.X.DestroyWindow(w.frame);
     }
     if (w.frame !== w.client) this.emit('frame-gone', w);
     if (this.focused === w) { this.focused = null; this.focusTop(); }
@@ -499,7 +556,7 @@ class WindowManager extends EventEmitter {
   // whose content then seems to vanish until the window is moved. Keep the app on top inside its frame:
   // right away, once more after Chromium has caught up, and (see startClientGuard) every so often.
   raiseClient(w, later = true) {
-    if (!w || w.kind !== 'native' || w.frame === w.client || !this.windows.has(w.id)) return;
+    if (!w || w.kind !== 'native' || w.frame === w.client || w.fb || !this.windows.has(w.id)) return;
     try { this.X.ConfigureWindow(w.client, { stackMode: 0 }); } catch { /* gone */ }
     if (later) { clearTimeout(w.raiseTimer); w.raiseTimer = setTimeout(() => { this.raiseClient(w, false); setTimeout(() => this.raiseClient(w, false), 250); }, 60); }
   }
@@ -510,11 +567,20 @@ class WindowManager extends EventEmitter {
   applyGeometry(w) {
     const full = w.fullscreen;
     if (w.kind === 'native') {
-      const inset = full ? { l: 0, t: 0 } : { l: EDGE, t: TB };
-      this.X.ConfigureWindow(w.frame, { x: w.x, y: w.y, width: Math.max(1, w.w), height: Math.max(1, w.h) });
-      this.X.ConfigureWindow(w.client, { x: inset.l, y: inset.t, width: Math.max(1, w.w - (full ? 0 : EDGE * 2)), height: Math.max(1, w.h - (full ? 0 : TB + EDGE)) });
+      const W = Math.max(1, w.w), H = Math.max(1, w.h);
+      this.X.ConfigureWindow(w.frame, { x: w.x, y: w.y, width: W, height: H });
+      if (w.fb) {
+        // title bar on top (pushed out of sight in full screen), the app below it, handles on the edges
+        this.X.ConfigureWindow(w.fb, { x: 0, y: full ? -TB - 50 : 0, width: W, height: TB });
+        this.X.ConfigureWindow(w.client, { x: 0, y: full ? 0 : TB, width: W, height: Math.max(1, full ? H : H - TB) });
+        const hs = HANDLE, off = full || !w.resizable;
+        const place = { w: [0, TB, hs, H - TB - hs], e: [W - hs, TB, hs, H - TB - hs], s: [hs, H - hs, W - 2 * hs, hs], sw: [0, H - hs, hs, hs], se: [W - hs, H - hs, hs, hs] };
+        for (const [dir, [x, y, ww, hh]] of Object.entries(place)) if (w.handles?.[dir]) this.X.ConfigureWindow(w.handles[dir], off ? { x: -100, y: -100, width: 1, height: 1 } : { x, y, width: Math.max(1, ww), height: Math.max(1, hh) });
+      } else {
+        const inset = full ? { l: 0, t: 0 } : { l: EDGE, t: TB };
+        this.X.ConfigureWindow(w.client, { x: inset.l, y: inset.t, width: Math.max(1, w.w - (full ? 0 : EDGE * 2)), height: Math.max(1, w.h - (full ? 0 : TB + EDGE)) });
+      }
       this.sendConfigureNotify(w);
-      this.raiseClient(w);
     } else {
       this.X.ConfigureWindow(w.client, { x: w.x, y: w.y, width: Math.max(1, w.w), height: Math.max(1, w.h) });
     }
@@ -658,7 +724,8 @@ class WindowManager extends EventEmitter {
       const k = Math.min(1, (Date.now() - t0) / D), e = ease(k);
       Object.assign(w, { x: Math.round(from.x + (target.x - from.x) * e), y: Math.round(from.y + (target.y - from.y) * e), w: Math.round(from.w + (target.w - from.w) * e), h: Math.round(from.h + (target.h - from.h) * e) });
       this.applyGeometry(w);
-      if (k >= 1) { clearInterval(w.anim); w.anim = null; Object.assign(w, target); this.applyGeometry(w); done?.(); }
+      // tell the web UI where the window ended up (the Dock's smart hide, Mission Control… use it)
+      if (k >= 1) { clearInterval(w.anim); w.anim = null; Object.assign(w, target); this.applyGeometry(w); done?.(); this.emit('changed'); }
     }, 16);
   }
 

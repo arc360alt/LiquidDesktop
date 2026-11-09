@@ -73,7 +73,7 @@ const render = {
         isNative ? row('Developer tools', h('button.btn', { onclick: () => api.shell.devtools() }, 'Open')) : null),
     ];
   },
-  appearance() {
+  async appearance() {
     const card = (v, label, bg, fg) => h('div.theme-card' + (store.get('theme') === v ? '.sel' : ''), { onclick: () => { store.set('theme', v); rerender(); } },
       h('div.pv', { style: { background: bg } }, h('i', { style: { background: fg } })), label);
     const iconCard = (v, label) => {
@@ -92,6 +92,7 @@ const render = {
       h('div.group-title', 'Icon & widget style'),
       h('div.group', row('Icons', h('div.icon-style-cards', iconCard('default', 'Default'), iconCard('dark', 'Dark'), iconCard('clear', 'Clear'), iconCard('tinted', 'Tinted'))),
         row('Uniform Linux app icons', toggle('uniformIcons'), 'Place icons of installed Linux apps on a rounded square.')),
+      ...(await appThemesGroup()),
     ];
   },
   wallpaper() {
@@ -575,6 +576,35 @@ export function openAppSettings(pane) {
   wm.open('appsettings', { pane });
 }
 let rerender = () => redraws.forEach((f) => f());
+
+// Settings › Appearance › App Themes: the GTK and Qt (Kvantum) themes of Linux apps in the session
+async function appThemesGroup() {
+  if (!api.apptheme?.status) return [];
+  let st;
+  try { st = await api.apptheme.status(); } catch { return []; }
+  const pick = (key, list, extra) => h('select.field.square', { style: { height: '26px', minWidth: '210px' }, onchange: async (e) => { await api.apptheme.set({ [key]: e.target.value }); rerender(); } },
+    h('option', { value: 'auto', selected: st.cfg[key] === 'auto' }, 'Automatic (MacTahoe)'), ...(extra || []),
+    ...list.map((n) => h('option', { value: n, selected: st.cfg[key] === n }, n)));
+  const install = async (btn) => {
+    btn.disabled = true; btn.textContent = 'Installing…';
+    const r = await api.apptheme.install().catch((e) => ({ ok: false, out: e.message }));
+    if (!r.ok) alertDialog({ title: 'Couldn’t install the MacTahoe themes', message: r.out || 'Check your internet connection and try again.' });
+    rerender();
+  };
+  const note = st.mode !== 'session' ? 'Applied in the LiquidDesktop session (not in this testing window).'
+    : `Now: GTK ${st.active.gtk || 'default'} · Qt ${st.active.qt ? st.active.qt + (st.kvantum ? '' : ' (Kvantum isn’t installed)') : 'default'}. Apps opened from now on use it; GTK apps switch right away.`;
+  return [
+    h('div.group-title', 'App Themes'),
+    h('div.group',
+      row('GTK apps', pick('gtk', st.gtk, [h('option', { value: 'none', selected: st.cfg.gtk === 'none' }, 'Don’t change')]), 'Firefox, GIMP, Files apps and other GTK 3 apps'),
+      row('GTK 4 / libadwaita apps', h('label.toggle', h('input', { type: 'checkbox', checked: !!st.cfg.libadwaita, onchange: async (e) => { await api.apptheme.set({ libadwaita: e.target.checked }); rerender(); } }), h('span')),
+        'Uses MacTahoe’s libadwaita version (with a MacTahoe GTK theme). It lives in ~/.config/gtk-4.0, so your other desktops’ GTK 4 apps get it too; switching this off puts back what was there. Apps change when reopened.'),
+      row('Qt apps (Kvantum)', pick('qt', st.qt, [h('option', { value: 'none', selected: st.cfg.qt === 'none' }, 'Don’t change')]), st.kvantum ? 'OBS, Prism Launcher, VLC, KDE apps and other Qt apps' : 'Needs Kvantum (the “kvantum” package) to style Qt apps'),
+      row('MacTahoe themes', (() => { const b = h('button.btn', { onclick: () => install(b) }, st.installing ? 'Installing…' : st.macTahoe ? 'Reinstall' : 'Install'); b.disabled = st.installing; return b; })(),
+        st.macTahoe ? 'Installed in your home folder (by vinceliuice: MacTahoe GTK, MIT · MacTahoe Kvantum, LGPL-3.0)' : 'Downloads the MacTahoe GTK and Kvantum themes into your home folder'),
+      h('div.row', h('div.label', h('small', note)))),
+  ];
+}
 
 // Settings › General › Software Update
 export function runUpdate(command) {

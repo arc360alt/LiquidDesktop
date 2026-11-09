@@ -497,3 +497,9 @@
 .mb-tray-item span { width: 17px; height: 17px; border-radius: 5px; background: rgba(128, 128, 128, 0.35); font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
 .mb-tray-item.attention img { animation: trayPulse 1.2s ease-in-out infinite alternate; }
 @keyframes trayPulse { to { opacity: 0.45; } }
+
+/* notifications from Linux apps */
+.notif-img { width: 100%; height: 100%; object-fit: contain; border-radius: 8px; }
+.notif-acts { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+.notif-acts button { flex: 1; min-width: 70px; border: 0; border-radius: 8px; padding: 5px 10px; font: inherit; font-size: 12px; font-weight: 600; color: inherit; background: rgba(128, 128, 128, 0.2); }
+.notif-acts button:hover { background: rgba(128, 128, 128, 0.32); }

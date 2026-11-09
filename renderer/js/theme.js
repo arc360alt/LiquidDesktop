@@ -16,10 +16,13 @@ function computeDark() {
   return isNightTime();
 }
 
+let sentDark = null;
 export function applyTheme() {
   const dark = computeDark();
   const changed = dark !== theme.dark;
   theme.dark = dark;
+  // Linux apps' "Automatic" GTK/Qt theme follows light/dark (main/appthemes.js); one layer reports it
+  if (layer === 'shell' && sentDark !== dark && window.sys?.apptheme?.dark) { sentDark = dark; window.sys.apptheme.dark(dark); }
   root.dataset.theme = dark ? 'dark' : 'light';
   root.dataset.glass = store.get('glass');
   root.dataset.refraction = String(store.get('refraction'));

@@ -49,6 +49,7 @@ async function bootFull() {
   progress(10);
   await common();
   api.sys.onUpdated?.(() => shell.updatedPrompt());
+  import('./notifications.js').then(({ notifyRemote, closeRemote }) => { api.notif?.onShow(notifyRemote); api.notif?.onClose(closeRemote); });
   progress(35);
   wm.init();
   initMenubar();
@@ -75,6 +76,7 @@ async function bootShell() {
   progress(15);
   await common();
   api.sys.onUpdated?.(() => shell.updatedPrompt());
+  import('./notifications.js').then(({ notifyRemote, closeRemote }) => { api.notif?.onShow(notifyRemote); api.notif?.onClose(closeRemote); });
   const { installSessionWM, windowMenu } = await import('./sessionwm.js');
   const { initShellShape } = await import('./shellshape.js');
   await catalog.load();

@@ -74,7 +74,7 @@ async function startSession({ preload }) {
 
   /* ------------------------------------------------------------ frames for native windows */
   wm.on('need-frame', (w, done) => {
-    const fb = new BrowserWindow({ x: 0, y: 0, width: Math.max(200, w.w + EDGE * 2), height: Math.max(80, w.h + TB + EDGE), frame: false, show: false,
+    const fb = new BrowserWindow({ x: 0, y: 0, width: Math.max(200, w.w + EDGE * 2), height: TB, frame: false, show: false,
       backgroundColor: '#f6f6f8', focusable: false, skipTaskbar: true, webPreferences: { ...prefs, webviewTag: false } });
     fb.setTitle(w.title || 'Window');
     fb.on('page-title-updated', (e) => e.preventDefault());
@@ -180,7 +180,12 @@ async function startSession({ preload }) {
   on('wm:zoom', (id, mode) => wm.zoom(id, mode));
   on('shell:locked', (v) => wm.setLocked(v));
   on('shell:notify', (n) => toShell('session:notify', n));
-  on('shell:windowMenu', (id, x, y, kind) => toShell('session:windowMenu', id, x, y, kind));
+  on('shell:windowMenu', (id, x, y, kind, rel) => {
+    // from a title bar: its coordinates are relative to the window (it sits inside the frame container)
+    const w = rel && wm.windows.get(id);
+    if (w) { const k = screen.getPrimaryDisplay().scaleFactor || 1; x = Math.round(w.x / k + x); y = Math.round(w.y / k + y); }
+    toShell('session:windowMenu', id, x, y, kind);
+  });
   on('frame:op', (id, op, arg) => {
     ({ activate: () => wm.activate(id), close: () => wm.close(id), minimize: () => wm.minimize(id), toggleMaximize: () => wm.toggleMaximize(id), zoom: () => wm.zoom(id, arg),
       beginMove: () => wm.beginMove(id), beginResize: () => wm.beginResize(id, arg) })[op]?.();

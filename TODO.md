@@ -1,5 +1,7 @@
 # ToDo
 
+- Integrate the DE into Vertex Linux and then remake the website and add an interactive version of the DE so users can test it (DO LATER)
+
 # Fixed
 
 - FIx the graphics device section in the about window sometimes just showing some random device instead of your actual GPU
@@ -16,3 +18,10 @@
 - Add a screenshot tool that activates with Super+Shift+S like on windows and lets you take a screenshot of an area, window, or fullscreen and saves the screenshot to a folder and copies it to your clipboard (both configurable in settings)
 - Add a proper toolbar so apps that stay open in the backround (like discord or OBS when its recording) have a toolbar thing in the topbar that you can click on and right click on to see the options it has like on KDE plasma and other DE's
 - Make a proper login theme for SSDM or somthing so it looks better when logging in (Make this theme automaticly install and apply itself when this update is installed)
+- The chromium/electron window borders still go in front of the content sometimes after it updates even after your fix.
+- Fix the dock not hiding when a maximised window is in front of it even when that is enabled in settings
+- Fix notifications not being implemented 
+- Implement a QT and GTK macOS theme into the DE (https://github.com/vinceliuice/MacTahoe-gtk-theme, https://github.com/vinceliuice/MacTahoe-kde), add this option inside the theme setitngs where you can see QT (kvantum) and GTK themes and select wich one, defualt should be the 2 ones listed here
+
+# Not that important
+- Minecraft opens where half of it is hidden for some reason , don't think thats that big of a deal but look into it still (Fixes itself after moving the window) (DO LATER)

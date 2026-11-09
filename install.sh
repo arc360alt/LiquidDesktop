@@ -106,7 +106,7 @@ install_arch() {
   fi
   if [ -z "$MINIMAL" ]; then
     say "Installing Control Center helpers…"
-    run sudo pacman -S --needed --noconfirm --asdeps networkmanager wireplumber brightnessctl bluez-utils playerctl upower xorg-xwayland mesa-utils flatpak pacman-contrib archlinux-appstream-data xorg-xinput || true
+    run sudo pacman -S --needed --noconfirm --asdeps networkmanager wireplumber brightnessctl bluez-utils playerctl upower xorg-xwayland mesa-utils flatpak pacman-contrib archlinux-appstream-data xorg-xinput kvantum sassc || true
   fi
   BIN=/usr/bin
 }

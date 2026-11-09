@@ -18,7 +18,7 @@
     body.focused .traffic .tl-max { background: #28c840; }
     .rz { position: absolute; z-index: 5; }
     .rz.n { top: 0; left: 10px; right: 10px; height: 3px; cursor: ns-resize; }
-    .rz.s { bottom: 0; left: 10px; right: 10px; height: 4px; cursor: ns-resize; }
+    .rz.s { display: none; }   /* the bottom edge belongs to the app below (the WM's resize handles) */
     .rz.e { right: 0; top: 10px; bottom: 10px; width: 4px; cursor: ew-resize; }
     .rz.w { left: 0; top: 10px; bottom: 10px; width: 4px; cursor: ew-resize; }
     .rz.se { right: 0; bottom: 0; width: 12px; height: 12px; cursor: nwse-resize; }

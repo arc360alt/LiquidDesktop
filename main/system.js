@@ -676,8 +676,7 @@ function register({ getWindow, mode }) {
     fs.writeFileSync(path.join(app.getPath('userData'), 'cursor-theme'), `${theme} ${size}\n`);
     if (mode !== 'session') return { scope: 'window' };
     if (which('xrdb')) { const c = spawn('xrdb', ['-merge']); c.stdin.end(`Xcursor.theme: ${theme}\nXcursor.size: ${size}\n`); }
-    const conf = path.join(process.env.XDG_RUNTIME_DIR || '/tmp', 'liquid-desktop-xsettingsd.conf');
-    try { fs.writeFileSync(conf, `Gtk/CursorThemeName "${theme}"\nGtk/CursorThemeSize ${size}\n`); await run('pkill', ['-HUP', '-x', 'xsettingsd']); } catch { /* no xsettingsd */ }
+    require('./appthemes').writeXsettings();   // cursor + GTK theme for GTK apps
     app.emit('liquid-cursor-changed', theme, size);
     return { scope: 'session' };
   });

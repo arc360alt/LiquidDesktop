@@ -31,6 +31,8 @@ depends=(
   'xsettingsd'          # tells GTK apps which cursor theme to use
   'xorg-xrdb'           # …and libXcursor (Qt, Chromium) via X resources
   'xorg-xinput'         # mouse & trackpad settings in the session
+  'kvantum'             # Qt apps in the MacTahoe theme (Settings › Appearance › App Themes)
+  'sassc'               # builds MacTahoe's GTK 4 / libadwaita version
 )
 optdepends=(
   'networkmanager: Wi-Fi status, network list and joining (nmcli)'

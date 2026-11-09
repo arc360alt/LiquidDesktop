@@ -106,12 +106,12 @@
 html, body {
   margin: 0; width: 100%; height: 100%; overflow: hidden;
   font-family: var(--font); font-size: 13px; color: var(--text);
-  -webkit-font-smoothing: antialiased; user-select: none; cursor: default;
+  -webkit-font-smoothing: antialiased; user-select: none; cursor: var(--cur-default, default);
   font-feature-settings: 'cv11', 'ss01', 'ss03';
   background: #000;
 }
 button, input, textarea, select { font: inherit; color: inherit; }
-button { cursor: default; }
+button { cursor: var(--cur-default, default); }
 input, textarea, [contenteditable] { user-select: text; }
 ::selection { background: rgba(var(--accent-rgb), 0.35); }
 img { -webkit-user-drag: none; }
@@ -280,3 +280,6 @@ select.field { padding-right: 26px; -webkit-appearance: none; appearance: none;
 :root #lock .glass, :root[data-layer='shell'] #lock .glass {
   -webkit-backdrop-filter: blur(22px) saturate(1.7) !important; backdrop-filter: blur(22px) saturate(1.7) !important;
 }
+
+/* native dropdown lists (only seen if the glass menu can't open) follow the theme */
+select option, select optgroup { background: var(--win-bg); color: var(--text); }

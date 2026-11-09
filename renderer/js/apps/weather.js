@@ -6,7 +6,7 @@ import { store } from '../store.js';
 import { getWeather, describe, geocode } from '../weatherdata.js';
 
 registerApp({
-  id: 'weather', name: 'Weather', size: [440, 700], minSize: [360, 480], overlayContent: true, hideTitle: true, className: 'weather-win',
+  id: 'weather', settings: 'weather', name: 'Weather', size: [440, 700], minSize: [360, 480], overlayContent: true, hideTitle: true, className: 'weather-win',
   keywords: ['forecast', 'temperature', 'rain'],
   open(win) {
     const root = h('div.weather');

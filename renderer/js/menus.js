@@ -146,3 +146,44 @@ export const confirmDialog = async (title, message, ok = 'OK', opts = {}, contai
   const r = await alertDialog({ title, message, icon: opts.icon, buttons: [{ label: 'Cancel', value: 'cancel' }, { label: ok, value: 'ok', primary: !opts.danger, danger: opts.danger }] }, container);
   return r.button === 'ok';
 };
+
+/**
+ * Every <select> opens a Liquid Glass menu instead of the native (unthemed, often unreadable) list.
+ * The <select> stays the source of truth: picking an item sets its value and fires input/change.
+ */
+export function enhanceSelects(root = document) {
+  const open = (sel) => {
+    if (sel.disabled) return;
+    const r = sel.getBoundingClientRect();
+    const items = [];
+    for (const node of sel.children) {
+      if (node.tagName === 'OPTGROUP') {
+        items.push({ header: node.label });
+        for (const o of node.children) items.push(item(sel, o));
+      } else if (node.tagName === 'OPTION') items.push(item(sel, node));
+    }
+    showMenu(items, r.left, r.bottom + 4, { minWidth: Math.max(160, r.width), className: 'select-menu' });
+    // put the chosen item near the field, like macOS
+  };
+  const item = (sel, o) => ({
+    label: o.textContent, checked: o.selected, disabled: o.disabled,
+    action: () => {
+      if (sel.value === o.value) return;
+      sel.value = o.value;
+      sel.dispatchEvent(new Event('input', { bubbles: true }));
+      sel.dispatchEvent(new Event('change', { bubbles: true }));
+    },
+  });
+  root.addEventListener('mousedown', (e) => {
+    const sel = e.target.closest?.('select');
+    if (!sel || e.button !== 0) return;
+    e.preventDefault();
+    sel.focus();
+    open(sel);
+  }, true);
+  root.addEventListener('keydown', (e) => {
+    const sel = e.target.closest?.('select');
+    if (!sel) return;
+    if (e.key === 'Enter' || e.key === ' ' || (e.altKey && (e.key === 'ArrowDown' || e.key === 'ArrowUp'))) { e.preventDefault(); open(sel); }
+  }, true);
+}

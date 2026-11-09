@@ -105,7 +105,7 @@ install_arch() {
   fi
   if [ -z "$MINIMAL" ]; then
     say "Installing Control Center helpers…"
-    run sudo pacman -S --needed --noconfirm --asdeps networkmanager wireplumber brightnessctl bluez-utils playerctl upower xorg-xwayland mesa-utils flatpak pacman-contrib archlinux-appstream-data || true
+    run sudo pacman -S --needed --noconfirm --asdeps networkmanager wireplumber brightnessctl bluez-utils playerctl upower xorg-xwayland mesa-utils flatpak pacman-contrib archlinux-appstream-data xorg-xinput || true
   fi
   BIN=/usr/bin
 }
@@ -116,7 +116,7 @@ install_generic() {
     debian)
       say "Installing dependencies with apt…"
       run sudo apt-get update
-      run sudo apt-get install -y git nodejs npm picom python3 xdg-utils xserver-xorg-core x11-xserver-utils \
+      run sudo apt-get install -y git nodejs npm picom python3 xdg-utils xserver-xorg-core x11-xserver-utils xsettingsd \
         libnss3 libgtk-3-0 libgbm1 libxss1 libxtst6 libatk-bridge2.0-0 libdrm2
       # the ALSA library was renamed on newer Ubuntu/Debian
       run sudo apt-get install -y libasound2t64 2>/dev/null || run sudo apt-get install -y libasound2
@@ -124,7 +124,7 @@ install_generic() {
       ;;
     fedora)
       say "Installing dependencies with dnf…"
-      run sudo dnf install -y git nodejs npm picom python3 xdg-utils xorg-x11-server-Xorg nss gtk3 mesa-libgbm alsa-lib libXScrnSaver libXtst
+      run sudo dnf install -y git nodejs npm picom python3 xdg-utils xorg-x11-server-Xorg xrdb xsettingsd nss gtk3 mesa-libgbm alsa-lib libXScrnSaver libXtst
       [ -z "$MINIMAL" ] && { run sudo dnf install -y NetworkManager wireplumber brightnessctl bluez playerctl upower glx-utils flatpak || true; }
       ;;
     suse)

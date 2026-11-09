@@ -20,7 +20,10 @@
 .win.maximized .win-clip { border-radius: 0; }
 .win.minimizing { transition: transform 0.5s cubic-bezier(0.5, 0, 0.75, 0), opacity 0.5s ease-in; pointer-events: none; }
 .win.glass-win { background: rgba(var(--glass-rgb), calc(var(--glass-a) + 0.25)); backdrop-filter: blur(40px) saturate(1.8); }
-.win-clip { position: absolute; inset: 0; border-radius: inherit; overflow: hidden; display: flex; flex-direction: column; }
+.win-clip { position: absolute; inset: 0; border-radius: inherit; overflow: hidden; overflow: clip; display: flex; flex-direction: column; }
+/* overflow: clip can't be scrolled programmatically: a focused element (like the terminal's typing cursor)
+   can never scroll the window's own frame and push the title bar out of sight */
+.win-body { overflow: clip; }
 
 /* the title bar is an overlay: content flows under it, toolbars float on it */
 .win-titlebar {
@@ -52,14 +55,14 @@
 .win:not(.focused) .win-toolbar, .win:not(.focused) .win-title { opacity: 0.55; }
 
 .rz { position: absolute; z-index: 30; }
-.rz.n { top: -4px; left: 12px; right: 12px; height: 8px; cursor: ns-resize; }
-.rz.s { bottom: -4px; left: 12px; right: 12px; height: 8px; cursor: ns-resize; }
-.rz.e { right: -4px; top: 12px; bottom: 12px; width: 8px; cursor: ew-resize; }
-.rz.w { left: -4px; top: 12px; bottom: 12px; width: 8px; cursor: ew-resize; }
-.rz.ne { right: -5px; top: -5px; width: 16px; height: 16px; cursor: nesw-resize; }
-.rz.nw { left: -5px; top: -5px; width: 16px; height: 16px; cursor: nwse-resize; }
-.rz.se { right: -5px; bottom: -5px; width: 16px; height: 16px; cursor: nwse-resize; }
-.rz.sw { left: -5px; bottom: -5px; width: 16px; height: 16px; cursor: nesw-resize; }
+.rz.n { top: -4px; left: 12px; right: 12px; height: 8px; cursor: var(--cur-ns-resize, ns-resize); }
+.rz.s { bottom: -4px; left: 12px; right: 12px; height: 8px; cursor: var(--cur-ns-resize, ns-resize); }
+.rz.e { right: -4px; top: 12px; bottom: 12px; width: 8px; cursor: var(--cur-ew-resize, ew-resize); }
+.rz.w { left: -4px; top: 12px; bottom: 12px; width: 8px; cursor: var(--cur-ew-resize, ew-resize); }
+.rz.ne { right: -5px; top: -5px; width: 16px; height: 16px; cursor: var(--cur-nesw-resize, nesw-resize); }
+.rz.nw { left: -5px; top: -5px; width: 16px; height: 16px; cursor: var(--cur-nwse-resize, nwse-resize); }
+.rz.se { right: -5px; bottom: -5px; width: 16px; height: 16px; cursor: var(--cur-nwse-resize, nwse-resize); }
+.rz.sw { left: -5px; bottom: -5px; width: 16px; height: 16px; cursor: var(--cur-nesw-resize, nesw-resize); }
 .win.maximized .rz { display: none; }
 .win .shield { position: absolute; inset: 0; z-index: 40; display: none; }
 body.dragging-win .win .shield, body.resizing-win .win .shield { display: block; }
@@ -120,8 +123,10 @@ body.resizing-win, body.resizing-win * { cursor: inherit; }
 .quicklook .ql-body pre { align-self: stretch; flex: 1; margin: 0; padding: 14px; border-radius: 12px; background: var(--win-content); color: var(--text); font: 12px/1.5 var(--mono); overflow: auto; white-space: pre-wrap; user-select: text; }
 
 /* ---------------------------------------------------------------- Terminal */
-.term-wrap { flex: 1; min-width: 0; padding: 52px 6px 6px 12px; background: var(--term-bg, #1e1e1e); position: relative; }
-.term-wrap .xterm { height: 100%; }
+.term-wrap { flex: 1; min-width: 0; min-height: 0; padding: 0; background: var(--term-bg, #1e1e1e); position: relative; }
+/* the padding lives on .xterm itself: xterm's fit helper only subtracts the terminal element's own padding,
+   so padding on the container made it think there were 3–4 more rows than fit (the bottom got cut off) */
+.term-wrap .xterm { height: 100%; box-sizing: border-box; padding: 52px 6px 6px 12px; }
 .term-wrap .xterm-viewport { background: transparent !important; }
 .term-wrap .xterm .xterm-viewport::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.25); border: 3px solid transparent; background-clip: content-box; }
 .win.term-glass { background: rgba(20, 20, 26, 0.55); backdrop-filter: blur(30px) saturate(1.6); }
@@ -331,7 +336,7 @@ body.mission-open #spaces { z-index: 7550; }
 .br-ext-btn img { width: 18px; height: 18px; }
 .br-dl { position: relative; }
 .br-dl.busy::after { content: ''; position: absolute; left: 7px; right: 7px; bottom: 3px; height: 2.5px; border-radius: 2px; background: linear-gradient(90deg, var(--accent) var(--p), rgba(128, 128, 128, 0.3) var(--p)); }
-.br-tab { cursor: default; }
+.br-tab { cursor: var(--cur-default, default); }
 .br-tab .br-tab-x { width: 18px; height: 18px; border: 0; border-radius: 50%; background: transparent; display: flex; align-items: center; justify-content: center; opacity: 0; color: var(--text-2); flex: none; }
 .br-tab:hover .br-tab-x, .br-tab.on .br-tab-x { opacity: 1; }
 .br-tab .br-tab-x:hover { background: var(--hover); }
@@ -467,3 +472,14 @@ body.mission-open #spaces { z-index: 7550; }
 .as-desc p { margin: 0 0 10px; white-space: normal; }
 .as-desc ul { margin: 0 0 10px; padding-left: 20px; white-space: normal; }
 .as-kv { grid-template-columns: 130px 1fr; margin: 0; }
+
+/* Settings › Mouse */
+.dev-sel { background: rgba(var(--accent-rgb), 0.1); }
+.cursor-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; padding: 12px; }
+.cursor-card { border-radius: 12px; padding: 10px 8px 8px; display: flex; flex-direction: column; align-items: center; gap: 6px; background: rgba(128, 128, 128, 0.08); box-shadow: inset 0 0 0 0.5px var(--separator); }
+.cursor-card:hover { background: rgba(128, 128, 128, 0.15); }
+.cursor-card.sel { box-shadow: 0 0 0 2.5px var(--accent); background: rgba(var(--accent-rgb), 0.1); }
+.cursor-card span { font-size: 11.5px; text-align: center; color: var(--text-2); line-height: 1.2; }
+.cursor-card.sel span { color: var(--text); font-weight: 600; }
+.cursor-pv { height: 44px; display: flex; align-items: center; gap: 10px; padding: 6px 12px; border-radius: 8px; background: linear-gradient(135deg, #8ec5ff, #5b8fd9); }
+.cursor-pv img { width: 26px; height: 26px; image-rendering: auto; }

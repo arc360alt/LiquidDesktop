@@ -519,15 +519,24 @@ class WindowManager extends EventEmitter {
 
   restack() {
     const X = this.X;
-    const order = [];
+    const order = [];   // bottom → top
     if (this.desktop) order.push(this.desktop);
-    for (const w of this.stack) if (w.space === this.space && !w.minimized) order.push(w.frame);
+    for (const w of this.stack) if (w.space === this.space && !w.minimized && !w.hidden) order.push(w.frame);
     for (const o of this.others) order.push(o);
     if (this.catcherOn) order.push(this.catcher);
     for (const e of Object.values(this.edges || {})) if (e.armed) order.push(e.id);
     for (const b of this.blurPool || []) if (b.mapped) order.push(b.id);
     if (this.shell) order.push(this.shell);
-    for (const xid of order) X.ConfigureWindow(xid, { stackMode: 0 });
+    // Place windows top-down, each directly below its neighbour, inside a server grab: the compositor
+    // only ever sees the final order (raising them one by one from the bottom made windows flash).
+    X.GrabServer();
+    let above = null;
+    for (let i = order.length - 1; i >= 0; i--) {
+      if (above == null) X.ConfigureWindow(order[i], { stackMode: 0 });
+      else X.ConfigureWindow(order[i], { sibling: above, stackMode: 1 });
+      above = order[i];
+    }
+    X.UngrabServer();
     this.setWindows(this.root, '_NET_CLIENT_LIST_STACKING', this.stack.map((w) => w.client));
   }
 
@@ -783,6 +792,10 @@ class WindowManager extends EventEmitter {
     if (restack) for (const b of this.blurPool) if (b.mapped) X.ConfigureWindow(b.id, { sibling: this.shell, stackMode: 1 });
   }
 
+  async reloadCursor() {
+    try { this.cursor = await loadCursor(this.X, this.root); this.X.ChangeWindowAttributes(this.root, { cursor: this.cursor }); } catch (e) { console.warn('[wm] cursor', e.message); }
+  }
+
   /** Arm/disarm the screen-edge strips (only while the Dock or menu bar is hidden). */
   setEdges({ top, bottom }) {
     let changed = false;
@@ -790,9 +803,10 @@ class WindowManager extends EventEmitter {
       const e = this.edges[side];
       if (e.armed === on) continue;
       e.armed = on; changed = true;
-      if (on) this.X.MapWindow(e.id); else { this.X.UnmapWindow(e.id); clearTimeout(e.timer); }
+      if (on) { this.X.MapWindow(e.id); if (this.shell) this.X.ConfigureWindow(e.id, { sibling: this.shell, stackMode: 1 }); }
+      else { this.X.UnmapWindow(e.id); clearTimeout(e.timer); }
     }
-    if (changed) this.restack();
+    void changed;   // an edge strip is slipped in right under the shell; no full restack (that flashed windows)
   }
   onEdge(wid, entered) {
     const side = Object.keys(this.edges || {}).find((k) => this.edges[k].id === wid);

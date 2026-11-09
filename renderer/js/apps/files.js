@@ -10,7 +10,7 @@ import { store } from '../store.js';
 let clipboard = null; // { op: 'copy'|'cut', paths }
 
 registerApp({
-  id: 'files', name: 'Files', size: [920, 560], minSize: [520, 320], overlayContent: true, hideTitle: true,
+  id: 'files', settings: 'files', name: 'Files', size: [920, 560], minSize: [520, 320], overlayContent: true, hideTitle: true,
   keywords: ['finder', 'file manager', 'folders'],
   about: 'Browse and manage the files on this computer.',
   menus: (win) => [
@@ -42,8 +42,8 @@ class FilesView {
   constructor(win, args) {
     this.win = win; win.state = this;
     this.view = store.get('filesView') || 'icons';
-    this.showHidden = false;
-    this.sort = 'name';
+    this.showHidden = !!store.get('filesShowHidden');
+    this.sort = store.get('filesSort') || 'name';
     this.history = []; this.fwd = [];
     this.sel = new Set();
     this.items = [];
@@ -56,6 +56,12 @@ class FilesView {
       this.go(args.path || p.home, { select: args.select });
     });
     const off = bus.on('fs-changed', () => this.refresh());
+    const offS = store.on('change', (k) => {
+      if (k === 'filesShowHidden') { this.showHidden = !!store.get(k); this.renderItems(); }
+      if (k === 'filesSort') { this.sort = store.get(k); this.renderItems(); }
+      if (k === 'filesFoldersFirst') this.renderItems();
+    });
+    win.on('close', offS);
     win.on('close', off);
     win.on('focus', () => this.refresh());
   }
@@ -185,7 +191,8 @@ class FilesView {
     let list = this.items.filter((i) => this.showHidden || !i.hidden);
     if (this.filter) list = list.filter((i) => i.name.toLowerCase().includes(this.filter));
     const s = this.sort;
-    list.sort((a, b) => (b.isDir - a.isDir) || (s === 'name' ? a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }) : s === 'mtime' ? b.mtime - a.mtime : s === 'size' ? b.size - a.size : (a.ext || '').localeCompare(b.ext || '') || a.name.localeCompare(b.name)));
+    const ff = store.get('filesFoldersFirst') !== false;
+    list.sort((a, b) => (ff ? b.isDir - a.isDir : 0) || (s === 'name' ? a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }) : s === 'mtime' ? b.mtime - a.mtime : s === 'size' ? b.size - a.size : (a.ext || '').localeCompare(b.ext || '') || a.name.localeCompare(b.name)));
     return list;
   }
   iconFor(f, size = 60) {

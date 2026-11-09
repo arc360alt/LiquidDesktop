@@ -26,7 +26,7 @@ if (isNative) {
 }
 
 registerApp({
-  id: 'terminal', name: 'Terminal', size: [760, 470], minSize: [360, 200], overlayContent: true,
+  id: 'terminal', settings: 'terminal', name: 'Terminal', size: [760, 470], minSize: [360, 200], overlayContent: true,
   keywords: ['shell', 'console', 'bash', 'command line'],
   about: 'A real shell, rendered with xterm.js.',
   menus: (win) => [
@@ -79,16 +79,29 @@ registerApp({
     const off = () => offs.forEach((f) => f());
     const doFit = () => { try { fit.fit(); if (state.id) api.pty.resize(state.id, term.cols, term.rows); } catch { /* not visible yet */ } };
     win.on('resize', () => requestAnimationFrame(doFit));
+    // refit whenever the terminal's area changes size (real window resized, maximized, tiled…)
+    let fitQueued = false;
+    new ResizeObserver(() => { if (fitQueued) return; fitQueued = true; requestAnimationFrame(() => { fitQueued = false; doFit(); }); }).observe(wrap);
     win.on('focus', () => term.focus());
     term.attachCustomKeyEventHandler((e) => {
       // Ctrl+Shift+C / V copy & paste like other Linux terminals
-      if (e.type === 'keydown' && e.ctrlKey && e.shiftKey && (e.key === 'C' || e.key === 'c')) { api.clip.write(term.getSelection()); return false; }
-      if (e.type === 'keydown' && e.ctrlKey && e.shiftKey && (e.key === 'V' || e.key === 'v')) { api.clip.read().then((t) => state.id && api.pty.write(state.id, t)); return false; }
+      if (e.type === 'keydown' && e.ctrlKey && e.shiftKey && (e.key === 'C' || e.key === 'c')) { api.clip.write(term.getSelection()); e.preventDefault(); return false; }
+      // pasting is left to the browser's own paste event (handled once by xterm); we only note that it was asked for
+      if (e.type === 'keydown' && ((e.ctrlKey && (e.key === 'v' || e.key === 'V')) || (e.shiftKey && e.key === 'Insert'))) pasteArmed = Date.now();
       if (e.type === 'keydown' && e.ctrlKey && (e.key === '=' || e.key === '+')) { state.zoom(1); return false; }
       if (e.type === 'keydown' && e.ctrlKey && e.key === '-') { state.zoom(-1); return false; }
       return true;
     });
     term.onTitleChange((t) => win.setTitle(t || 'Terminal'));
+    // Only paste when it was asked for: a paste shortcut just now (once per key press), or the right-click
+    // menu. This stops middle-click / three-finger-tap pastes of the selection while typing.
+    let pasteArmed = 0;
+    wrap.addEventListener('paste', (e) => {
+      if (Date.now() - pasteArmed < 600) { pasteArmed = 0; return; }
+      if (store.get('terminalMiddlePaste')) return;
+      e.stopImmediatePropagation(); e.preventDefault();
+    }, true);
+    wrap.addEventListener('mouseup', (e) => { if (e.button === 1 && !store.get('terminalMiddlePaste')) e.preventDefault(); }, true);
     setTimeout(async () => {
       doFit();
       if (!isNative) { term.write('\x1b[1mLiquidDesktop Terminal\x1b[0m\r\n\r\nThe terminal needs the desktop backend — run \x1b[36mnpm start\x1b[0m.\r\n'); return; }

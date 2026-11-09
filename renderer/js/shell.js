@@ -169,7 +169,7 @@ function onKey(e) {
     case 'm': if (win) { take(); win.minimize(); } break;
     case 'h': if (win) { take(); wm.appWindows(win.app.id).forEach((w) => w.minimize()); } break;
     case 'n': take(); wm.open(win ? win.app.id : 'files'); break;
-    case ',': take(); wm.open('settings'); break;
+    case ',': take(); if (win?.app?.settings) import('./apps/settings.js').then((m) => m.openAppSettings(win.app.settings)); else wm.open('settings'); break;
     case '`': if (win) { take(); const ws = wm.appWindows(win.app.id).filter((w) => !w.minimized); if (ws.length > 1) ws[(ws.indexOf(win) + 1) % ws.length].focus(); } break;
   }
 }

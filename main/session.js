@@ -17,6 +17,7 @@ const xidOf = (bw) => { const b = bw.getNativeWindowHandle(); return b.length >=
 
 async function startSession({ preload }) {
   await require('./displays').restoreSaved().catch(() => {});
+  require('./input').watchDevices().catch(() => {});
   const wm = new WindowManager();
   await wm.start();
   const { width: sw, height: sh } = screen.getPrimaryDisplay().bounds;
@@ -195,6 +196,8 @@ async function startSession({ preload }) {
     wm.changed();
   };
   for (const ev of ['display-metrics-changed', 'display-added', 'display-removed']) screen.on(ev, () => setTimeout(relayout, 300));
+
+  app.on('liquid-cursor-changed', () => wm.reloadCursor());
 
   app.on('before-quit', () => { for (const w of wm.windows.values()) if (w.kind !== 'app') wm.close(w.id); });
   return { wm, shell, desktop, getWindow: () => shell, openApp };

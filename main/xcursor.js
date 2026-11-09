@@ -95,4 +95,80 @@ function loadCursor(X, root, name = 'left_ptr', size = Number(process.env.XCURSO
   });
 }
 
-module.exports = { loadCursor, findCursorFile, parseXcursor };
+/* ------------------------------------------------------------------ themes for Settings › Mouse */
+const zlib = require('zlib');
+const CRC = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+const crc32 = (b) => { let c = 0xffffffff; for (const x of b) c = CRC[(c ^ x) & 255] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; };
+/** Xcursor pixels (premultiplied ARGB, little-endian) → PNG data URL */
+function toPng(img) {
+  const { width: w, height: h, pixels } = img;
+  const raw = Buffer.alloc(h * (w * 4 + 1));
+  for (let y = 0; y < h; y++) {
+    raw[y * (w * 4 + 1)] = 0;
+    for (let x = 0; x < w; x++) {
+      const i = (y * w + x) * 4, o = y * (w * 4 + 1) + 1 + x * 4;
+      const b = pixels[i], g = pixels[i + 1], r = pixels[i + 2], a = pixels[i + 3];
+      raw[o] = a ? Math.min(255, Math.round((r * 255) / a)) : 0; raw[o + 1] = a ? Math.min(255, Math.round((g * 255) / a)) : 0;
+      raw[o + 2] = a ? Math.min(255, Math.round((b * 255) / a)) : 0; raw[o + 3] = a;
+    }
+  }
+  const chunk = (type, data) => { const len = Buffer.alloc(4); len.writeUInt32BE(data.length); const td = Buffer.concat([Buffer.from(type, 'latin1'), data]); const c = Buffer.alloc(4); c.writeUInt32BE(crc32(td)); return Buffer.concat([len, td, c]); };
+  const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(w, 0); ihdr.writeUInt32BE(h, 4); ihdr[8] = 8; ihdr[9] = 6;
+  return 'data:image/png;base64,' + Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', zlib.deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]).toString('base64');
+}
+
+const themeDirs = () => [...new Set([...(process.env.XCURSOR_PATH || '').split(':').filter(Boolean).map((d) => d.replace(/^~/, os.homedir())),
+  path.join(__dirname, '..', 'session', 'cursors'), path.join(os.homedir(), '.local/share/icons'), path.join(os.homedir(), '.icons'), '/usr/share/icons', '/usr/local/share/icons'])];
+
+/** Find one cursor of a specific theme (with its usual alternative names). */
+function themeCursor(theme, names, size) {
+  for (const d of themeDirs()) {
+    for (const n of names) {
+      const f = path.join(d, theme, 'cursors', n);
+      try { if (fs.existsSync(f)) { const img = parseXcursor(fs.readFileSync(f), size); if (img) return img; } } catch { /* unreadable */ }
+    }
+  }
+  return null;
+}
+
+/** Every installed cursor theme, with arrow / hand / I-beam previews. */
+function listThemes() {
+  const seen = new Map();
+  for (const d of themeDirs()) {
+    let entries = [];
+    try { entries = fs.readdirSync(d); } catch { continue; }
+    for (const id of entries) {
+      if (seen.has(id) || id === 'default') continue;
+      if (!fs.existsSync(path.join(d, id, 'cursors'))) continue;
+      let name = id;
+      try { const m = fs.readFileSync(path.join(d, id, 'index.theme'), 'utf8').match(/^Name\s*=\s*(.+)$/m); if (m) name = m[1].trim(); } catch { /* no index */ }
+      const arrow = themeCursor(id, ['left_ptr', 'default', 'arrow'], 32);
+      if (!arrow) continue;
+      const hand = themeCursor(id, ['pointer', 'hand2', 'hand1', 'pointing_hand'], 32), text = themeCursor(id, ['text', 'xterm', 'ibeam'], 32);
+      seen.set(id, { id, name: id === 'LiquidCursor' ? 'LiquidDesktop (macOS style)' : name, preview: [arrow, hand, text].filter(Boolean).map(toPng) });
+    }
+  }
+  return [...seen.values()].sort((a, b) => (b.id === 'LiquidCursor') - (a.id === 'LiquidCursor') || a.name.localeCompare(b.name));
+}
+
+/** CSS cursor values for the web UI from any installed theme (1x + 2x images). */
+const CSS_NAMES = {
+  default: ['left_ptr', 'default', 'arrow'], pointer: ['pointer', 'hand2', 'hand1', 'pointing_hand'], text: ['text', 'xterm', 'ibeam'],
+  'ew-resize': ['ew-resize', 'sb_h_double_arrow', 'h_double_arrow', 'size_hor'], 'ns-resize': ['ns-resize', 'sb_v_double_arrow', 'v_double_arrow', 'size_ver'],
+  'nwse-resize': ['nwse-resize', 'size_fdiag', 'bd_double_arrow', 'bottom_right_corner'], 'nesw-resize': ['nesw-resize', 'size_bdiag', 'fd_double_arrow', 'bottom_left_corner'],
+  move: ['move', 'fleur', 'all-scroll', 'size_all'], 'not-allowed': ['not-allowed', 'crossed_circle', 'forbidden'], copy: ['copy', 'dnd-copy'],
+  wait: ['wait', 'watch'], progress: ['progress', 'left_ptr_watch', 'half-busy'], crosshair: ['crosshair', 'cross', 'tcross'],
+};
+function themeCss(theme, size = 24) {
+  const out = {};
+  for (const [k, names] of Object.entries(CSS_NAMES)) {
+    const a = themeCursor(theme, names, size), b = themeCursor(theme, names, size * 2);
+    if (!a) continue;
+    const scale = (img) => (img.width / size);   // themes without an exact size: CSS scales via image-set resolution
+    const s1 = scale(a), s2 = b ? scale(b) : s1;
+    out[k] = `-webkit-image-set(url("${toPng(a)}") ${s1}x${b ? `, url("${toPng(b)}") ${s2}x` : ''}) ${Math.round(a.xhot / s1)} ${Math.round(a.yhot / s1)}, ${k}`;
+  }
+  return out;
+}
+
+module.exports = { loadCursor, findCursorFile, parseXcursor, listThemes, themeCss };

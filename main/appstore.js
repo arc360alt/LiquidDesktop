@@ -121,6 +121,24 @@ function checkSudo(password) {
   });
 }
 
+/* ------------------------------------------------------------------ Flathub: user or system? */
+// Like the flatpak command: use the system-wide "flathub" remote when there is one, else a per-user one.
+async function flatpakRemotes() {
+  const r = await run('flatpak', ['remotes', '--columns=name,options']);
+  const out = { system: false, user: false };
+  for (const line of r.out.split('\n')) {
+    const [name, opts = ''] = line.split('\t');
+    if (name !== 'flathub' || /disabled/.test(opts)) continue;
+    if (/user/.test(opts)) out.user = true; else out.system = true;
+  }
+  return out;
+}
+async function flatpakScope(pref = 'auto') {
+  if (pref === 'user' || pref === 'system') return pref;
+  return (await flatpakRemotes()).system ? 'system' : 'user';
+}
+const FLATHUB_REPO = 'https://dl.flathub.org/repo/flathub.flatpakrepo';
+
 /* ------------------------------------------------------------------ jobs (install / remove / update) */
 let jobSeq = 0;
 function startJob(sender, job) {
@@ -128,9 +146,18 @@ function startJob(sender, job) {
   let cmd, args, needsSudo = false;
   const fp = ['--noninteractive', '-y'];
   if (job.source === 'flatpak') {
-    if (job.action === 'install') { cmd = 'flatpak'; args = ['install', '--user', ...fp, 'flathub', job.id]; }
-    else if (job.action === 'remove') { cmd = 'flatpak'; args = ['uninstall', ...fp, job.installation === 'system' ? '--system' : '--user', job.id]; needsSudo = job.installation === 'system'; }
-    else if (job.action === 'update') { cmd = 'flatpak'; args = ['update', ...fp, ...(job.id ? [job.id] : [])]; }
+    const sys = job.installation === 'system';
+    const where = sys ? '--system' : '--user';
+    if (job.action === 'install') {
+      if (sys) { cmd = 'flatpak'; args = ['install', where, ...fp, 'flathub', job.id]; needsSudo = true; }
+      // a per-user install needs a per-user Flathub remote: add it first if it's missing (no password needed)
+      else { cmd = 'sh'; args = ['-c', `flatpak remote-add --user --if-not-exists flathub ${FLATHUB_REPO} && exec flatpak install --user ${fp.join(' ')} flathub "$1"`, 'sh', job.id]; }
+    } else if (job.action === 'remove') { cmd = 'flatpak'; args = ['uninstall', ...fp, where, job.id]; needsSudo = sys; }
+    else if (job.action === 'update') {
+      if (job.id) { cmd = 'flatpak'; args = ['update', where, ...fp, job.id]; needsSudo = sys; }
+      // update everything: system-wide apps (as root) and this user's apps
+      else { cmd = 'sh'; args = ['-c', `sudo -S -p '' flatpak update --system ${fp.join(' ')}; flatpak update --user ${fp.join(' ')} </dev/null`]; job.feedPassword = true; }
+    }
   } else {
     needsSudo = true;
     if (job.action === 'install') { cmd = 'pacman'; args = ['-S', '--noconfirm', '--needed', job.id]; }
@@ -140,7 +167,7 @@ function startJob(sender, job) {
   if (!cmd) throw new Error('Unknown job');
   const env = { ...process.env, LC_ALL: 'C' };
   const child = needsSudo ? spawn('sudo', ['-S', '-p', '', cmd, ...args], { env }) : spawn(cmd, args, { env });
-  if (needsSudo) child.stdin.end((sudoPass || '') + '\n'); else child.stdin.end();
+  if (needsSudo || job.feedPassword) child.stdin.end((sudoPass || '') + '\n'); else child.stdin.end();
   const send = (msg) => { if (!sender.isDestroyed()) sender.send('store:progress', { job: id, ...msg }); };
   let tail = '';
   const onData = (d) => {
@@ -168,6 +195,7 @@ function register() {
   h('store:updates', updates);
   h('store:caps', () => ({ flatpak: has('flatpak'), pacman: has('pacman'), appstream: fs.existsSync('/usr/share/swcatalog/xml/extra.xml.gz') }));
   h('store:sudoStatus', sudoStatus);
+  h('store:flatpakScope', flatpakScope);
   h('store:sudoCheck', checkSudo);
   h('store:job', (job, e) => startJob(e.sender, job));
   h('store:launchFlatpak', (id) => { spawn('flatpak', ['run', id], { detached: true, stdio: 'ignore' }).unref(); return true; });

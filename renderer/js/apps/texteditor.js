@@ -6,9 +6,10 @@ import { api } from '../sys.js';
 import { prompt, alertDialog } from '../menus.js';
 import { shell } from '../shell.js';
 import { bus } from '../util.js';
+import { store } from '../store.js';
 
 registerApp({
-  id: 'texteditor', name: 'Text Editor', size: [760, 520], minSize: [360, 240], overlayContent: true,
+  id: 'texteditor', settings: 'texteditor', name: 'Text Editor', size: [760, 520], minSize: [360, 240], overlayContent: true,
   keywords: ['textedit', 'editor', 'code', 'txt'],
   about: 'Edit plain text and code.',
   menus: (win) => [{ title: 'File', items: [
@@ -23,7 +24,11 @@ registerApp({
     const ta = h('textarea', { spellcheck: false, wrap: 'off' });
     const pos = h('span'), info = h('span');
     win.body.append(h('div.texted', ta, h('div.status', pos, h('span.spacer'), info)));
-    const st = { path: args.path || null, dirty: false, wrap: false };
+    const st = { path: args.path || null, dirty: false, wrap: !!store.get('textWrap') };
+    const look = () => { ta.wrap = st.wrap ? 'soft' : 'off'; ta.style.fontSize = (store.get('textFontSize') || 13) + 'px'; ta.style.tabSize = store.get('textTabSize') || 4; };
+    look();
+    const offS = store.on('change', (k) => { if (k === 'textWrap') st.wrap = !!store.get(k); if (['textWrap', 'textFontSize', 'textTabSize'].includes(k)) look(); });
+    win.on('close', offS);
     win.state = st;
     win.toolbar.append(h('div.spacer'), h('div.tb-group',
       h('button.tb-btn', { html: sym.folder, title: 'Open…', onclick: () => st.openDialog() }),
@@ -64,7 +69,7 @@ registerApp({
     ta.addEventListener('input', () => { if (!st.dirty) { st.dirty = true; title(); } upd(); });
     ta.addEventListener('keyup', upd); ta.addEventListener('click', upd);
     ta.addEventListener('keydown', (e) => {
-      if (e.key === 'Tab') { e.preventDefault(); document.execCommand('insertText', false, '    '); }
+      if (e.key === 'Tab') { e.preventDefault(); document.execCommand('insertText', false, ' '.repeat(store.get('textTabSize') || 4)); }
       if (e.ctrlKey && e.key === 's') { e.preventDefault(); st.save(e.shiftKey); }
       if (e.ctrlKey && e.key === 'o') { e.preventDefault(); st.openDialog(); }
     });

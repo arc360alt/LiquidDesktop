@@ -17,7 +17,7 @@ const PANES = [
   ['dock', 'Desktop & Dock', '#1c1c1e', sym.dock], ['menubar', 'Menu Bar', '#0a84ff', sym.controls], ['display', 'Displays', '#0a84ff', sym.display],
   ['sound', 'Sound', '#ff2d55', sym.speaker], ['network', 'Wi-Fi', '#0a84ff', sym.wifi], ['bluetooth', 'Bluetooth', '#0a84ff', sym.bluetooth],
   ['notifications', 'Notifications', '#ff3b30', sym.bell], ['focus', 'Focus', '#5e5ce6', sym.moon], ['lock', 'Lock Screen', '#1c1c1e', sym.lock],
-  ['keyboard', 'Keyboard', '#8e8e93', sym.keyboard], ['terminal', 'Terminal', '#1c1c1e', sym.terminal], ['apps', 'Apps', '#5e5ce6', sym.grid],
+  ['mouse', 'Mouse & Trackpad', '#8e8e93', '<svg class="sym" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="6" y="3" width="12" height="18" rx="6"/><path d="M12 3v6"/></svg>'], ['keyboard', 'Keyboard', '#8e8e93', sym.keyboard], ['terminal', 'Terminal', '#1c1c1e', sym.terminal], ['apps', 'Apps', '#5e5ce6', sym.grid],
 ];
 
 const toggle = (key, after) => h('label.toggle', h('input', { type: 'checkbox', checked: !!store.get(key), onchange: (e) => { store.set(key, e.target.checked); after?.(e.target.checked); } }), h('span'));
@@ -124,9 +124,10 @@ const render = {
         row('Show files on the desktop', toggle('showDesktopIcons')),
         row('Drag windows to screen edges to tile', toggle('windowTiling')),
         row('Clicking a window’s green button', select('zoomAction', [['fill', 'Fills the screen'], ['fill-nodock', 'Fills the screen and hides the Dock'], ['fullscreen', 'Goes full screen (hides menu bar and Dock)']]),
-          'Double-clicking a title bar always fills the screen. Apps and web pages that go full screen themselves (videos, games) always use full screen. Rest the pointer at the bottom or top edge to bring back a hidden Dock or menu bar.'),
+          'Double-clicking a title bar always fills the screen.'),
         row('Desktops (Spaces)', h('span.muted', `${wm.spaceEls.length}  `), 'Add or remove them in Mission Control (F3).'),
         row('Widgets', h('button.btn', { onclick: () => import('../desktop.js').then((m) => m.editWidgets()) }, 'Edit Widgets…'))),
+      h('p.muted', { style: { fontSize: '11.5px', margin: '6px 10px 0', lineHeight: 1.4 } }, 'Videos and games that go full screen themselves always use real full screen. Rest the pointer at the bottom or top edge of the screen to bring back a hidden Dock or menu bar.'),
       h('div.group-title', 'Hot Corners'),
       h('div.group', row('Top left', corner('tl')), row('Top right', corner('tr')), row('Bottom left', corner('bl')), row('Bottom right', corner('br'))),
     ];
@@ -167,8 +168,8 @@ const render = {
     const disabledList = ds.filter((d) => !d.enabled);
     const tabs = h('div.segmented', ...ds.map((d) => h('button' + (d.name === displayState.sel ? '.on' : ''), { onclick: () => { displayState.sel = d.name; displayState.draft = null; rerender(); } }, d.name + (d.enabled ? '' : ' (off)'))));
 
-    const out = [hero('display', 'Displays', info.backend === 'hyprland' ? 'Arrange and configure your monitors. (Running inside Hyprland: changes last until Hyprland restarts.)'
-      : info.backend === 'x11' ? 'Arrange and configure your monitors. Changes are remembered for your next login.' : 'Display configuration needs xrandr (X11) or Hyprland.')];
+    const out = [hero('display', 'Displays', info.backend === 'x11' ? 'Arrange and configure your monitors. Changes are remembered for your next login.'
+      : 'LiquidDesktop is running in a window, so this is a preview: monitors can be changed when you log into the LiquidDesktop session.')];
     if (ds.length) {
       out.push(h('div.group', { style: { padding: '16px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' } }, arr, ds.length > 1 ? tabs : null,
         disabledList.length ? h('small.muted', `${disabledList.length} connected display${disabledList.length > 1 ? 's are' : ' is'} turned off — select it above to turn it on.`) : null));
@@ -180,8 +181,6 @@ const render = {
         ...draft.modes.map((m, i) => h('option', { value: i, selected: m === mode }, `${m.width} × ${m.height}${i === 0 ? '  (largest)' : ''}`)));
       const rateSel = h('select.field.square', { style: { height: '28px', minWidth: '190px' }, onchange: (e) => set({ refresh: +e.target.value }) },
         ...(mode?.rates || []).map((r) => h('option', { value: r, selected: Math.abs(r - draft.refresh) < 0.05 }, `${r.toFixed(r % 1 ? 2 : 0)} Hz`)));
-      const scaleSel = h('select.field.square', { style: { height: '28px', minWidth: '190px' }, onchange: (e) => set({ scale: +e.target.value }) },
-        ...[1, 1.25, 1.5, 1.75, 2, 2.5, 3].map((v) => h('option', { value: v, selected: Math.abs(v - draft.scale) < 0.01 }, `${Math.round(v * 100)}%${v === 1 ? '  (default)' : ''}`)));
       const rotSel = h('select.field.square', { style: { height: '28px', minWidth: '190px' }, onchange: (e) => set({ rotation: +e.target.value }) },
         ...[[0, 'Standard'], [90, '90°'], [180, '180°'], [270, '270°']].map(([v, l]) => h('option', { value: v, selected: draft.rotation === v }, l)));
       const others = enabled.filter((d) => d.name !== draft.name);
@@ -200,13 +199,12 @@ const render = {
           ds.length > 1 ? row('Use this display', h('label.toggle', h('input', { type: 'checkbox', checked: draft.enabled, onchange: (e) => set({ enabled: e.target.checked, ...(e.target.checked && !draft.width ? { width: draft.modes[0].width, height: draft.modes[0].height, refresh: draft.modes[0].rates[0] } : {}) }) }), h('span'))) : null,
           draft.enabled ? row('Resolution', resSel) : null,
           draft.enabled ? row('Refresh rate', rateSel) : null,
-          draft.enabled && info.backend === 'hyprland' ? row('Scale', scaleSel, 'Makes text and controls bigger on high-resolution screens') : null,
           draft.enabled ? row('Rotation', rotSel) : null,
           draft.enabled && posSel ? row('Position', posSel) : null,
           draft.enabled && info.backend === 'x11' && ds.length > 1 ? row('Main display', h('label.toggle', h('input', { type: 'checkbox', checked: draft.primary, onchange: (e) => set({ primary: e.target.checked }) }), h('span')), 'Holds the menu bar and Dock') : null,
           h('div.row', h('div.label', changed ? h('small', 'You have unapplied changes.') : null),
             h('button.btn', { disabled: !changed, onclick: () => { displayState.draft = null; rerender(); } }, 'Revert'),
-            h('button.btn.primary', { disabled: !changed, onclick: () => applyDisplay(sel, draft) }, 'Apply'))));
+            h('button.btn.primary', { disabled: !changed || info.backend !== 'x11', onclick: () => applyDisplay(sel, draft) }, 'Apply'))));
     }
     out.push(h('div.group-title', 'Brightness & color'),
       h('div.group',
@@ -269,6 +267,84 @@ const render = {
         row('Lock now', h('button.btn', { onclick: () => import('../shell.js').then(({ shell }) => shell.lock()) }, 'Lock Screen'))),
     ];
   },
+  async mouse() {
+    let info = { backend: 'none', devices: [], config: { all: {}, devices: {} }, defaults: {} };
+    try { info = await api.sys.inputDevices(); } catch { /* backend unavailable */ }
+    const cfg = { all: { ...info.defaults, ...(info.config.all || {}) }, devices: { ...(info.config.devices || {}) } };
+    const devs = info.devices;
+    if (mouseState.sel && mouseState.sel !== '*' && !devs.some((d) => d.key === mouseState.sel)) mouseState.sel = '*';
+    const sel = mouseState.sel || '*';
+    const dev = devs.find((d) => d.key === sel);
+    const cur = sel === '*' ? cfg.all : { ...cfg.all, ...(cfg.devices[sel] || {}) };
+    const save = debounceApply(cfg);
+    const setVal = (k, v) => {
+      if (sel === '*') { cfg.all[k] = v; for (const o of Object.values(cfg.devices)) delete o[k]; }   // "All devices" wins over per-device tweaks
+      else (cfg.devices[sel] ||= {})[k] = v;
+      save();
+    };
+    const tog = (k) => h('label.toggle', h('input', { type: 'checkbox', checked: !!cur[k], onchange: (e) => setVal(k, e.target.checked) }), h('span'));
+    const slide = (k, min, max, step, left, right) => {
+      const s = h('input.slider', { type: 'range', min, max, step, value: cur[k] ?? 0 });
+      const paint = () => s.style.setProperty('--v', ((s.value - min) / (max - min)) * 100 + '%');
+      s.addEventListener('input', () => { paint(); setVal(k, Number(s.value)); });
+      paint();
+      return h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', width: '260px' } }, h('small.muted', left), s, h('small.muted', right));
+    };
+    const hasTouchpad = dev ? dev.type === 'touchpad' : info.backend !== 'x11' || devs.some((d) => d.type === 'touchpad');
+    const isMouseOnly = dev && dev.type !== 'touchpad';
+    const devIcon = (t) => (t === 'touchpad' ? '<svg class="sym" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M3 15h18M12 15v4"/></svg>'
+      : '<svg class="sym" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="6" y="3" width="12" height="18" rx="6"/><path d="M12 3v6"/></svg>');
+    const backendNote = info.backend === 'x11' ? 'Settings apply to every connected mouse and trackpad, and to ones you plug in later.'
+      : 'LiquidDesktop is running in a window, so these settings are saved and take effect the next time you log into the LiquidDesktop session.';
+
+    // cursor themes
+    const themes = await api.sys.cursorThemes().catch(() => []);
+    const curTheme = store.get('cursorTheme') || 'LiquidCursor';
+    const grid = h('div.cursor-grid', ...themes.map((t) => {
+      const card = h('div.cursor-card' + (t.id === curTheme ? '.sel' : ''), h('div.cursor-pv', ...t.preview.map((src) => h('img', { src }))), h('span', t.name));
+      card.addEventListener('click', async () => {
+        store.set('cursorTheme', t.id);
+        const r = await api.sys.cursorApply(t.id, store.get('cursorSize') || 24).catch(() => null);
+        rerender();
+        if (r?.scope === 'session') import('../shell.js').then(({ shell }) => shell.notify({ app: 'settings', title: `Cursor: ${t.name}`, body: 'New windows use it right away; apps that were already open may need a restart.' }));
+      });
+      return card;
+    }));
+    const size = h('input.slider', { type: 'range', min: 16, max: 64, step: 8, value: store.get('cursorSize') || 24 });
+    const paintSize = () => size.style.setProperty('--v', ((size.value - 16) / 48) * 100 + '%');
+    paintSize();
+    size.addEventListener('input', paintSize);
+    size.addEventListener('change', () => { store.set('cursorSize', Number(size.value)); api.sys.cursorApply(store.get('cursorTheme') || 'LiquidCursor', Number(size.value)).catch(() => {}); });
+
+    return [
+      hero('mouse', 'Mouse & Trackpad', backendNote),
+      devs.length ? h('div.group-title', 'Devices') : null,
+      devs.length ? h('div.group',
+        h('div.row.link' + (sel === '*' ? '.dev-sel' : ''), { onclick: () => { mouseState.sel = '*'; rerender(); } }, h('span', { html: devIcon('mouse'), style: { width: '18px', display: 'flex' } }), h('div.label', h('b', 'All devices'), h('small', `${devs.length} connected`)), sel === '*' ? h('span', { html: sym.check, style: { width: '16px', color: 'var(--accent)' } }) : null),
+        ...devs.map((d) => h('div.row.link' + (sel === d.key ? '.dev-sel' : ''), { onclick: () => { mouseState.sel = d.key; rerender(); } },
+          h('span', { html: devIcon(d.type), style: { width: '18px', display: 'flex' } }), h('div.label', d.name, h('small', (d.type === 'touchpad' ? 'Trackpad' : 'Mouse') + (cfg.devices[d.key] && Object.keys(cfg.devices[d.key]).length ? ' · custom settings' : ''))),
+          sel === d.key ? h('span', { html: sym.check, style: { width: '16px', color: 'var(--accent)' } }) : null))) : null,
+      info.backend !== 'none' ? h('div.group-title', sel === '*' ? 'Pointer — all devices' : `Pointer — ${dev?.name || sel}`) : null,
+      info.backend !== 'none' ? h('div.group',
+        row('Tracking speed', slide('speed', -1, 1, 0.05, 'Slow', 'Fast')),
+        row('Pointer acceleration', tog('accel'), 'Moves farther when you move faster'),
+        row('Scrolling speed', slide('scroll', 0.25, 3, 0.05, 'Slow', 'Fast')),
+        !(dev && dev.type === 'touchpad') ? row('Natural scrolling', tog('natural'), 'Content follows your fingers (mouse wheel)') : null,
+        row('Swap left and right buttons', tog('leftHanded')),
+        isMouseOnly || sel === '*' ? row('Middle-click by pressing both buttons', tog('middleEmu')) : null,
+        sel !== '*' && Object.keys(cfg.devices[sel] || {}).length ? h('div.row', h('div.label', h('small', 'This device has its own settings.')), h('button.btn', { onclick: () => { delete cfg.devices[sel]; api.sys.inputApply(cfg).then(rerender); } }, 'Use “All devices” settings')) : null) : null,
+      info.backend !== 'none' && hasTouchpad ? h('div.group-title', 'Trackpad') : null,
+      info.backend !== 'none' && hasTouchpad ? h('div.group',
+        row('Tap to click', tog('tap')),
+        row('Natural scrolling', tog('touchNatural'), 'Content follows your fingers'),
+        row('Ignore the trackpad while typing', tog('dwt'))) : null,
+      h('div.group-title', 'Pointer'),
+      h('div.group', grid, row('Cursor size', h('div', { style: { display: 'flex', alignItems: 'center', gap: '8px', width: '260px' } }, h('small.muted', 'Small'), size, h('small.muted', 'Large')))),
+      h('p.muted', { style: { fontSize: '11.5px', margin: '6px 10px 0' } }, isNative && shellMode() === 'session'
+        ? 'The cursor applies to the whole session; apps that were already open may need to be restarted.'
+        : 'In a window, the cursor applies inside LiquidDesktop. In the LiquidDesktop session it applies to every app.'),
+    ];
+  },
   keyboard() {
     const sc = [
       ['Spotlight', 'Alt+Space  ·  Super+Space'], ['Switch apps', 'Alt+Tab'], ['Cycle windows of an app', 'Alt+`'], ['Mission Control', 'F3  ·  Ctrl+↑'], ['Apps (Launchpad)', 'F4'],
@@ -299,8 +375,66 @@ const render = {
         row('Font size', range('terminalFontSize', 8, 28, 1, (v) => v + ' pt')),
         row('Cursor', seg('terminalCursor', [['bar', 'Bar'], ['block', 'Block'], ['underline', 'Underline']])),
         row('Blinking cursor', toggle('terminalBlink')),
+        row('Paste with the middle mouse button', toggle('terminalMiddlePaste'), 'Off by default, so a three-finger tap or middle click doesn’t paste by accident'),
         row('Scrollback', select('terminalScrollback', [[1000, '1,000 lines'], [5000, '5,000 lines'], [10000, '10,000 lines'], [50000, '50,000 lines']]))),
       h('div.group', row('Open a Terminal', h('button.btn', { onclick: () => wm.open('terminal') }, 'New Window'))),
+    ];
+  },
+  async browser() {
+    const sel = (key, def, opts) => h('select.field.square', { style: { height: '26px', minWidth: '170px' }, onchange: (e) => store.set(key, typeof def === 'number' ? Number(e.target.value) : e.target.value) },
+      ...opts.map(([v, l]) => h('option', { value: v, selected: String(store.get(key) ?? def) === String(v) }, l)));
+    const home = h('input.field.square', { value: ['', 'start'].includes(store.get('browserHome') || '') ? '' : store.get('browserHome'), placeholder: 'Start Page', style: { width: '210px' } });
+    home.addEventListener('change', () => store.set('browserHome', home.value.trim()));
+    const page = (name, label, sub) => h('div.row.link', { onclick: () => openBrowserPage(name) }, h('div.label', label, sub ? h('small', sub) : null), h('span.muted', '›'));
+    return [
+      appHero('browser', 'Browser', 'Search, new tabs, passwords and privacy.'),
+      h('div.group-title', 'General'),
+      h('div.group',
+        row('Search engine', sel('browserSearch', 'duckduckgo', [['duckduckgo', 'DuckDuckGo'], ['google', 'Google'], ['bing', 'Bing'], ['brave', 'Brave Search'], ['startpage', 'Startpage'], ['ecosia', 'Ecosia']])),
+        row('New tabs open with', home, 'Leave empty for the Start Page'),
+        row('Show favorites on the Start Page', toggle('browserShowFavs')),
+        row('Default page zoom', sel('browserZoom', 0, [[-2, '67%'], [-1, '80%'], [0, '100%'], [1, '120%'], [2, '144%']]))),
+      h('div.group-title', 'Passwords'),
+      h('div.group', row('Offer to save passwords', toggle('browserOfferPasswords')), row('Fill in saved passwords automatically', toggle('browserAutofill')), page('passwords', 'Manage Passwords…')),
+      h('div.group-title', 'More'),
+      h('div.group', page('history', 'History…'), page('extensions', 'Extensions…', 'Add Chrome extensions from the Chrome Web Store'), page('downloads', 'Downloads…')),
+    ];
+  },
+  files() {
+    return [
+      appHero('files', 'Files', 'How folders open and what they show.'),
+      h('div.group',
+        row('Show hidden files', toggle('filesShowHidden'), 'Files and folders whose names start with a dot'),
+        row('Open folders as', select('filesView', [['icons', 'Icons'], ['list', 'List']])),
+        row('Sort by', select('filesSort', [['name', 'Name'], ['mtime', 'Date Modified'], ['size', 'Size'], ['ext', 'Kind']])),
+        row('Keep folders on top', toggle('filesFoldersFirst'))),
+    ];
+  },
+  appstore() {
+    return [
+      appHero('appstore', 'App Store', 'Where apps come from and how they are installed.'),
+      h('div.group',
+        row('Install Flathub apps for', select('storeFlatpakScope', [['auto', 'Automatic'], ['user', 'Just me (no password)'], ['system', 'Everyone (asks for your password)']]),
+          'Automatic uses the Flathub set up for the whole system if there is one, like the flatpak command does.'),
+        row('Show Arch Linux apps and packages', toggle('storeShowArch'))),
+    ];
+  },
+  weather() {
+    return [
+      appHero('weather', 'Weather', 'Units and location for the Weather app and widget.'),
+      h('div.group',
+        row('Temperature', select('weatherUnits', [['auto', 'Automatic'], ['c', 'Celsius (°C)'], ['f', 'Fahrenheit (°F)']])),
+        row('Location', h('span.muted', store.get('weatherCity')?.name || 'Automatic'), 'Search for a city in the Weather app to change it.'),
+        row('Use my time zone’s city', h('button.btn', { onclick: () => { store.set('weatherCity', null); rerender(); } }, 'Reset'))),
+    ];
+  },
+  texteditor() {
+    return [
+      appHero('texteditor', 'Text Editor', 'How text files are shown.'),
+      h('div.group',
+        row('Wrap long lines', toggle('textWrap')),
+        row('Font size', range('textFontSize', 9, 24, 1, (v) => v + ' pt')),
+        row('Tab width', select('textTabSize', [[2, '2 spaces'], [4, '4 spaces'], [8, '8 spaces']]))),
     ];
   },
   apps() {
@@ -314,7 +448,21 @@ const render = {
   },
 };
 
-let rerender = () => {};
+const redraws = new Set();
+const appHero = (appId, title, text) => h('div.set-hero', h('div', { html: appIconSVG(appId), style: { width: '64px', height: '64px' } }), h('h2', title), h('p', text));
+function openBrowserPage(name) {
+  const existing = wm.appWindows('browser')[0];
+  if (existing && existing.emit) { existing.emit('reopen', { url: 'liquid://' + name }); existing.focus(); }
+  else wm.open('browser', { url: 'liquid://' + name });
+}
+// the per-app Settings window opened from an app's menu (App ▸ Settings…)
+export const APP_SETTINGS = { terminal: 'Terminal', browser: 'Browser', files: 'Files', appstore: 'App Store', weather: 'Weather', texteditor: 'Text Editor' };
+export function openAppSettings(pane) {
+  const existing = wm.windows.find((w) => (w.app?.id === 'appsettings' || w.appId === 'appsettings') && (w.state?.pane === pane || w.title === `${APP_SETTINGS[pane]} Settings`));
+  if (existing) return existing.focus();
+  wm.open('appsettings', { pane });
+}
+let rerender = () => redraws.forEach((f) => f());
 
 // Settings › General › Software Update
 export function runUpdate(command) {
@@ -349,6 +497,11 @@ function softwareUpdateGroup() {
   return group;
 }
 const displayState = { sel: null, draft: null };
+const mouseState = { sel: '*' };
+const shellMode = () => document.documentElement.dataset.mode;
+// mouse settings apply as you drag, but the system is only asked once things settle
+let applyTimer;
+const debounceApply = (cfg) => () => { clearTimeout(applyTimer); applyTimer = setTimeout(() => api.sys.inputApply(cfg).catch(() => {}), 180); };
 
 // apply, then ask to keep the change — it reverts by itself after 15 seconds (in case the screen went blank)
 async function applyDisplay(before, after) {
@@ -405,11 +558,28 @@ registerApp({
       pane.innerHTML = '';
       pane.append(h('div.inner', ...kids.filter(Boolean)));
     };
-    rerender = () => { if (win.el.isConnected && current) { const top = pane.scrollTop; show(current).then(() => (pane.scrollTop = top)); hist.pop(); } };
+    const redraw = () => { if (win.el.isConnected && current) { const top = pane.scrollTop; show(current).then(() => (pane.scrollTop = top)); hist.pop(); } };
+    redraws.add(redraw);
+    win.on('close', () => redraws.delete(redraw));
     win.body.append(sb, h('div.main-pane', pane));
     win.on('reopen', (a) => a?.pane && show(a.pane));
     const off = bus.on('status', () => { if (['sound', 'display', 'bluetooth'].includes(current) && !pane.matches(':active')) {} });
     win.on('close', off);
     show(args.pane || 'appearance');
+  },
+});
+
+registerApp({
+  id: 'appsettings', name: 'Settings', icon: 'settings', hidden: true, size: [600, 620], minSize: [460, 360], overlayContent: true, titleCenter: true,
+  open(win, args) {
+    const pane = APP_SETTINGS[args.pane] ? args.pane : 'terminal';
+    win.state = { pane };
+    win.setTitle(`${APP_SETTINGS[pane]} Settings`);
+    const body = h('div.settings-pane', { style: { paddingTop: '60px' } });
+    win.body.append(h('div.main-pane', body));
+    const draw = async () => { if (!win.el.isConnected) return; const top = body.scrollTop; const kids = await render[pane](); body.innerHTML = ''; body.append(h('div.inner', ...kids.filter(Boolean))); body.scrollTop = top; };
+    redraws.add(draw);
+    win.on('close', () => redraws.delete(draw));
+    draw();
   },
 });

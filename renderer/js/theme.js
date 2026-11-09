@@ -33,6 +33,7 @@ export function applyTheme() {
   root.style.setProperty('--accent-shift', Math.round(hh - 38) + 'deg');
   root.style.setProperty('--accent-sat', ss < 0.15 ? '0' : (2.5 + ss * 3).toFixed(2));
   $('#night-shift')?.classList.toggle('on', !!store.get('nightShift'));
+  applyCursors();
   if (changed) bus.emit('theme', dark);
   applyWallpaper();
 }
@@ -185,6 +186,7 @@ export function initTheme() {
   applyTheme();
   store.on('change', (k) => {
     if (['theme', 'accent', 'glass', 'refraction', 'reduceTransparency', 'iconStyle', 'nightShift', 'wallpaper', 'customWallpaper', 'dynamicWallpaper'].includes(k)) applyTheme();
+    if (k === 'cursorTheme' || k === 'cursorSize') applyCursors();
     if (['iconStyle', 'accent', 'uniformIcons'].includes(k)) bus.emit('icons-changed');
   });
   setInterval(applyTheme, 60_000);
@@ -200,4 +202,18 @@ function hueSat(hex) {
   if (d) h = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
   const l = (max + min) / 2;
   return [(h * 60 + 360) % 360, d ? d / (1 - Math.abs(2 * l - 1)) : 0];
+}
+
+/* ------------------------------------------------------------------ cursor theme (Settings › Mouse) */
+// The web UI draws its own cursors; any installed theme is turned into CSS cursors by the back end.
+let cursorKey = '';
+export function applyCursors() {
+  const theme = store.get('cursorTheme') || 'LiquidCursor', size = store.get('cursorSize') || 24;
+  const key = theme + ':' + size;
+  if (key === cursorKey || !window.sys?.sys?.cursorCss) return;
+  cursorKey = key;
+  window.sys.sys.cursorCss(theme, size).then((css) => {
+    if (cursorKey !== key) return;
+    for (const [k, v] of Object.entries(css || {})) root.style.setProperty('--cur-' + k, v);
+  }).catch(() => { /* keep the built-in cursors */ });
 }

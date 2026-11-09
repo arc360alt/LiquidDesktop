@@ -28,6 +28,9 @@ depends=(
   'xorg-server'         # the session is an X11 session
   'xdg-utils'           # opening files with other apps
   'ttf-font'
+  'xsettingsd'          # tells GTK apps which cursor theme to use
+  'xorg-xrdb'           # …and libXcursor (Qt, Chromium) via X resources
+  'xorg-xinput'         # mouse & trackpad settings in the session
 )
 optdepends=(
   'networkmanager: Wi-Fi status, network list and joining (nmcli)'

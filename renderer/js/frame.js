@@ -8,7 +8,7 @@ const op = (name, arg) => S.send('frame:op', id, name, arg);
 const $ = (s) => document.querySelector(s);
 
 applyTheme();
-store.on('change', (k) => { if (['theme', 'accent'].includes(k)) applyTheme(); });
+store.on('change', (k) => { if (['theme', 'accent', 'cursorTheme', 'cursorSize'].includes(k)) applyTheme(); });
 
 const bar = $('.fr-bar'), title = $('.win-title');
 

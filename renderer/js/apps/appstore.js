@@ -35,7 +35,7 @@ const busy = new Map();          // `${source}:${id}` → { percent, line }
 if (isNative && S) S.onProgress((m) => jobs.get(m.job)?.(m));
 
 registerApp({
-  id: 'appstore', name: 'App Store', size: [1140, 760], minSize: [760, 480], overlayContent: true, hideTitle: true,
+  id: 'appstore', settings: 'appstore', name: 'App Store', size: [1140, 760], minSize: [760, 480], overlayContent: true, hideTitle: true,
   keywords: ['software', 'install', 'flathub', 'flatpak', 'pacman', 'packages', 'store', 'apps'],
   about: 'Apps from Flathub and Arch Linux.',
   menus: (win) => [{ title: 'Store', items: [
@@ -64,7 +64,7 @@ class Store {
       h('div.spacer'), h('div.as-sources'));
     w.dragRegion(this.side);
     this.backBtn = h('button.tb-btn', { html: sym.back, title: 'Back', onclick: () => this.back() });
-    w.toolbar.style.marginLeft = '180px';
+    w.toolbar.style.marginLeft = '144px';   // just past the sidebar's edge
     w.toolbar.append(h('div.tb-group.as-back', this.backBtn));
     this.content = h('div.as-content');
     this.main = h('div.main-pane.as-main', this.content);
@@ -97,7 +97,7 @@ class Store {
       this.installed = { pacman: new Set(i.pacman), flatpak: new Map(i.flatpak.map((f) => [f.id, f])) };
     } catch { /* keep the old state */ }
   }
-  loadArch() { if (!this.archP) this.archP = this.caps?.appstream ? S.invoke('store:archApps').then((l) => l.map(fromArch)).catch(() => []) : Promise.resolve([]); return this.archP; }
+  loadArch() { if (store.get('storeShowArch') === false) return Promise.resolve([]); if (!this.archP) this.archP = this.caps?.appstream ? S.invoke('store:archApps').then((l) => l.map(fromArch)).catch(() => []) : Promise.resolve([]); return this.archP; }
   isInstalled(a) { return a.source === 'flatpak' ? this.installed.flatpak.has(a.id) : this.installed.pacman.has(a.pkg || a.id); }
   key(a) { return `${a.source}:${a.id}`; }
 
@@ -237,7 +237,7 @@ class Store {
       this.caps?.flatpak ? S.invoke('store:flathubSearch', q).then((r) => (r.hits || []).filter((x) => x.type !== 'runtime').map(fromFlathub)).catch(() => []) : [],
       this.loadArch().then((l) => l.filter((a) => a.name.toLowerCase().includes(ql) || a.pkg.includes(ql) || a.keywords.some((k) => k.includes(ql)) || a.summary.toLowerCase().includes(ql))
         .sort((x, y) => (y.name.toLowerCase().startsWith(ql) - x.name.toLowerCase().startsWith(ql)) || x.name.localeCompare(y.name)).slice(0, 24)),
-      this.caps?.pacman ? S.invoke('store:pacmanSearch', q).catch(() => []) : []]);
+      this.caps?.pacman && store.get('storeShowArch') !== false ? S.invoke('store:pacmanSearch', q).catch(() => []) : []]);
     const appPkgs = new Set(arch.map((a) => a.pkg));
     const others = pkgs.filter((p) => !appPkgs.has(p.pkg)).slice(0, 30);
     if (!fh.length && !arch.length && !others.length) return [this.header(`“${q}”`, 'SEARCH'), h('div.as-empty', h('h2', 'No Results'), h('p', 'Try a different name or keyword.'))];
@@ -330,7 +330,12 @@ class Store {
   runJob(job, after) {
     return new Promise(async (resolve) => {
       if (!isNative) { alertDialog({ title: 'The App Store needs the desktop app' }, this.win.el); return resolve(false); }
-      if ((job.source === 'pacman' || job.installation === 'system') && !(await this.ensureSudo())) return resolve(false);
+      // Flathub: install where the system's Flathub is set up (like the flatpak command), unless Settings say otherwise
+      if (job.source === 'flatpak' && (job.action === 'install' || job.action === 'update') && !job.installation) {
+        job.installation = await S.invoke('store:flatpakScope', store.get('storeFlatpakScope') || 'auto').catch(() => 'user');
+      }
+      const needsPw = job.source === 'pacman' || job.installation === 'system' || (job.source === 'flatpak' && job.action === 'update' && !job.id);
+      if (needsPw && !(await this.ensureSudo())) return resolve(false);
       const k = job.id ? `${job.source}:${job.id}` : `${job.source}:*`;
       busy.set(k, { percent: 0 });
       this.redrawButtons(k);

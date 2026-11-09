@@ -2,6 +2,11 @@
 # LiquidDesktop in a normal window (testing mode). Pass --devtools to open the inspector.
 HERE="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
 unset ELECTRON_RUN_AS_NODE
+# LiquidDesktop's cursors for web pages too (the desktop's own UI sets them itself)
+CUR_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/LiquidDesktop/cursor-theme"
+[ -r "$CUR_FILE" ] && read -r SAVED_THEME SAVED_SIZE < "$CUR_FILE"
+export XCURSOR_THEME="${SAVED_THEME:-LiquidCursor}"
+export XCURSOR_PATH="$HERE/session/cursors:$HOME/.local/share/icons:$HOME/.icons:/usr/share/icons:/usr/share/pixmaps"
 for E in "$LIQUID_ELECTRON" "$HERE/node_modules/electron/dist/electron" "$(command -v electron43)" "$(command -v electron)"; do
   [ -n "$E" ] && [ -x "$E" ] && exec "$E" "$HERE" --windowed "$@"
 done

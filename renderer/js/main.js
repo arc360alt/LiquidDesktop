@@ -15,6 +15,8 @@ import { initNotifications, notify } from './notifications.js';
 import { initDesktop } from './desktop.js';
 import { shell, initShortcuts, initSessionShell } from './shell.js';
 import { layer, params, isSession, session as S } from './layer.js';
+import { enhanceSelects } from './menus.js';
+enhanceSelects();
 
 // built-in apps register themselves on import
 import './apps/files.js';

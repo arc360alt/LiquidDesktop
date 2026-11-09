@@ -43,9 +43,26 @@ export const defaults = {
   terminalBlink: true,
   terminalScrollback: 5000,
   terminalCwd: '',          // '' = home folder
+  filesShowHidden: false,
+  filesSort: 'name',
+  filesFoldersFirst: true,
+  storeFlatpakScope: 'auto',  // auto | user | system
+  storeShowArch: true,
+  weatherUnits: 'auto',       // auto | c | f
+  textWrap: false,
+  textFontSize: 13,
+  textTabSize: 4,
+  terminalMiddlePaste: false, // paste the selection with the middle mouse button
   weatherCity: null,        // { name, lat, lon }
   browserHome: 'start',
+  browserSearch: 'duckduckgo',
+  browserShowFavs: true,
+  browserZoom: 0,
+  browserOfferPasswords: true,
+  browserAutofill: true,
   windowTiling: true,
+  cursorTheme: 'LiquidCursor',
+  cursorSize: 24,
   zoomAction: 'fill',       // green button: fill | fill-nodock | fullscreen
 };
 

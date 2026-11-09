@@ -9,12 +9,25 @@ export GDK_BACKEND=x11
 export QT_QPA_PLATFORM=xcb
 export GTK_CSD=0
 # LiquidDesktop's cursors, for the desktop itself and every app started in the session
-export XCURSOR_THEME="${XCURSOR_THEME_OVERRIDE:-LiquidCursor}"
-export XCURSOR_SIZE="${XCURSOR_SIZE:-24}"
+# the cursor theme chosen in Settings › Mouse (LiquidCursor by default)
+CUR_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/LiquidDesktop/cursor-theme"
+[ -r "$CUR_FILE" ] && read -r SAVED_THEME SAVED_SIZE < "$CUR_FILE"
+export XCURSOR_THEME="${XCURSOR_THEME_OVERRIDE:-${SAVED_THEME:-LiquidCursor}}"
+export XCURSOR_SIZE="${SAVED_SIZE:-${XCURSOR_SIZE:-24}}"
 export XCURSOR_PATH="$HERE/session/cursors:$HOME/.local/share/icons:$HOME/.icons:/usr/share/icons:/usr/share/pixmaps"
 unset ELECTRON_RUN_AS_NODE WAYLAND_DISPLAY
 
 command -v xsetroot >/dev/null && xsetroot -cursor_name left_ptr || true
+
+# Tell every app about the cursor theme the standard X11 ways. X resources are read by libXcursor
+# (Qt, Chromium, xterm…); XSETTINGS are read by GTK apps and take priority over gtk-3.0/settings.ini.
+if command -v xrdb >/dev/null; then printf 'Xcursor.theme: %s\nXcursor.size: %s\n' "$XCURSOR_THEME" "$XCURSOR_SIZE" | xrdb -merge; fi
+if command -v xsettingsd >/dev/null; then
+  XSD_CONF="${XDG_RUNTIME_DIR:-/tmp}/liquid-desktop-xsettingsd.conf"
+  printf 'Gtk/CursorThemeName "%s"\nGtk/CursorThemeSize %s\n' "$XCURSOR_THEME" "$XCURSOR_SIZE" > "$XSD_CONF"
+  xsettingsd -c "$XSD_CONF" >/dev/null 2>&1 &
+  XSD=$!
+fi
 
 # the compositor: real blur behind the glass, rounded corners, shadows
 if command -v picom >/dev/null; then
@@ -31,3 +44,4 @@ else
   "$HERE/session/liquid-desktop-session-inner" "$HERE"
 fi
 [ -n "$PICOM" ] && kill $PICOM 2>/dev/null
+[ -n "$XSD" ] && kill $XSD 2>/dev/null

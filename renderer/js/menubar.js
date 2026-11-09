@@ -55,7 +55,8 @@ function appMenus() {
   const menus = [{
     title: app.name, bold: true, items: [
       { label: `About ${app.name}`, action: () => shell.aboutApp(app) }, '-',
-      { label: 'System Settings…', shortcut: '⌘,', action: () => wm.open('settings') }, '-',
+      app.settings ? { label: 'Settings…', shortcut: '⌘,', action: () => import('./apps/settings.js').then((m) => m.openAppSettings(app.settings)) } : null,
+      { label: 'System Settings…', shortcut: app.settings ? undefined : '⌘,', action: () => wm.open('settings') }, '-',
       { label: `Hide ${app.name}`, shortcut: '⌘H', disabled: !win, action: () => wm.appWindows(app.id).forEach((w) => w.minimize()) },
       { label: 'Hide Others', shortcut: '⌥⌘H', action: () => wm.hideOthers() }, '-',
       { label: `Quit ${app.name}`, shortcut: '⌘Q', disabled: !win, action: () => wm.quitApp(app.id) },

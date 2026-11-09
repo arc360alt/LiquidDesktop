@@ -188,7 +188,9 @@ ${css.join('\n')}
 }
 html, body, button, select, label, .menu-item, .mb-item, .dock-item, .tb-btn, .btn, .win-titlebar, .sidebar, .sb-item, a, summary { cursor: var(--cur-default); }
 a[href], .br-fav, .br-recent-row, [role='link'] { cursor: var(--cur-pointer); }
-input:not([type='range']):not([type='checkbox']):not([type='button']), textarea, [contenteditable='true'], [contenteditable='true'] *, .xterm, .xterm .xterm-screen, .xterm-helper-textarea { cursor: var(--cur-text); }
+input:not([type='range']):not([type='checkbox']):not([type='button']), textarea, [contenteditable='true'], [contenteditable='true'] *, html .xterm, html .xterm .xterm-screen, html .xterm .xterm-viewport, html .xterm-helper-textarea { cursor: var(--cur-text); }
+html .xterm.enable-mouse-events, html .xterm.enable-mouse-events .xterm-screen { cursor: var(--cur-default); }
+html .xterm .xterm-cursor-pointer, html .xterm a { cursor: var(--cur-pointer); }
 .rz.n, .rz.s { cursor: var(--cur-ns-resize); }
 .rz.e, .rz.w { cursor: var(--cur-ew-resize); }
 .rz.ne, .rz.sw { cursor: var(--cur-nesw-resize); }

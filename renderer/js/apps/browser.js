@@ -51,7 +51,7 @@ if (isNative && B) {
 }
 
 registerApp({
-  id: 'browser', name: 'Browser', size: [1180, 760], minSize: [520, 360], overlayContent: true, hideTitle: true,
+  id: 'browser', settings: 'browser', name: 'Browser', size: [1180, 760], minSize: [520, 360], overlayContent: true, hideTitle: true,
   keywords: ['web', 'internet', 'safari', 'chrome', 'firefox'],
   about: 'A Chromium-based browser with tabs, favorites, history, passwords and Chrome extensions.',
   menus: (win) => {

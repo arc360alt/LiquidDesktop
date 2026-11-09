@@ -14,7 +14,7 @@ export function describe(code, isDay = 1) {
   const ic = !isDay && (icon === 'sun' || icon === 'partly') ? 'moon' : icon;
   return { label, icon: wx[ic], kind: ic };
 }
-export const useF = () => /^en-US/.test(navigator.language) || Intl.DateTimeFormat().resolvedOptions().timeZone?.startsWith('America/');
+export const useF = () => { const u = store.get('weatherUnits'); if (u === 'c') return false; if (u === 'f') return true; return /^en-US/.test(navigator.language) || Intl.DateTimeFormat().resolvedOptions().timeZone?.startsWith('America/'); };
 
 export async function geocode(name) {
   const r = await fetch(`https://geocoding-api.open-meteo.com/v1/search?count=5&language=en&format=json&name=${encodeURIComponent(name)}`);
@@ -31,13 +31,13 @@ async function defaultCity() {
 
 let cache = null;
 export async function getWeather(force) {
-  if (cache && !force && Date.now() - cache.t < 10 * 60_000 && cache.key === JSON.stringify(store.get('weatherCity'))) return cache.data;
+  if (cache && !force && Date.now() - cache.t < 10 * 60_000 && cache.key === JSON.stringify([store.get('weatherCity'), useF()])) return cache.data;
   let city = store.get('weatherCity');
   if (!city) { city = await defaultCity(); store.set('weatherCity', city); }
   const unit = useF() ? '&temperature_unit=fahrenheit&wind_speed_unit=mph' : '';
   const url = `https://api.open-meteo.com/v1/forecast?latitude=${city.lat}&longitude=${city.lon}&current=temperature_2m,apparent_temperature,relative_humidity_2m,weather_code,is_day,wind_speed_10m&hourly=temperature_2m,weather_code,is_day&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset,uv_index_max&timezone=auto&forecast_days=10${unit}`;
   const j = await (await fetch(url)).json();
   const data = { city, ...j };
-  cache = { t: Date.now(), data, key: JSON.stringify(store.get('weatherCity')) };
+  cache = { t: Date.now(), data, key: JSON.stringify([store.get('weatherCity'), useF()]) };
   return data;
 }

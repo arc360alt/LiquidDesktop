@@ -443,6 +443,26 @@ function register({ getWindow, mode }) {
 
   // the terminal's output goes back to the window that asked for it (in a session every app is its own window)
   ipcMain.handle('pty:create', (e, opts) => { try { return createPty(e.sender, opts); } catch (err) { return { __error: String(err.message || err) }; } });
+  // Settings › Mouse: pointing devices and cursor themes
+  const input = require('./input');
+  const xcursor = require('./xcursor');
+  h('sys:inputDevices', () => input.devices());
+  h('sys:inputApply', (cfg) => input.applyConfig(cfg));
+  h('sys:cursorThemes', () => xcursor.listThemes());
+  h('sys:cursorCss', (theme, size) => xcursor.themeCss(theme, size || 24));
+  h('sys:cursorApply', async (theme, size) => {
+    size = Math.max(16, Math.min(96, Number(size) || 24));
+    // apps started from now on inherit it; the choice is remembered for the next session start
+    process.env.XCURSOR_THEME = theme; process.env.XCURSOR_SIZE = String(size);
+    fs.mkdirSync(app.getPath('userData'), { recursive: true });
+    fs.writeFileSync(path.join(app.getPath('userData'), 'cursor-theme'), `${theme} ${size}\n`);
+    if (mode !== 'session') return { scope: 'window' };
+    if (which('xrdb')) { const c = spawn('xrdb', ['-merge']); c.stdin.end(`Xcursor.theme: ${theme}\nXcursor.size: ${size}\n`); }
+    const conf = path.join(process.env.XDG_RUNTIME_DIR || '/tmp', 'liquid-desktop-xsettingsd.conf');
+    try { fs.writeFileSync(conf, `Gtk/CursorThemeName "${theme}"\nGtk/CursorThemeSize ${size}\n`); await run('pkill', ['-HUP', '-x', 'xsettingsd']); } catch { /* no xsettingsd */ }
+    app.emit('liquid-cursor-changed', theme, size);
+    return { scope: 'session' };
+  });
   const displays = require('./displays');
   h('sys:displays', () => displays.list());
   h('sys:setDisplay', (name, cfg) => displays.apply(name, cfg));

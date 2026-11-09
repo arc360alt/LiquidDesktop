@@ -1,7 +1,7 @@
 // Display configuration: lists every connected monitor with its modes, and changes resolution,
 // refresh rate, scale, rotation, position, primary and on/off per monitor.
 //   • X11 session  → xrandr (settings are saved and re-applied at the next login)
-//   • Hyprland     → hyprctl (when LiquidDesktop runs in a window there; lasts until Hyprland restarts)
+//   • Testing window → monitors are only listed (preview); the host desktop's displays are never changed
 const { execFile } = require('child_process');
 const fs = require('fs');
 const path = require('path');
@@ -13,10 +13,7 @@ const SAVED = () => path.join(app.getPath('userData'), 'displays.json');
 
 function backend() {
   if (process.argv.includes('--session') && has('xrandr')) return 'x11';   // our own X11 session
-  if (process.env.HYPRLAND_INSTANCE_SIGNATURE && has('hyprctl')) return 'hyprland';
-  if (process.env.DISPLAY && !process.env.WAYLAND_DISPLAY && has('xrandr')) return 'x11';
-  if (process.env.DISPLAY && has('xrandr')) return 'x11';
-  return 'none';
+  return 'preview';   // running in a window on another desktop: show the monitors, change nothing
 }
 
 function groupModes(list) {
@@ -77,7 +74,11 @@ async function listX11() {
 async function list() {
   const b = backend();
   let displays = [];
-  try { displays = b === 'hyprland' ? await listHyprland() : b === 'x11' ? await listX11() : []; } catch { displays = []; }
+  try {
+    if (b === 'x11') displays = await listX11();
+    else if (process.env.HYPRLAND_INSTANCE_SIGNATURE && has('hyprctl')) displays = await listHyprland();   // read-only
+    else if (process.env.DISPLAY && has('xrandr')) displays = await listX11();                             // read-only
+  } catch { displays = []; }
   return { backend: b, displays };
 }
 
@@ -86,11 +87,6 @@ async function list() {
  */
 async function apply(name, cfg) {
   const b = backend();
-  if (b === 'hyprland') {
-    if (cfg.enabled === false) return run('hyprctl', ['keyword', 'monitor', `${name},disable`]);
-    const t = { 0: 0, 90: 1, 180: 2, 270: 3 }[cfg.rotation || 0];
-    return run('hyprctl', ['keyword', 'monitor', `${name},${cfg.width}x${cfg.height}@${cfg.refresh},${cfg.x}x${cfg.y},${cfg.scale || 1},transform,${t}`]);
-  }
   if (b === 'x11') {
     const args = ['--output', name];
     if (cfg.enabled === false) args.push('--off');
@@ -107,7 +103,7 @@ async function apply(name, cfg) {
     }
     return r;
   }
-  return { ok: false, err: 'No display backend (needs xrandr or Hyprland).' };
+  return { ok: false, err: 'Display changes are made in the LiquidDesktop session. In a testing window your own desktop keeps control of its monitors.' };
 }
 const readSaved = () => { try { return JSON.parse(fs.readFileSync(SAVED(), 'utf8')); } catch { return {}; } };
 

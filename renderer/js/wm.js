@@ -68,6 +68,7 @@ class Win extends Emitter {
     this.titlebar.addEventListener('dblclick', (e) => { if (!e.target.closest('button, input, .no-drag') && app.resizable !== false) this.toggleMaximize(); });
     this.titlebar.addEventListener('contextmenu', (e) => { if (!e.target.closest('input')) { e.preventDefault(); this.windowMenu(e.clientX, e.clientY); } });
     wm.spaceEl(this.space).append(this.el);
+    if (EMBED) addEventListener('resize', () => this.setFrame());
   }
 
   /** Let an app element act as a title bar (drag + double-click). */

@@ -8,3 +8,4 @@
 - When the system is updated make it automaticly prompt the user to log out of their session
 - Make the website button in the appstore have a backround instead of having none wich looks kinda wierd/broken
 - Add a proper toolbar so apps that stay open in the backround (like discord or OBS when its recording) have a toolbar thing in the topbar that you can click on and right click on to see the options it has like on KDE plasma and other DE's
+- Adding another widget sometimes just adds the widget on top of another one, and I am unable to move widgets too on the desktop

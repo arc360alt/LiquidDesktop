@@ -1,10 +1,13 @@
-# Publishes the browser demo of LiquidDesktop to GitHub Pages on every push to main.
-# The site is built from the DE's own files (renderer/), so it always matches the latest version; it adds
-# only the few packages the web UI loads (fonts and the terminal), which aren't committed (node_modules),
-# and the landing page web/index.html. Nothing in the DE itself is changed.
+# Publishes the browser demo of LiquidDesktop on every push to main, to the "gh-pages" branch (created
+# automatically the first time). The site is built from the DE's own files (renderer/), so it always matches
+# the latest version; it adds only the few packages the web UI loads (fonts and the terminal), which aren't
+# committed (node_modules), and the landing page web/index.html. Nothing in the DE itself is changed.
 #
-# One-time setup on GitHub: Settings › Pages › Build and deployment › Source: "GitHub Actions".
-# The demo is then at https://arc360alt.github.io/LiquidDesktop/
+# It pushes with the token GitHub Actions gives every run; the "permissions" below let that token write to
+# the repository, so no personal token or secret is needed.
+#
+# One-time setup on GitHub: Settings › Pages › Build and deployment › Source: "Deploy from a branch",
+# Branch: "gh-pages", folder "/ (root)". The demo is then at https://arc360alt.github.io/LiquidDesktop/
 name: GitHub Pages demo
 
 on:
@@ -13,16 +16,14 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write   # create / update the gh-pages branch
 
 concurrency:
   group: pages
   cancel-in-progress: true
 
 jobs:
-  build:
+  publish:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -42,23 +43,23 @@ jobs:
           cp -r renderer _site/renderer
           cp -r node_modules/@xterm _site/node_modules/@xterm
           cp -r node_modules/@fontsource-variable/inter _site/node_modules/@fontsource-variable/inter
+          mkdir -p _site/web
           cp web/index.html _site/index.html
-          # don't let Pages run Jekyll (it hides some folders and files)
+          cp web/index.html _site/web/index.html   # the old address keeps working
+          # don't let Pages run Jekyll (it would skip node_modules)
           touch _site/.nojekyll
-          echo "Site contents:"; find _site -maxdepth 3 -type d | sort
 
-      - uses: actions/configure-pages@v5
-
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: _site
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4
+      - name: Publish to the gh-pages branch
+        env:
+          TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          cd _site
+          git init -q -b gh-pages
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Demo of ${GITHUB_SHA::7}"
+          # one commit holding just the site, replacing the previous one (the branch never grows)
+          git push -f -q "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git" gh-pages
+          echo "Published https://${GITHUB_REPOSITORY_OWNER}.github.io/${GITHUB_REPOSITORY#*/}/"

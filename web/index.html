@@ -22,7 +22,6 @@
     background-image: radial-gradient(1200px 600px at 80% -10%, rgba(61, 139, 255, 0.35), transparent 60%), radial-gradient(900px 500px at -10% 20%, rgba(111, 208, 255, 0.18), transparent 60%);
     background-attachment: fixed;
   }
-  @font-face { font-family: "Inter Variable"; src: url("node_modules/@fontsource-variable/inter/files/inter-latin-wght-normal.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }
   .wrap { max-width: 1180px; margin: 0 auto; padding: 28px 20px 60px; }
   header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
   header .logo { width: 34px; height: 34px; }
@@ -119,8 +118,13 @@
 </div>
 
 <script>
-  // The demo is loaded only when asked for, so the page itself stays quick.
-  const DEMO = 'renderer/index.html';
+  // The demo is loaded only when asked for, so the page itself stays quick. This page works both as the
+  // front page of the built site (…/LiquidDesktop/) and opened straight from the repo (…/LiquidDesktop/web/),
+  // so the DE's files are found relative to the repo root in either case.
+  const ROOT = /\/web\/(index\.html)?$/.test(location.pathname) ? '../' : '';
+  const DEMO = ROOT + 'renderer/index.html';
+  const font = new FontFace('Inter Variable', `url(${ROOT}node_modules/@fontsource-variable/inter/files/inter-latin-wght-normal.woff2)`, { weight: '100 900' });
+  font.load().then((f) => document.fonts.add(f)).catch(() => { /* system font */ });
   const screen = document.getElementById('screen'), frame = screen.querySelector('.frame'), poster = document.getElementById('poster');
   function start() {
     if (frame.querySelector('iframe')) return;

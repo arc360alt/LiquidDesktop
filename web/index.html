@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>LiquidDesktop — try it in your browser</title>
+<meta name="description" content="LiquidDesktop is a Liquid Glass desktop environment for Linux. Try the live demo right in your browser.">
+<!-- the drop logo as the tab icon (also keeps the browser from asking the site root for /favicon.ico) -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='%2367c8ff'/%3E%3Cstop offset='1' stop-color='%230a5bea'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='15' fill='%23121826'/%3E%3Cpath d='M32 9C24 21 16 29 16 39a16 16 0 0 0 32 0c0-10-8-18-16-30z' fill='url(%23g)'/%3E%3C/svg%3E">
+<style>
+  /* This page is only the GitHub Pages front door. The desktop itself is ../renderer/index.html, the very
+     same files the installed DE uses, built onto the site by .github/workflows/pages.yml on every push. */
+  :root {
+    --bg: #0b1020; --text: #f4f6fb; --muted: #a9b1c6; --card: rgba(255, 255, 255, 0.07); --line: rgba(255, 255, 255, 0.14);
+    --accent: #3d8bff; --accent-2: #6fd0ff;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    font: 15px/1.55 "Inter Variable", Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: var(--text); background: var(--bg);
+    background-image: radial-gradient(1200px 600px at 80% -10%, rgba(61, 139, 255, 0.35), transparent 60%), radial-gradient(900px 500px at -10% 20%, rgba(111, 208, 255, 0.18), transparent 60%);
+    background-attachment: fixed;
+  }
+  @font-face { font-family: "Inter Variable"; src: url("node_modules/@fontsource-variable/inter/files/inter-latin-wght-normal.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 28px 20px 60px; }
+  header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  header .logo { width: 34px; height: 34px; }
+  header b { font-size: 18px; letter-spacing: -0.01em; }
+  header nav { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; }
+  a { color: inherit; }
+  .pill { display: inline-flex; align-items: center; gap: 8px; padding: 9px 16px; border-radius: 999px; border: 1px solid var(--line); background: var(--card); text-decoration: none; font-weight: 600; font-size: 14px; cursor: pointer; color: var(--text); backdrop-filter: blur(12px); }
+  .pill:hover { background: rgba(255, 255, 255, 0.12); }
+  .pill.primary { background: linear-gradient(180deg, var(--accent-2), var(--accent)); border-color: transparent; color: #fff; box-shadow: 0 6px 20px rgba(61, 139, 255, 0.35); }
+  .hero { text-align: center; margin: 46px auto 26px; max-width: 760px; }
+  .hero h1 { font-size: clamp(32px, 6vw, 56px); line-height: 1.05; letter-spacing: -0.03em; margin: 0 0 14px; }
+  .hero h1 span { background: linear-gradient(90deg, var(--accent-2), #b58cff); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .hero p { color: var(--muted); font-size: 17px; margin: 0 0 22px; }
+  .hero .actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+
+  /* the live desktop, in a "screen" */
+  .screen { position: relative; margin: 34px auto 0; border-radius: 18px; padding: 10px; background: linear-gradient(180deg, #2a3142, #151a26); border: 1px solid var(--line); box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55); }
+  .screen .frame { position: relative; width: 100%; aspect-ratio: 16 / 10; border-radius: 10px; overflow: hidden; background: #000; }
+  .screen iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+  .screen .poster { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; background: linear-gradient(135deg, #2b5876, #4e4376); cursor: pointer; }
+  .screen .poster span { color: rgba(255, 255, 255, 0.85); font-size: 13px; }
+  .screen .bar { display: flex; gap: 8px; align-items: center; justify-content: space-between; padding: 10px 4px 0; color: var(--muted); font-size: 13px; flex-wrap: wrap; }
+  .screen.full { position: fixed; inset: 0; margin: 0; z-index: 10; border-radius: 0; padding: 0; border: 0; background: #000; }
+  .screen.full .frame { aspect-ratio: auto; height: 100%; border-radius: 0; }
+  .screen.full .bar { display: none; }
+  .exit-full { position: fixed; z-index: 11; top: 12px; right: 12px; display: none; }
+  .screen.full ~ .exit-full { display: inline-flex; }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; margin-top: 40px; }
+  .card { padding: 18px; border-radius: 16px; background: var(--card); border: 1px solid var(--line); }
+  .card h3 { margin: 0 0 6px; font-size: 15px; }
+  .card p { margin: 0; color: var(--muted); font-size: 14px; }
+  .install { margin-top: 40px; padding: 22px; border-radius: 16px; background: var(--card); border: 1px solid var(--line); }
+  .install h2 { margin: 0 0 6px; font-size: 20px; }
+  .install p { margin: 0 0 12px; color: var(--muted); }
+  .cmd { display: flex; gap: 8px; align-items: stretch; flex-wrap: wrap; }
+  .cmd code { flex: 1 1 360px; min-width: 0; overflow-x: auto; white-space: nowrap; padding: 12px 14px; border-radius: 10px; background: rgba(0, 0, 0, 0.45); border: 1px solid var(--line); font: 13px/1.4 ui-monospace, "JetBrains Mono", Menlo, Consolas, monospace; }
+  .note { color: var(--muted); font-size: 13px; margin-top: 10px; }
+  footer { margin-top: 44px; color: var(--muted); font-size: 13px; text-align: center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <svg class="logo" viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="lg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#67c8ff"/><stop offset="1" stop-color="#0a5bea"/></linearGradient></defs><rect width="64" height="64" rx="15" fill="#1a2233"/><path d="M32 9C24 21 16 29 16 39a16 16 0 0 0 32 0c0-10-8-18-16-30z" fill="url(#lg)"/></svg>
+    <b>LiquidDesktop</b>
+    <nav>
+      <a class="pill" href="https://github.com/arc360alt/LiquidDesktop">GitHub</a>
+      <a class="pill" href="#install">Install</a>
+    </nav>
+  </header>
+
+  <section class="hero">
+    <h1>A <span>Liquid Glass</span> desktop for Linux</h1>
+    <p>Dock, menu bar, Control Center, Spotlight, widgets and built-in apps, with real windows for your Linux apps. Try the live demo below; nothing to install.</p>
+    <div class="actions">
+      <button class="pill primary" id="go">Try it now</button>
+      <button class="pill" id="go-full">Open full screen</button>
+    </div>
+  </section>
+
+  <div class="screen" id="screen">
+    <div class="frame">
+      <div class="poster" id="poster">
+        <button class="pill primary">▶ Start the demo</button>
+        <span>Runs entirely in your browser</span>
+      </div>
+    </div>
+    <div class="bar">
+      <span>Live demo: the same web UI the desktop uses. Files, Terminal and system controls are simulated here.</span>
+      <button class="pill" id="full">⤢ Full screen</button>
+    </div>
+  </div>
+  <button class="pill exit-full" id="exit">✕ Exit full screen</button>
+
+  <div class="grid">
+    <div class="card"><h3>Liquid Glass everywhere</h3><p>Real blur, refraction and depth on the Dock, menu bar, menus and widgets.</p></div>
+    <div class="card"><h3>Your Linux apps, framed</h3><p>A real X11 window manager puts every app in a macOS-style window.</p></div>
+    <div class="card"><h3>App Store</h3><p>Flathub and Arch Linux packages in one place, with updates.</p></div>
+    <div class="card"><h3>Built-in apps</h3><p>Files, Terminal, Browser, Notes, Calendar, Weather, Activity Monitor, Settings and more.</p></div>
+  </div>
+
+  <section class="install" id="install">
+    <h2>Install it</h2>
+    <p>One command picks the right method for your distro (Arch uses a proper package). Then choose “LiquidDesktop” on your login screen.</p>
+    <div class="cmd">
+      <code id="cmd">curl -fsSL https://raw.githubusercontent.com/arc360alt/LiquidDesktop/main/install.sh | sh</code>
+      <button class="pill" id="copy">Copy</button>
+    </div>
+    <div class="note">Or try it on your computer without logging out: <code>liquid-desktop</code> opens it in a window.</div>
+  </section>
+
+  <footer>LiquidDesktop · MIT licensed · <a href="https://github.com/arc360alt/LiquidDesktop">arc360alt/LiquidDesktop</a></footer>
+</div>
+
+<script>
+  // The demo is loaded only when asked for, so the page itself stays quick.
+  const DEMO = 'renderer/index.html';
+  const screen = document.getElementById('screen'), frame = screen.querySelector('.frame'), poster = document.getElementById('poster');
+  function start() {
+    if (frame.querySelector('iframe')) return;
+    const f = document.createElement('iframe');
+    f.src = DEMO;
+    f.title = 'LiquidDesktop demo';
+    f.allow = 'fullscreen; clipboard-read; clipboard-write; autoplay';
+    frame.append(f);
+    poster.remove();
+    f.addEventListener('load', () => f.focus());
+  }
+  function full(on) {
+    screen.classList.toggle('full', on);
+    document.body.style.overflow = on ? 'hidden' : '';
+    if (on && document.documentElement.requestFullscreen && !document.fullscreenElement) document.documentElement.requestFullscreen().catch(() => {});
+    if (!on && document.fullscreenElement) document.exitFullscreen().catch(() => {});
+  }
+  document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement && screen.classList.contains('full')) full(false); });
+  poster.addEventListener('click', start);
+  document.getElementById('go').addEventListener('click', () => { start(); screen.scrollIntoView({ behavior: 'smooth', block: 'center' }); });
+  document.getElementById('go-full').addEventListener('click', () => { start(); full(true); });
+  document.getElementById('full').addEventListener('click', () => { start(); full(true); });
+  document.getElementById('exit').addEventListener('click', () => full(false));
+  document.getElementById('copy').addEventListener('click', async (e) => {
+    try { await navigator.clipboard.writeText(document.getElementById('cmd').textContent); e.target.textContent = 'Copied'; } catch { e.target.textContent = 'Select & copy'; }
+    setTimeout(() => (e.target.textContent = 'Copy'), 1600);
+  });
+  if (location.hash === '#demo') { start(); }
+</script>
+</body>
+</html>

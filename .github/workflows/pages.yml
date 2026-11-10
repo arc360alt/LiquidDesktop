@@ -1,0 +1,64 @@
+# Publishes the browser demo of LiquidDesktop to GitHub Pages on every push to main.
+# The site is built from the DE's own files (renderer/), so it always matches the latest version; it adds
+# only the few packages the web UI loads (fonts and the terminal), which aren't committed (node_modules),
+# and the landing page web/index.html. Nothing in the DE itself is changed.
+#
+# One-time setup on GitHub: Settings › Pages › Build and deployment › Source: "GitHub Actions".
+# The demo is then at https://arc360alt.github.io/LiquidDesktop/
+name: GitHub Pages demo
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # runtime packages only, without Electron and without install scripts
+      - name: Install the web UI's packages
+        run: npm ci --omit=dev --ignore-scripts --no-audit --no-fund
+
+      - name: Assemble the site
+        run: |
+          set -e
+          mkdir -p _site/node_modules/@fontsource-variable
+          cp -r renderer _site/renderer
+          cp -r node_modules/@xterm _site/node_modules/@xterm
+          cp -r node_modules/@fontsource-variable/inter _site/node_modules/@fontsource-variable/inter
+          cp web/index.html _site/index.html
+          # don't let Pages run Jekyll (it hides some folders and files)
+          touch _site/.nojekyll
+          echo "Site contents:"; find _site -maxdepth 3 -type d | sort
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,6 +1,8 @@
 # ToDo
 
 - Integrate the DE into Vertex Linux and then remake the website and add an interactive version of the DE so users can test it (DO LATER)
+- Remake the weather app to be like my StormView Swift rewrite for MacOS https://github.com/StormView-Project/StormView-MacOS
+- Make the dock a bit less buggy, like when you go all the way to the bottom of the screen to show the dock, it shows, and then it hides and shows again and does the same thing over and over again (only happens when autohide is turned on)
 
 # Fixed
 

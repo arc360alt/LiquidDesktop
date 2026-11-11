@@ -67,6 +67,7 @@ async function bootFull() {
   await sleep(450);
   hideBoot();
   welcome();
+  browserWarning();
   autoUpdateCheck();
 }
 
@@ -172,6 +173,24 @@ function autoUpdateCheck() {
       if (!u.upToDate && u.current) notify({ app: 'settings', title: 'LiquidDesktop update available', body: `${u.behind || 'New'} change${u.behind === 1 ? '' : 's'} on GitHub. Click to update.`, timeout: 15000, action: () => wm.open('settings', { pane: 'general' }) });
     } catch { /* offline */ }
   }, 20000);
+}
+
+// Browser preview only (the installed desktop always runs on Chromium): Firefox and its forks (LibreWolf,
+// Zen, Waterfox, Floorp…) don't support the SVG-filter backdrops the Liquid Glass blur and refraction use.
+function browserWarning() {
+  if (isNative || store.get('geckoWarningOff')) return;
+  const gecko = /\bGecko\/\d/.test(navigator.userAgent) || (window.CSS?.supports?.('-moz-appearance', 'none') ?? false);
+  if (!gecko) return;
+  setTimeout(async () => {
+    const { alertDialog } = await import('./menus.js');
+    const icon = '<svg viewBox="0 0 24 24" fill="none" stroke="#ff9f0a" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="width:56px;height:56px"><path d="M10.3 3.9 1.8 18.6A2 2 0 0 0 3.5 21.6h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4.5M12 17.2v.3"/></svg>';
+    const r = await alertDialog({
+      icon, title: 'Your browser may not show Liquid Glass properly',
+      message: 'You’re using a Firefox-based browser, which doesn’t fully support the blur and refraction effects LiquidDesktop is built on, so glass may look flat, sharp or wrong. For the proper effects, open this page in a Chromium-based browser such as Chrome, Edge, Brave, Vivaldi or Opera. (The installed desktop always shows them correctly.)',
+      buttons: [{ label: 'Don’t Show Again', value: 'never' }, { label: 'OK', value: 'ok', primary: true }],
+    });
+    if (r.button === 'never') store.set('geckoWarningOff', true);
+  }, 900);
 }
 
 function welcome() {

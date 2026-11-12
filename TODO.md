@@ -1,6 +1,9 @@
 # ToDo
 
 - Integrate the DE into Vertex Linux and then remake the website and add an interactive version of the DE so users can test it (DO LATER)
+- Fix the system monitor reporting that several tasks are using 20% CPU usage when the overall CPU usage is 5% (confirmed by the widget and btop, the system monitor is not reporting app usage correctly)
+- Fix the top bar not having any blur and just being slightly opaque (There are more blur issues like this all over the desktop where some elements are just slightly opaque instead of being blurred properly for some reason)
+- Maybe at some point decrease the ram/cpu usage but for right now it runs fine on any computer with above 8GB of ram (DO LATER)
 
 # Fixed
 - Whem im in a browser and I click on a button that opens an Open With dialouge it still opens my defualt file manager's open with window instead of Liquid Desktop's one (fixing this should also make it fix for other web browsers too)

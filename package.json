@@ -1,6 +1,6 @@
 {
   "name": "liquid-desktop",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "A Liquid Glass desktop environment for Linux, written in JavaScript (Electron).",
   "main": "main/main.js",
   "license": "MIT",

@@ -765,7 +765,8 @@ function register({ getWindow, mode }) {
   ipcMain.on('pty:resize', (_e, id, cols, rows) => { const c = ptys.get(id); if (c && c.stdio[3]) c.stdio[3].write(`${cols} ${rows}\n`); });
   ipcMain.on('pty:kill', (_e, id) => { const c = ptys.get(id); if (c) { c.stdin.end(); c.kill(); } });
 
-  h('shell:toggleFullscreen', () => { const w = getWindow(); w.setFullScreen(!w.isFullScreen()); return w.isFullScreen(); });
+  // the session's layers already cover the screen; full screen is only for the testing window
+  h('shell:toggleFullscreen', () => { if (mode === 'session') return false; const w = getWindow(); w.setFullScreen(!w.isFullScreen()); return w.isFullScreen(); });
   h('shell:devtools', () => getWindow().webContents.toggleDevTools());
   h('shell:quit', () => app.quit());
 

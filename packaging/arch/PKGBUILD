@@ -13,7 +13,7 @@
 
 pkgname=liquid-desktop-git
 _name=liquid-desktop
-pkgver=0.2.0
+pkgver=0.3.0
 pkgrel=1
 pkgdesc='A Liquid Glass desktop environment written in JavaScript (Electron UI, X11 window manager, picom compositor)'
 arch=('any')

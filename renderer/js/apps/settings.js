@@ -9,6 +9,7 @@ import { theme, isNightTime } from '../theme.js';
 import { status } from '../status.js';
 import { prompt, confirmDialog, alertDialog } from '../menus.js';
 import { bus } from '../util.js';
+import { isSession } from '../layer.js';
 
 const ACCENTS = [['Multicolor', '#0a84ff'], ['Blue', '#007aff'], ['Purple', '#af52de'], ['Pink', '#ff2d55'], ['Red', '#ff3b30'], ['Orange', '#ff9500'], ['Yellow', '#ffcc00'], ['Green', '#34c759'], ['Graphite', '#8e8e93']];
 
@@ -111,7 +112,11 @@ const render = {
       h('div.group', row('Dynamic wallpaper', toggle('dynamicWallpaper'), 'Switch to the night palette in dark mode.'),
         row('Use an image file', h('button.btn', { onclick: async () => {
           const home = await api.fs.home();
-          const p = await prompt('Choose a wallpaper image', home + '/Pictures/', { ok: 'Set Wallpaper', message: 'Path to a PNG, JPG or WebP image. Tip: use “Set as Wallpaper” in Preview.' });
+          let p = null;
+          if (api.dialog?.open) {
+            const files = await api.dialog.open({ title: 'Choose a Wallpaper', folder: home + '/Pictures', filters: [{ name: 'Pictures', patterns: ['*.png', '*.jpg', '*.jpeg', '*.webp', '*.avif', '*.gif', '*.bmp', '*.svg'] }] }).catch(() => null);
+            p = files?.[0] || null;
+          } else p = await prompt('Choose a wallpaper image', home + '/Pictures/', { ok: 'Set Wallpaper', message: 'Path to a PNG, JPG or WebP image. Tip: use “Set as Wallpaper” in Preview.' });
           if (p) { store.set('customWallpaper', fileUrl(p)); rerender(); }
         } }, 'Choose…'))),
       h('div.group-title', 'LiquidDesktop wallpapers'),
@@ -271,8 +276,9 @@ const render = {
         row('Brightness', b != null ? liveSlider(b, (v) => api.sys.setBrightness(v)) : liveSlider(store.get('softBrightness') ?? 100, (v) => { store.set('softBrightness', v); document.getElementById('desktop') && (document.getElementById('desktop').style.filter = v >= 100 ? '' : `brightness(${0.35 + 0.65 * v / 100})`); }),
           b != null ? 'Controls the backlight with brightnessctl.' : 'No backlight control found — dims the desktop instead.'),
         row('Night Shift', toggle('nightShift'), 'Warmer colors after dark, easier on the eyes.')),
-      h('div.group-title', 'Window'),
-      h('div.group', row('Toggle full screen (testing window)', h('button.btn', { onclick: () => api.shell.toggleFullscreen() }, 'Toggle'))));
+      // only the testing window can go full screen; in the real session this would just trap Settings over the desktop
+      ...(isSession ? [] : [h('div.group-title', 'Window'),
+        h('div.group', row('Full screen (testing window)', h('button.btn', { onclick: () => api.shell.toggleFullscreen() }, 'Toggle')))]));
     return out;
   },
   sound() {

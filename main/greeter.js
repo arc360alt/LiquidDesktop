@@ -108,8 +108,17 @@ function sessionCommand(s) {
   const env = [`XDG_SESSION_TYPE=${s.type}`, `XDG_SESSION_DESKTOP=${s.id.split(':')[1].replace(/\.desktop$/, '')}`];
   if (s.desktopNames) env.push(`XDG_CURRENT_DESKTOP=${s.desktopNames.replace(/;$/, '').replace(/;/g, ':')}`);
   // an X11 session needs an X server: startx starts one on this seat for the logged-in person
-  const cmd = s.type === 'x11' ? [which('startx'), ...parts, '--', `vt${process.env.XDG_VTNR || '1'}`, '-keeptty'] : parts;
-  return { cmd, env };
+  const run = s.type === 'x11' ? [which('startx'), ...parts, '--', `vt${process.env.XDG_VTNR || '1'}`, '-keeptty'] : parts;
+  // between the login screen closing and the desktop drawing, the text console shows through: keep it a
+  // black screen (no cursor, text drawn black) and send the startup chatter to a log instead of the screen
+  const quiet = [
+    "printf '\\033[?25l\\033[30;40m\\033[2J\\033[H' 2>/dev/null",
+    'L="${XDG_STATE_HOME:-$HOME/.local/state}/liquid-desktop"; mkdir -p "$L" 2>/dev/null && [ -w "$L" ] || L="${TMPDIR:-/tmp}"',
+    '"$@" >"$L/session.log" 2>&1; s=$?',
+    "printf '\\033[0m\\033[?25h\\033[2J\\033[H' 2>/dev/null",
+    'exit $s',
+  ].join('\n');
+  return { cmd: ['/bin/sh', '-c', quiet, 'liquid-session', ...run], env };
 }
 
 let lastPath = null;
@@ -140,7 +149,7 @@ async function login(username, password, sessionId) {
     r = await g.ask({ type: 'start_session', cmd, env });
     if (r.type !== 'success') return { ok: false, error: r.description || 'Couldn’t start the session' };
     try { fs.writeFileSync(lastPath, JSON.stringify({ user: username, session: s.id })); } catch { /* read-only */ }
-    setTimeout(() => app.quit(), 250);   // greetd starts the session once the greeter is gone
+    setTimeout(() => app.quit(), 750);   // after the fade to black; greetd starts the session once the greeter is gone
     return { ok: true };
   } catch (e) {
     return { ok: false, error: e.message };

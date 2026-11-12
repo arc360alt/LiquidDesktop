@@ -1,7 +1,7 @@
 // The LiquidDesktop login screen (run by greetd, see main/greeter.js): the lock screen's look, with real
 // blur, for logging in — pick a person and a session, type the password, or sleep / restart / shut down.
 import { wallpaperUrl } from './wallpapers.js';
-import { sym } from './icons.js';
+import { sym, logoBadge } from './icons.js';
 
 const $ = (s) => document.querySelector(s);
 const g = window.greeter;
@@ -15,6 +15,7 @@ function clock() {
   $('.g-time').textContent = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }).replace(/\s?[AP]M$/i, '');
 }
 wall(); clock();
+$('.g-bye-logo').innerHTML = logoBadge();
 setInterval(clock, 1000);
 addEventListener('resize', wall);
 
@@ -48,27 +49,39 @@ function drawPeople() {
     box.append(b);
   }
 }
+// the session menu: the button opens and closes it, and so does a click anywhere else or Escape
+let menu = null;
+function closeSessions() {
+  const m = menu; if (!m) return;
+  menu = null;
+  $('.g-session').classList.remove('open');
+  m.classList.remove('open');
+  setTimeout(() => m.remove(), 220);   // after the closing transition
+}
+function openSessions() {
+  const btn = $('.g-session');
+  const m = menu = document.createElement('div');
+  m.className = 'g-menu glass';
+  for (const s of info.sessions) {
+    const it = document.createElement('button');
+    it.textContent = s.name + (s.type === 'wayland' ? '  (Wayland)' : '');
+    if (s === session) it.className = 'on';
+    it.onclick = () => { session = s; drawSession(); closeSessions(); $('.g-pass').focus(); };
+    m.append(it);
+  }
+  m.addEventListener('click', (e) => e.stopPropagation());
+  document.body.append(m);
+  const r = btn.getBoundingClientRect();
+  m.style.left = r.left + 'px'; m.style.bottom = innerHeight - r.top + 8 + 'px';
+  btn.classList.add('open');
+  requestAnimationFrame(() => requestAnimationFrame(() => m.classList.add('open')));
+}
 function drawSession() {
   const btn = $('.g-session');
   btn.textContent = session ? session.name : 'No sessions';
-  btn.onclick = (e) => {
-    e.stopPropagation();
-    document.querySelector('.g-menu')?.remove();
-    const m = document.createElement('div');
-    m.className = 'g-menu glass';
-    for (const s of info.sessions) {
-      const it = document.createElement('button');
-      it.textContent = s.name + (s.type === 'wayland' ? '  (Wayland)' : '');
-      if (s === session) it.className = 'on';
-      it.onclick = () => { session = s; drawSession(); m.remove(); $('.g-pass').focus(); };
-      m.append(it);
-    }
-    document.body.append(m);
-    const r = btn.getBoundingClientRect();
-    m.style.left = r.left + 'px'; m.style.bottom = innerHeight - r.top + 8 + 'px';
-    setTimeout(() => addEventListener('click', () => m.remove(), { once: true }), 0);
-  };
+  btn.onclick = (e) => { e.stopPropagation(); if (menu) closeSessions(); else if (info.sessions.length) openSessions(); };
 }
+addEventListener('click', closeSessions);
 function drawPower() {
   const box = $('.g-power');
   for (const [action, label, icon] of [['suspend', 'Sleep', sym.moon], ['restart', 'Restart', sym.restart], ['shutdown', 'Shut Down', sym.power]]) {
@@ -100,7 +113,7 @@ $('.g-field').addEventListener('submit', async (e) => {
   const f = $('.g-field'); f.classList.remove('shake'); void f.offsetWidth; f.classList.add('shake');
   $('.g-pass').focus();
 });
-addEventListener('keydown', (e) => { if (e.key === 'Escape') { $('.g-pass').value = ''; msg(''); } });
+addEventListener('keydown', (e) => { if (e.key !== 'Escape') return; if (menu) { closeSessions(); return; } $('.g-pass').value = ''; msg(''); });
 
 (async () => {
   try { info = await g.info(); } catch { /* not under the greeter */ }

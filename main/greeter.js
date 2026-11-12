@@ -118,8 +118,11 @@ function sessionCommand(s) {
     "printf '\\033[0m\\033[?25h\\033[2J\\033[H' 2>/dev/null",
     'exit $s',
   ].join('\n');
-  return { cmd: ['/bin/sh', '-c', quiet, 'liquid-session', ...run], env };
+  // greetd doesn't exec this list as-is: it joins it with spaces and runs it with `/bin/sh -c "exec …"`
+  // (greetd/src/session/worker.rs). So it gets one string, every word shell-quoted.
+  return { cmd: [shellJoin(['/bin/sh', '-c', quiet, 'liquid-session', ...run])], env };
 }
+const shellJoin = (args) => args.map((a) => (/^[\w@%+=:,./-]+$/.test(a) ? a : `'${a.replace(/'/g, `'\\''`)}'`)).join(' ');
 
 let lastPath = null;
 const saved = () => { try { return JSON.parse(fs.readFileSync(lastPath, 'utf8')); } catch { return {}; } };

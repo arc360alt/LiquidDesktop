@@ -8,7 +8,7 @@ import { showMenu } from './menus.js';
 import { attachLens } from './theme.js';
 import { api } from './sys.js';
 import { shell } from './shell.js';
-import { isSession } from './layer.js';
+import { isSession, session as S } from './layer.js';
 
 let wrap, dock, items, tip;
 const launching = new Map();   // id → { start, had }
@@ -287,10 +287,22 @@ export function revealDock() {
   // if the pointer never makes it onto the Dock, tuck it away again
   hideTimer = setTimeout(() => concealDock(), 1600);
 }
+// Is the pointer on the Dock or in the strip below it? (In a session the shell only learns about hover when
+// the pointer moves, and a pointer resting on the bottom edge doesn't — so ask the window manager.)
+async function pointerOnDock() {
+  if (dock.matches(':hover')) return true;
+  if (!isSession) return false;
+  try {
+    const p = await S.invoke('wm:pointer');
+    if (!p) return false;
+    const k = devicePixelRatio || 1, r = dock.getBoundingClientRect();
+    return p.x / k >= r.left && p.x / k <= r.right && p.y / k >= r.top - 8;
+  } catch { return false; }
+}
 function concealDock(delay = 0) {
   clearTimeout(hideTimer);
-  hideTimer = setTimeout(() => {
-    if (dock.matches(':hover') || document.querySelector('.menu')) return concealDock(400);
+  hideTimer = setTimeout(async () => {
+    if (document.querySelector('.menu') || (await pointerOnDock())) return concealDock(400);
     revealed = false; applyHidden();
   }, delay);
 }
@@ -301,6 +313,9 @@ export function initDock() {
   dock = h('div#dock.glass.sheen');
   items = h('div.dock-items');
   dock.append(items);
+  // the gap between the Dock and the bottom edge counts as the Dock: with the pointer resting on the very
+  // edge (how you reveal a hidden Dock) it stays open, instead of hiding and being revealed again in a loop
+  dock.append(h('i.dock-floor'));
   wrap.append(dock);
   attachLens(dock, { strength: 46, edge: 20 });
   dock.addEventListener('mousemove', (e) => { mouseX = e.clientX; dock.classList.add('hovering'); requestAnimationFrame(applySizes); });

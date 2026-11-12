@@ -14,8 +14,9 @@ function slider(icon, value, onInput, onCommit) {
   const fill = h('div.fill');
   const knob = h('i.knob');
   const el = h('div.cc-slider', h('span', { html: icon }), fill, knob);
-  // while dragging, the fill stops at the knob's centre so the glass knob shows the edge through it
-  const set = (v) => { const w = `calc(${v}% + ${30 * (1 - v / 100)}px)`; fill.style.width = el.classList.contains('dragging') ? `calc(${w} - 15px)` : w; knob.style.left = w; };
+  // the fill ends at the knob's centre (with a round end), so the knob always covers it — no square corners
+  // poking out beside the round knob, and through the glass knob (while dragging) the end looks right too
+  const set = (v) => { const w = `calc(${v}% + ${30 * (1 - v / 100)}px)`; fill.style.width = `calc(${w} - 15px)`; knob.style.left = w; };
   set(value ?? 50);
   el.addEventListener('mousedown', (e) => {
     const r = el.getBoundingClientRect();
@@ -23,7 +24,6 @@ function slider(icon, value, onInput, onCommit) {
     const mv = (ev) => { const v = at(ev); set(v); onInput(v); };
     // while held, the knob is glass (in a session the compositor blurs behind anything marked .glass)
     el.classList.add('dragging'); knob.classList.add('glass');
-    fill.style.borderRadius = '999px';
     const up = (ev) => { removeEventListener('mousemove', mv); removeEventListener('mouseup', up); el.classList.remove('dragging'); knob.classList.remove('glass'); onCommit?.(at(ev)); set(at(ev)); };
     mv(e);
     addEventListener('mousemove', mv); addEventListener('mouseup', up);

@@ -77,7 +77,8 @@ if [ "$ACTION" = uninstall ]; then
     run sudo rm -rf "$PREFIX"
     run sudo rm -f /usr/local/bin/liquid-desktop /usr/local/bin/liquid-desktop-session /usr/local/bin/liquid-desktop-nested /usr/local/bin/liquid-desktop-update \
       /usr/share/xsessions/liquid-desktop.desktop /usr/share/applications/liquid-desktop.desktop
-    run sudo rm -rf /usr/share/sddm/themes/liquid-desktop /etc/sddm.conf.d/zz-liquid-desktop.conf
+    run sudo rm -rf /usr/share/sddm/themes/liquid-desktop /etc/sddm.conf.d/zz-liquid-desktop.conf /usr/share/xdg-desktop-portal/portals/liquiddesktop.portal \
+      /usr/share/applications/liquid-desktop-files.desktop /usr/local/bin/liquid-desktop-open
   fi
   say "LiquidDesktop has been removed. (Your settings stay in ~/.config/LiquidDesktop.)"
   exit 0
@@ -150,11 +151,17 @@ install_generic() {
   run sudo ln -sf "$PREFIX/session/liquid-desktop-session" /usr/local/bin/liquid-desktop-session
   run sudo ln -sf "$PREFIX/tools/nested.sh" /usr/local/bin/liquid-desktop-nested
   run sudo ln -sf "$PREFIX/session/liquid-desktop-update" /usr/local/bin/liquid-desktop-update
+  run sudo ln -sf "$PREFIX/session/liquid-desktop-open" /usr/local/bin/liquid-desktop-open
+  run sudo ln -sf "$PREFIX/session/liquid-desktop-greeter" /usr/local/bin/liquid-desktop-greeter
   say "Adding LiquidDesktop to the login screen…"
   if [ -z "$DRY" ]; then
     sed "s#/usr/bin/#/usr/local/bin/#g" "$WORK/LiquidDesktop/packaging/liquid-desktop.xsession.desktop" > "$WORK/xsession.desktop"
     sudo install -Dm644 "$WORK/xsession.desktop" /usr/share/xsessions/liquid-desktop.desktop
     sudo install -Dm644 "$WORK/LiquidDesktop/packaging/liquid-desktop.desktop" /usr/share/applications/liquid-desktop.desktop
+    # LiquidDesktop's Open / Save dialogs (desktop portal backend) and Files as the folder opener
+    sudo install -Dm644 "$WORK/LiquidDesktop/packaging/liquiddesktop.portal" /usr/share/xdg-desktop-portal/portals/liquiddesktop.portal
+    sed "s#^Exec=liquid-desktop-open#Exec=/usr/local/bin/liquid-desktop-open#" "$WORK/LiquidDesktop/packaging/liquid-desktop-files.desktop" > "$WORK/files.desktop"
+    sudo install -Dm644 "$WORK/files.desktop" /usr/share/applications/liquid-desktop-files.desktop
     # the LiquidDesktop login screen, when the login manager is SDDM
     if [ -d /usr/share/sddm ] || command -v sddm >/dev/null 2>&1; then
       say "Installing the LiquidDesktop login screen (SDDM)…"

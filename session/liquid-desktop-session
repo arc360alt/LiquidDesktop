@@ -69,8 +69,30 @@ if [ ! -e "$PORTAL_CONF" ] || grep -q '^# written by LiquidDesktop' "$PORTAL_CON
       echo '[preferred]'
       echo "default=$PORTALS"
       [ -n "$SECRET" ] && echo "org.freedesktop.impl.portal.Secret=$SECRET"
+      # LiquidDesktop's own Open / Save dialogs (main/portal.js), when installed
+      if [ -e /usr/share/xdg-desktop-portal/portals/liquiddesktop.portal ]; then
+        echo "org.freedesktop.impl.portal.FileChooser=liquiddesktop;$PORTALS"
+        echo "org.freedesktop.impl.portal.AppChooser=liquiddesktop;$PORTALS"
+      fi
     } > "$PORTAL_CONF"
   fi
+fi
+
+# Apps use the desktop portal for Open / Save, so they get LiquidDesktop's dialog: GTK 3 (GTK_USE_PORTAL),
+# GTK 4 (GDK_DEBUG=portals) and Qt (its xdgdesktopportal platform theme). Firefox, Chromium and Flatpak apps
+# use the portal on their own. Only when LiquidDesktop's dialog is installed.
+if [ -e /usr/share/xdg-desktop-portal/portals/liquiddesktop.portal ]; then
+  export GTK_USE_PORTAL=1 GDK_DEBUG="${GDK_DEBUG:+$GDK_DEBUG,}portals"
+  for D in /usr/lib/qt6/plugins/platformthemes /usr/lib/x86_64-linux-gnu/qt6/plugins/platformthemes /usr/lib64/qt6/plugins/platformthemes; do
+    [ -e "$D/libqxdgdesktopportal.so" ] && { export QT_QPA_PLATFORMTHEME=xdgdesktopportal; break; }
+  done
+fi
+# Folders open in LiquidDesktop's Files: a default that only applies in this session (the
+# "liquiddesktop-mimeapps.list" is read only when XDG_CURRENT_DESKTOP is LiquidDesktop)
+MIMEAPPS="${XDG_CONFIG_HOME:-$HOME/.config}/liquiddesktop-mimeapps.list"
+if [ ! -e "$MIMEAPPS" ] || grep -q '^# written by LiquidDesktop' "$MIMEAPPS" 2>/dev/null; then
+  printf '%s\n' '# written by LiquidDesktop at login (delete this line to keep your own edits)' '[Default Applications]' \
+    'inode/directory=liquid-desktop-files.desktop' 'x-directory/normal=liquid-desktop-files.desktop' > "$MIMEAPPS"
 fi
 
 if [ -z "$DBUS_SESSION_BUS_ADDRESS" ] && command -v dbus-run-session >/dev/null; then

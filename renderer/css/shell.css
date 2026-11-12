@@ -81,6 +81,7 @@
   --dock-size: 56px;
 }
 #dock .dock-items { display: flex; align-items: flex-end; height: 100%; }
+#dock .dock-floor { position: absolute; left: 0; right: 0; top: 100%; height: 12px; }
 .dock-item {
   width: var(--dock-size); height: var(--dock-size); position: relative; flex: none; margin: 0 2px;
   display: flex; align-items: flex-end; justify-content: center; transition: width 0.12s ease-out, height 0.12s ease-out;
@@ -174,7 +175,7 @@
 .cc-sq:active { transform: scale(0.95); }
 .cc-slider-mod h4 { margin: 0 0 8px; font-size: 12.5px; font-weight: 600; }
 .cc-slider { position: relative; height: 30px; border-radius: 999px; background: rgba(128, 128, 128, 0.25); overflow: hidden; }
-.cc-slider .fill { position: absolute; left: 0; top: 0; bottom: 0; background: rgba(255, 255, 255, 0.95); border-radius: 999px 0 0 999px; min-width: 30px; }
+.cc-slider .fill { position: absolute; left: 0; top: 0; bottom: 0; background: rgba(255, 255, 255, 0.95); border-radius: 999px; min-width: 15px; }
 .cc-slider .fill::after { content: ''; position: absolute; right: 0; top: 0; bottom: 0; width: 30px; border-radius: 50%; background: #fff; box-shadow: 0 0 6px rgba(0, 0, 0, 0.2); }
 .cc-slider svg { position: absolute; left: 8px; top: 7px; width: 16px; height: 16px; color: rgba(0, 0, 0, 0.55); z-index: 2; pointer-events: none; }
 .cc-np { display: flex; align-items: center; gap: 10px; }
@@ -266,13 +267,74 @@
 .w-notes textarea { flex: 1; border: 0; outline: 0; background: transparent; resize: none; font-size: 12.5px; line-height: 1.45; color: var(--on-glass); margin-top: 6px; }
 
 #widget-gallery {
-  position: fixed; left: 50%; bottom: 100px; transform: translateX(-50%); z-index: 8800; padding: 16px; border-radius: 28px; display: flex; gap: 14px; align-items: flex-end;
-  animation: ccIn 0.35s var(--spring); color: var(--on-glass); max-width: calc(100vw - 40px); overflow-x: auto;
+  position: fixed; left: 50%; bottom: 100px; transform: translateX(-50%); z-index: 8800; padding: 14px 16px 16px; border-radius: 28px; display: flex; flex-direction: column; gap: 10px;
+  animation: ccIn 0.35s var(--spring); color: var(--on-glass); width: min(1080px, calc(100vw - 40px));
 }
-#widget-gallery .wg-item { display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 500; }
+#widget-gallery .wg-top { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+#widget-gallery .wg-tabs { display: flex; gap: 2px; padding: 3px; border-radius: 12px; background: rgba(120, 120, 128, 0.18); flex-wrap: wrap; }
+#widget-gallery .wg-tabs button { border: 0; background: none; color: inherit; font: inherit; font-size: 12.5px; font-weight: 600; padding: 5px 11px; border-radius: 9px; }
+#widget-gallery .wg-tabs button.on { background: rgba(255, 255, 255, 0.85); color: #1c1c1e; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18); }
+#widget-gallery .wg-actions { margin-left: auto; display: flex; gap: 8px; }
+#widget-gallery .wg-row { display: flex; gap: 18px; align-items: flex-end; overflow-x: auto; padding: 4px 4px 2px; min-height: 140px; }
+#widget-gallery .wg-item { display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 500; flex: none; cursor: var(--cur-pointer, pointer); }
 #widget-gallery .wg-item .widget { transform: scale(0.62); transform-origin: bottom center; margin: -31px -31px 0; pointer-events: none; }
 #widget-gallery .wg-item .widget.m { margin: -31px -64px 0; }
+#widget-gallery .wg-item .widget.l { transform: scale(0.42); margin: -197px -98px 0; }
 #widget-gallery .wg-item:hover .widget { filter: brightness(1.1); }
+#widget-gallery .wg-empty { opacity: 0.75; font-size: 13px; align-self: center; margin: 0 auto; }
+.widget.l { width: 340px; height: 340px; }
+
+/* widgets: shared bits and the newer ones */
+.w-label { font-size: 13px; font-weight: 700; }
+.w-date { align-items: center; justify-content: center; text-align: center; }
+.w-date-dow { color: #ff453a; font-size: 13px; font-weight: 700; letter-spacing: 0.06em; }
+.w-date-num { font-size: 64px; font-weight: 300; line-height: 1; letter-spacing: -0.03em; }
+.w-date-mon { font-size: 12px; opacity: 0.75; }
+.w-world { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: auto; margin-bottom: auto; }
+.w-wc { display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 10px 2px; border-radius: 14px; background: rgba(255, 255, 255, 0.35); color: #1c1c1e; }
+.w-wc.night { background: rgba(28, 28, 32, 0.75); color: #fff; }
+.w-wc b { font-size: 18px; font-weight: 600; }
+.w-wc small { font-size: 10px; opacity: 0.7; }
+.w-wc span { font-size: 10.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.w-fc-top { display: flex; justify-content: space-between; align-items: flex-start; }
+.w-fc { display: flex; justify-content: space-between; margin-top: auto; }
+.w-fc > div { display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 11px; }
+.w-fc i { width: 22px; height: 22px; display: flex; }
+.w-fc i svg { width: 100%; height: 100%; }
+.w-fc b { font-size: 12.5px; }
+.w-batt { position: relative; width: 74px; height: 74px; }
+.w-batt svg { width: 100%; height: 100%; }
+.w-batt span { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #30d158; }
+.w-batt span svg { width: 24px; height: 24px; }
+.w-act-top { display: flex; justify-content: space-between; align-items: baseline; }
+.w-act-vals { display: flex; gap: 10px; font-size: 11.5px; font-weight: 700; }
+.w-graph { flex: 1; width: 100%; min-height: 0; margin-top: 8px; border-radius: 10px; background: rgba(0, 0, 0, 0.12); }
+.w-np-row { display: flex; gap: 14px; align-items: center; height: 100%; }
+.w-np-art { width: 112px; height: 112px; flex: none; border-radius: 14px; overflow: hidden; background: rgba(128, 128, 128, 0.25); display: flex; align-items: center; justify-content: center; }
+.w-np-art img { width: 100%; height: 100%; object-fit: cover; }
+.w-np-noart svg { width: 40px; height: 40px; opacity: 0.6; }
+.w-np-t { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.w-np-t b { font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.w-np-t span { font-size: 12.5px; opacity: 0.75; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.w-np-btns { display: flex; gap: 10px; margin-top: 10px; }
+.w-np-btns button { width: 34px; height: 34px; border: 0; border-radius: 50%; background: rgba(255, 255, 255, 0.25); color: inherit; display: flex; align-items: center; justify-content: center; }
+.w-np-btns button svg { width: 15px; height: 15px; }
+.w-photo { padding: 0 !important; }
+.w-photo-in { position: absolute; inset: 0; border-radius: inherit; overflow: hidden; }
+.w-photo-in > img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.w-files { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; min-width: 0; }
+.w-file { display: flex; align-items: center; gap: 8px; font-size: 12.5px; min-width: 0; padding: 2px 4px; border-radius: 8px; }
+.w-file:hover { background: rgba(255, 255, 255, 0.18); }
+.w-file span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.w-file-ic { width: 22px; height: 22px; flex: none; }
+.w-file-ic svg { width: 100%; height: 100%; }
+/* custom widgets (customwidget.js) */
+.widget.w-custom { overflow: hidden; }
+.w-stage { position: absolute; inset: 0; }
+.w-dim { position: absolute; inset: 0; }
+.w-el { position: absolute; display: flex; align-items: center; overflow: hidden; white-space: pre-wrap; word-break: break-word; }
+.w-el[data-type="image"] img { width: 100%; height: 100%; display: block; }
+.w-el[data-type="icon"] svg { width: 100%; height: 100%; }
 
 /* ---------------------------------------------------------------- desktop icons */
 #desk-icons { position: absolute; top: calc(var(--menubar-h) + 10px); right: 10px; bottom: 100px; display: flex; flex-direction: column; flex-wrap: wrap-reverse; align-content: flex-start; gap: 4px; z-index: 1; }
@@ -457,7 +519,7 @@
 /* widgets packed in Notification Center: soft, small shadows so they don't pile up into a haze */
 #nc .glass { --glass-shadow: 0 2px 10px rgba(0, 0, 0, 0.08); }
 .nc-edit { align-self: center; margin-top: 4px; height: 30px; padding: 0 16px; border-radius: 999px; border: 0; color: var(--on-glass); font-weight: 600; font-size: 12px; }
-#widget-gallery .wg-hint { position: absolute; top: -34px; left: 50%; transform: translateX(-50%); white-space: nowrap; color: #fff; font-size: 12.5px; font-weight: 500; text-shadow: 0 1px 6px rgba(0, 0, 0, 0.5); }
+#widget-gallery .wg-hint { font-size: 12px; opacity: 0.75; }
 #widget-gallery { overflow: visible; }
 
 /* Control Center sliders: a real knob that becomes a glass lens while you drag it */

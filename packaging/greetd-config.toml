@@ -1,0 +1,8 @@
+# Written by LiquidDesktop (Settings › Lock Screen › Login Screen): its own login screen.
+# The previous file, if there was one, is kept as config.toml.liquid-backup.
+[terminal]
+vt = 1
+
+[default_session]
+command = "cage -s -d -- /usr/bin/liquid-desktop-greeter"
+user = "greeter"

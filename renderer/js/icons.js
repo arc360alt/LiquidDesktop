@@ -183,6 +183,10 @@ const APP_ICONS = {
     draw: (c) => `<path d="M30 38h40l-3.5 38a5 5 0 0 1-5 4.5h-23a5 5 0 0 1-5-4.5z" fill="${c.fg}"/>
       <path d="M40 38v-5a10 10 0 0 1 20 0v5" stroke="${c.fg}" stroke-width="5" fill="none" stroke-linecap="round"/>
       <path d="M50 48v18M42 59l8 8 8-8" stroke="${c.ac2}" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>` },
+  widgetcreator: { bg: ['#ff9f0a', '#ff375f'], tone: '#ff6b3d', c: { fg: '#fff', ac: '#ffffff', ac2: '#ffd8c2', paper: '#fff', ink: '#ff375f' },
+    draw: (c) => `<rect x="22" y="22" width="25" height="25" rx="7" fill="${c.fg}"/><rect x="53" y="22" width="25" height="25" rx="7" fill="${c.ac2}" opacity=".85"/>
+      <rect x="22" y="53" width="56" height="25" rx="7" fill="${c.ac2}" opacity=".85"/>
+      <path d="M58 75l17-17 6 6-17 17-8 2z" fill="${c.ink}" stroke="${c.fg}" stroke-width="2" stroke-linejoin="round"/>` },
   launchpad: { bg: ['#55555c', '#2a2a30'], tone: '#bf5af2', c: { fg: '#fff', ac: '#ff375f', ac2: '#0a84ff', paper: '#2c2c2e', ink: '#fff' },
     draw: () => { const cols = ['#ff375f', '#ff9f0a', '#ffd60a', '#30d158', '#64d2ff', '#0a84ff', '#5e5ce6', '#bf5af2', '#ff2d55'];
       return cols.map((col, i) => `<rect x="${22 + (i % 3) * 20}" y="${22 + Math.floor(i / 3) * 20}" width="15" height="15" rx="4.5" fill="${col}"/>`).join(''); } },

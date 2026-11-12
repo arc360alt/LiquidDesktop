@@ -59,6 +59,7 @@ const render = {
         .map(([k, v]) => row(k, h('span.muted.ellipsis', { style: { maxWidth: '60%' } }, v || '—')))),
       h('div.group-title', 'Software Update'),
       softwareUpdateGroup(),
+      ...(await dialogsGroup()),
       h('div.group-title', 'Screenshots'),
       h('div.group',
         row('Take a screenshot', h('span.muted', 'Super+Shift+S (area, window or screen) · Print Screen (whole screen)')),
@@ -346,7 +347,7 @@ const render = {
         const r = await api.sddm.apply(opts);
         const left = r.problems.filter((p) => p.level === 'error');
         alertDialog(left.length ? { title: 'Almost there', message: left.map((p) => p.text).join('\n\n') }
-          : { title: 'Login screen updated', message: opts.switchDm ? 'SDDM is now your login manager. Restart your computer to see the new login screen.' : 'You’ll see it the next time you log in.' });
+          : { title: 'Login screen updated', message: opts.web ? 'LiquidDesktop’s login screen is set up. Restart your computer to see it.' : opts.switchDm ? 'SDDM is now your login manager. Restart your computer to see the new login screen.' : 'You’ll see it the next time you log in.' });
       } catch (e) { alertDialog({ title: 'Couldn’t change the login screen', message: e.message }); }
       rerender();
     };
@@ -357,7 +358,20 @@ const render = {
     };
     const ok = !st.problems.length;
     const icon = (lvl) => h('span', { style: { width: '18px', flex: 'none', color: lvl === 'error' ? '#ff453a' : lvl === 'warn' ? '#ff9f0a' : '#30d158', fontWeight: 700 } }, lvl === 'ok' ? '✓' : '!');
-    out.push(h('div.group-title', 'Login Screen'),
+    // which login screen: LiquidDesktop's own (web, under greetd) or an SDDM theme
+    const kind = h('div.group',
+      st.web
+        ? h('div.row', icon('ok'), h('div.label', 'You’re using LiquidDesktop’s own login screen', h('small', 'The same look as the lock screen, with real blur. It runs under greetd.')),
+          h('button.btn', { onclick: () => apply({ theme: st.ours, switchDm: true, install: true }, 'Switching to SDDM…') }, 'Use an SDDM Theme Instead'))
+        : st.webAvailable ? h('div.row', h('div.label', 'LiquidDesktop’s own login screen', h('small', 'Built like the rest of the desktop: the lock screen’s look with real blur, your picture, sessions and power buttons. Installs greetd and cage; takes effect when you restart.')),
+          h('button.btn.primary', { onclick: async () => { if (await confirmDialog('Use LiquidDesktop’s own login screen?', `Your login manager (${st.dm.name}) will be replaced by greetd running LiquidDesktop’s login screen, from the next restart. You can switch back here at any time.`, 'Use It')) apply({ web: true }, 'Setting up the login screen…'); } }, 'Use It')) : null);
+    out.push(h('div.group-title', 'Login Screen'), kind);
+    if (st.web) {
+      out.push(h('div.group', row('Ask for my password again after logging in', h('select.field.square', { style: { height: '26px', minWidth: '210px' }, onchange: (e) => store.set('bootLogin', e.target.value) },
+        ...[['auto', 'Not after the LiquidDesktop login'], ['always', 'Always'], ['never', 'Never']].map(([v, l]) => h('option', { value: v, selected: (store.get('bootLogin') || 'auto') === v }, l))), 'You log in through the LiquidDesktop login screen, so LiquidDesktop won’t ask again.')));
+      return out;
+    }
+    out.push(h('div.group-title', 'SDDM'),
       h('div.group',
         row('Login manager', h('span.muted', st.dm.name)),
         row('Login screen theme', h('span.muted', st.current ? (st.themes.find((t) => t.id === st.current)?.name || st.current) : 'SDDM default'), st.source ? `Set in ${st.source}` : ''),
@@ -532,13 +546,35 @@ const render = {
         row('Show Arch Linux apps and packages', toggle('storeShowArch'))),
     ];
   },
-  weather() {
+  async weather() {
+    const { CARDS, SCHEMES, cardOrder } = await import('./weather.js');
+    const order = cardOrder();
+    const names = Object.fromEntries(CARDS);
+    const saveOrder = (list) => { store.set('svCards', list); rerender(); };
+    const cards = h('div.group', ...order.map((c, i) => h('div.row',
+      h('label.toggle', h('input', { type: 'checkbox', checked: c.on, onchange: (e) => saveOrder(order.map((x) => (x.id === c.id ? { ...x, on: e.target.checked } : x))) }), h('span')),
+      h('div.label', names[c.id]),
+      h('div', { style: { display: 'flex', gap: '4px' } },
+        h('button.btn', { disabled: i === 0, title: 'Move up', onclick: () => { const l = [...order]; [l[i - 1], l[i]] = [l[i], l[i - 1]]; saveOrder(l); } }, '↑'),
+        h('button.btn', { disabled: i === order.length - 1, title: 'Move down', onclick: () => { const l = [...order]; [l[i + 1], l[i]] = [l[i], l[i + 1]]; saveOrder(l); } }, '↓')))));
     return [
-      appHero('weather', 'Weather', 'Units and location for the Weather app and widget.'),
+      appHero('weather', 'Weather', 'Units, location, the radar map and the cards of the Weather app (and the desktop widget).'),
       h('div.group',
         row('Temperature', select('weatherUnits', [['auto', 'Automatic'], ['c', 'Celsius (°C)'], ['f', 'Fahrenheit (°F)']])),
-        row('Location', h('span.muted', store.get('weatherCity')?.name || 'Automatic'), 'Search for a city in the Weather app to change it.'),
-        row('Use my time zone’s city', h('button.btn', { onclick: () => { store.set('weatherCity', null); rerender(); } }, 'Reset'))),
+        row('Location', h('span.muted', store.get('weatherCity')?.name || 'Automatic'), 'Search in the Weather app, or right-click the map.'),
+        row('Use my time zone’s city', h('button.btn', { onclick: () => { store.set('weatherCity', null); rerender(); } }, 'Reset')),
+        row('Weather panel', select('svPanelSide', [['left', 'On the left'], ['right', 'On the right']]))),
+      h('div.group-title', 'Radar & Map'),
+      h('div.group',
+        row('Radar colors', select('svScheme', SCHEMES.map(([v, l]) => [v, l]))),
+        row('Map style', select('svBaseMap', [['muted', 'Muted'], ['streets', 'Streets']])),
+        row('Satellite imagery', toggle('svSatellite')),
+        row('Smooth radar', toggle('svSmooth')),
+        row('Snow colors', toggle('svSnow'), 'Shows snow in its own colors'),
+        row('Advisory zones on the map', toggle('svAdvisories'), 'Outlines watches and advisories as well as warnings (US, from the National Weather Service)')),
+      h('div.group-title', 'Cards'),
+      cards,
+      h('div.muted', { style: { fontSize: '11.5px', margin: '6px 4px 18px' } }, 'Weather by Open-Meteo · Alerts by the NWS · Radar by LibreWXR · Search by OpenStreetMap Nominatim · based on StormView by arc360alt.'),
     ];
   },
   texteditor() {
@@ -576,6 +612,51 @@ export function openAppSettings(pane) {
   wm.open('appsettings', { pane });
 }
 let rerender = () => redraws.forEach((f) => f());
+
+// Settings › General › File Dialogs: whether apps' Open / Save, Open With and "Show in Folder" reach LiquidDesktop
+async function dialogsGroup() {
+  if (!api.dialogs?.status) return [];
+  let st;
+  try { st = await api.dialogs.status(); } catch { return []; }
+  if (!st.session) return [h('div.group-title', 'File Dialogs'), h('div.group', h('div.row', h('div.label', h('small', 'Apps’ Open / Save and Open With dialogs become LiquidDesktop’s in the LiquidDesktop session.'))))];
+  const bad = st.checks.filter((c) => !c.ok);
+  const mark = (ok) => h('span', { style: { width: '18px', flex: 'none', fontWeight: 700, color: ok ? '#30d158' : '#ff9f0a' } }, ok ? '✓' : '!');
+  const busy = h('div.row', { hidden: true }, h('div.label', h('small', 'Working…')));
+  const sudo = async () => {
+    if (!(await api.sddm.sudoStatus()).needed) return true;
+    for (let i = 0; i < 3; i++) {
+      const pw = await prompt('Enter your password', '', { type: 'password', ok: 'Authenticate', message: 'Installing the dialog files needs administrator rights (sudo).' });
+      if (pw == null) return false;
+      if (await api.sddm.sudoCheck(pw)) return true;
+      await alertDialog({ title: 'Incorrect password', message: 'Try again.' });
+    }
+    return false;
+  };
+  const fix = async () => {
+    const needsRoot = st.checks.some((c) => !c.ok && (c.id === 'portalFile' || c.id === 'folders'));
+    if (needsRoot && !(await sudo())) return;
+    let stopOther = false;
+    if (st.fmOwner) stopOther = await confirmDialog(`Close ${st.fmOwner.name}?`, `${st.fmOwner.name} is holding the “file manager” role, so apps’ “Show in Folder” opens it instead of Files. Close it so Files can take over? Any of its windows will close.`, 'Close It');
+    busy.hidden = false;
+    try {
+      const r = await api.dialogs.fix({ stopOther });
+      const left = r.status.checks.filter((c) => !c.ok);
+      alertDialog(left.length ? { title: 'Almost there', message: left.map((c) => c.bad).join('\n') + '\n\nLogging out and back in usually finishes it.' }
+        : { title: 'File dialogs fixed', message: 'Apps you open from now on use LiquidDesktop’s dialogs. Apps that were already open need to be reopened.' });
+    } catch (e) { alertDialog({ title: 'Couldn’t fix the dialogs', message: e.message }); }
+    rerender();
+  };
+  return [
+    h('div.group-title', 'File Dialogs'),
+    h('div.group',
+      ...st.checks.map((c) => h('div.row', mark(c.ok), h('div.label', h('small', { style: { fontSize: '12.5px', opacity: 1 } }, c.ok ? c.text : c.bad)))),
+      busy,
+      h('div.row', h('div.label', h('small', bad.length ? 'Fixing may ask for your password once.' : 'Try it: opens an Open dialog the way a browser asks for one.')),
+        h('div', { style: { display: 'flex', gap: '8px' } },
+          h('button.btn', { onclick: () => api.dialogs.test().catch((e) => alertDialog({ title: 'The test didn’t open a dialog', message: e.message })) }, 'Test'),
+          bad.length ? h('button.btn.primary', { onclick: fix }, 'Fix') : null))),
+  ];
+}
 
 // Settings › Appearance › App Themes: the GTK and Qt (Kvantum) themes of Linux apps in the session
 async function appThemesGroup() {

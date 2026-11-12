@@ -1,0 +1,10 @@
+#!/bin/sh
+# The LiquidDesktop login screen. greetd runs this (as the "greeter" user, inside cage) — see
+# /etc/greetd/config.toml as installed by Settings › Lock Screen › Login Screen.
+HERE="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
+export LIQUID_GREETER_DATA="${LIQUID_GREETER_DATA:-/var/cache/liquid-desktop-greeter}"
+for E in "$LIQUID_ELECTRON" "$HERE/node_modules/electron/dist/electron" "$(command -v electron43)" "$(command -v electron)"; do
+  [ -n "$E" ] && [ -x "$E" ] && exec "$E" "$HERE" --greeter "$@"
+done
+echo "liquid-desktop-greeter: Electron not found" >&2
+exit 1

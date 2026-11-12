@@ -1,11 +1,14 @@
 // LiquidDesktop — Electron entry point.
 //   electron . --windowed   the whole desktop inside one normal window (for testing)
 //   electron . --session    the real desktop on an X11 display (see main/session.js)
+//   electron . --greeter    the login screen, run by greetd (see main/greeter.js)
 const { app, BrowserWindow, screen, session } = require('electron');
 const path = require('path');
 const system = require('./system');
 
 const argv = process.argv.slice(1);
+// the login screen (run by greetd) is its own small program: nothing below applies to it
+if (argv.includes('--greeter')) { require('./greeter').run(); return; }
 const mode = argv.includes('--session') ? 'session' : 'windowed';
 const sizeArg = (argv.find((a) => a.startsWith('--size=')) || '').slice(7);
 const preload = path.join(__dirname, 'preload.js');
@@ -61,6 +64,7 @@ app.whenReady().then(async () => {
       const s = await startSession({ preload });
       win = s.shell;
       system.register({ getWindow: () => s.shell, mode });
+      require('./portal').register({ openApp: s.openApp });   // file dialogs + file manager for all apps
     } catch (err) {
       console.error('[LiquidDesktop] could not start the session:', err.message);
       console.error('Is another window manager running? Use `npm start` to run LiquidDesktop in a window instead.');
@@ -68,6 +72,7 @@ app.whenReady().then(async () => {
     }
   } else {
     system.register({ getWindow: () => win, mode });
+    require('./portal').register({});   // Open / Save dialogs for LiquidDesktop's own apps
     createWindowed();
   }
 });

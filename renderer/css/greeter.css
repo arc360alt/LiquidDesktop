@@ -1,0 +1,50 @@
+/* The LiquidDesktop login screen (greeter.html). It's one web page, so the glass blurs the wallpaper for real. */
+body.greeter { margin: 0; height: 100vh; overflow: hidden; color: #fff; background: #0b1220; font-family: "Inter Variable", system-ui, sans-serif; user-select: none; cursor: var(--cur-default, default); }
+#g-wall { position: fixed; inset: 0; background: #1c2a44 center/cover; transform: scale(1.02); transition: filter 0.6s, transform 0.8s; }
+body.leaving #g-wall { filter: blur(30px) brightness(0.7); transform: scale(1.08); }
+#g { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; opacity: 0; transition: opacity 0.6s; }
+body.ready #g { opacity: 1; }
+body.leaving #g { opacity: 0; }
+.greeter .glass { background: rgba(255, 255, 255, 0.18); -webkit-backdrop-filter: blur(24px) saturate(1.8); backdrop-filter: blur(24px) saturate(1.8);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.45), 0 8px 30px rgba(0, 0, 0, 0.18); }
+.g-clock { margin-top: 7vh; text-align: center; text-shadow: 0 2px 12px rgba(0, 0, 0, 0.25); }
+.g-date { font-size: clamp(18px, 2vw, 26px); font-weight: 600; opacity: 0.95; }
+.g-time { font-size: clamp(80px, 10vw, 150px); font-weight: 700; letter-spacing: -0.03em; line-height: 1; opacity: 0.92; }
+.g-login { margin-top: auto; margin-bottom: 13vh; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.g-people { display: flex; gap: 18px; margin-bottom: 14px; }
+.g-person { display: flex; flex-direction: column; align-items: center; gap: 6px; border: 0; background: none; color: #fff; font: inherit; font-size: 12.5px; opacity: 0.75; transition: opacity 0.2s, transform 0.2s; }
+.g-person:hover { opacity: 1; transform: translateY(-2px); }
+.g-person.sel { opacity: 1; }
+.g-person .g-av { width: 52px; height: 52px; font-size: 18px; }
+.g-av { width: 96px; height: 96px; border-radius: 50%; overflow: hidden; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 34px;
+  background: linear-gradient(180deg, #b4b4bc, #75757e); box-shadow: 0 4px 22px rgba(0, 0, 0, 0.3), inset 0 0 0 1px rgba(255, 255, 255, 0.35); }
+.g-av img { width: 100%; height: 100%; object-fit: cover; }
+.g-name { font-size: 20px; font-weight: 600; text-shadow: 0 1px 8px rgba(0, 0, 0, 0.35); margin-bottom: 4px; }
+.g-field { display: flex; align-items: center; gap: 4px; width: 260px; padding: 4px 4px 4px 16px; border-radius: 999px; }
+.g-field input { flex: 1; min-width: 0; height: 30px; border: 0; outline: 0; background: none; color: #fff; font: inherit; font-size: 15px; }
+.g-field input::placeholder { color: rgba(255, 255, 255, 0.75); }
+.g-field input.g-pass { letter-spacing: 2px; }
+.g-field input.g-pass:placeholder-shown { letter-spacing: 0; }
+.g-go { width: 30px; height: 30px; flex: none; border: 0; border-radius: 50%; background: rgba(255, 255, 255, 0.25) center/16px no-repeat
+  url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12h13M13 6l6 6-6 6'/%3E%3C/svg%3E"); }
+.g-go:hover { background-color: rgba(255, 255, 255, 0.38); }
+.g-field:has(.g-user:not([hidden])) { flex-direction: column; align-items: stretch; border-radius: 22px; padding: 8px 8px 8px 16px; }
+.g-field:has(.g-user:not([hidden])) .g-go { position: absolute; right: 6px; bottom: 6px; }
+.g-field { position: relative; }
+.g-msg { min-height: 18px; font-size: 13px; text-shadow: 0 1px 6px rgba(0, 0, 0, 0.4); }
+.g-msg.bad { color: #ffd2d2; }
+.shake { animation: gShake 0.42s ease; }
+@keyframes gShake { 15% { transform: translateX(-12px); } 35% { transform: translateX(10px); } 55% { transform: translateX(-7px); } 75% { transform: translateX(4px); } }
+body.busy .g-go { animation: gPulse 0.8s ease-in-out infinite alternate; }
+@keyframes gPulse { to { opacity: 0.4; } }
+.g-bottom { position: fixed; left: 28px; right: 28px; bottom: 26px; display: flex; align-items: flex-end; justify-content: space-between; }
+.g-session { border: 0; color: #fff; font: inherit; font-size: 13px; font-weight: 600; padding: 8px 16px; border-radius: 999px; }
+.g-session::after { content: '  ▾'; opacity: 0.8; }
+.g-power { display: flex; gap: 26px; }
+.g-pbtn { display: flex; flex-direction: column; align-items: center; gap: 6px; border: 0; background: none; color: #fff; font: inherit; font-size: 12px; text-shadow: 0 1px 6px rgba(0, 0, 0, 0.4); }
+.g-pbtn span { width: 44px; height: 44px; border-radius: 50%; display: flex; align-items: center; justify-content: center; transition: background 0.2s; }
+.g-pbtn:hover span { background: rgba(255, 255, 255, 0.32); }
+.g-pbtn svg { width: 20px; height: 20px; }
+.g-menu { position: fixed; z-index: 10; padding: 6px; border-radius: 14px; display: flex; flex-direction: column; min-width: 220px; }
+.g-menu button { border: 0; background: none; color: #fff; font: inherit; font-size: 13px; text-align: left; padding: 7px 12px; border-radius: 9px; }
+.g-menu button:hover, .g-menu button.on { background: rgba(255, 255, 255, 0.22); }

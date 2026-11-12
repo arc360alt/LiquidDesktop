@@ -13,6 +13,7 @@ export function h(sel, attrs, ...kids) {
     else if (k === 'html') el.innerHTML = v;
     else if (k === 'text') el.textContent = v;
     else if (k === 'class') el.className += ' ' + v;
+    else if (k === 'value' && 'value' in el) el.value = v;   // a property: textareas ignore a value attribute
     else if (k in el && typeof v !== 'string') el[k] = v;
     else el.setAttribute(k, v === true ? '' : v);
   }

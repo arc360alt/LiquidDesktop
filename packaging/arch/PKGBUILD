@@ -52,6 +52,9 @@ optdepends=(
   'archlinux-appstream-data: names, icons and descriptions for Arch Linux apps in the App Store'
   'sddm: the LiquidDesktop login screen (installed and selected automatically)'
   'qt6-svg: icons on the LiquidDesktop login screen'
+  "greetd: LiquidDesktop's own (web) login screen"
+  "cage: runs LiquidDesktop's own login screen"
+  "xorg-xinit: starting X11 sessions from LiquidDesktop's own login screen (startx)"
 )
 backup=('etc/sddm.conf.d/zz-liquid-desktop.conf')
 makedepends=('git' 'npm' 'nodejs')
@@ -87,11 +90,12 @@ package() {
   install -dm755 "$dest"
   cp -a main renderer session tools package.json "$dest/"
   # the login theme, so Settings › Lock Screen can (re)install it
-  install -dm755 "$dest/packaging" && cp -a packaging/sddm "$dest/packaging/"
+  install -dm755 "$dest/packaging" && cp -a packaging/sddm packaging/greetd-config.toml "$dest/packaging/"
   cp -r node_modules "$dest/"
   rm -rf "$dest/node_modules/.package-lock.json" "$dest/tools/shot.js"
   chmod 755 "$dest/session/liquid-desktop" "$dest/session/liquid-desktop-session" "$dest/session/liquid-desktop-update" \
-            "$dest/session/liquid-desktop-session-inner" "$dest/tools/nested.sh" "$dest/tools/xephyr-test.sh"
+            "$dest/session/liquid-desktop-session-inner" "$dest/tools/nested.sh" "$dest/tools/xephyr-test.sh" \
+            "$dest/session/liquid-desktop-open" "$dest/session/liquid-desktop-greeter"
 
   # commands
   install -dm755 "$pkgdir/usr/bin"
@@ -99,6 +103,14 @@ package() {
   ln -s "/usr/lib/$_name/session/liquid-desktop-session" "$pkgdir/usr/bin/liquid-desktop-session"
   ln -s "/usr/lib/$_name/tools/nested.sh" "$pkgdir/usr/bin/liquid-desktop-nested"
   ln -s "/usr/lib/$_name/session/liquid-desktop-update" "$pkgdir/usr/bin/liquid-desktop-update"
+  ln -s "/usr/lib/$_name/session/liquid-desktop-open" "$pkgdir/usr/bin/liquid-desktop-open"
+  ln -s "/usr/lib/$_name/session/liquid-desktop-greeter" "$pkgdir/usr/bin/liquid-desktop-greeter"
+  # LiquidDesktop's own login screen (greetd greeter): a place for its data
+  install -Dm644 packaging/liquid-desktop-greeter.tmpfiles.conf "$pkgdir/usr/lib/tmpfiles.d/liquid-desktop-greeter.conf"
+
+  # LiquidDesktop's Open / Save dialogs for every app (desktop portal backend) and Files as the folder opener
+  install -Dm644 packaging/liquiddesktop.portal "$pkgdir/usr/share/xdg-desktop-portal/portals/liquiddesktop.portal"
+  install -Dm644 packaging/liquid-desktop-files.desktop "$pkgdir/usr/share/applications/liquid-desktop-files.desktop"
 
   # login screen entry (X11 session)
   install -Dm644 packaging/liquid-desktop.xsession.desktop "$pkgdir/usr/share/xsessions/liquid-desktop.desktop"

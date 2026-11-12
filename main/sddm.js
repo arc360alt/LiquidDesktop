@@ -81,8 +81,17 @@ function themeNeeds() {
   return missing;
 }
 
-async function status() {
+// LiquidDesktop's own (web) login screen runs under greetd: is that what's set up?
+const GREETD_CONF = '/etc/greetd/config.toml';
+const webGreeterActive = (dm) => { if (dm.id !== 'greetd') return false; try { return /liquid-desktop-greeter/.test(fs.readFileSync(GREETD_CONF, 'utf8')); } catch { return false; } };
+
+async function status({ full = false } = {}) {
   const dm = displayManager();
+  if (!full && webGreeterActive(dm)) {
+    // nothing about SDDM themes applies; the screen is LiquidDesktop's own
+    return { dm, web: true, webAvailable: true, sddmInstalled: has('sddm'), current: null, source: null, setters: [], themeDir: '', themes: [], ours: OURS, ourInstalled: false,
+      problems: [], errors: [], usingOurs: true, pacman: has('pacman') };
+  }
   const sddmInstalled = has('sddm');
   const ts = themeSettings();
   const list = themes(ts.themeDir);
@@ -106,12 +115,13 @@ async function status() {
   const needs = themeNeeds();
   if (sddmInstalled && needs.length) problems.push({ id: 'deps', level: 'error', text: `Missing ${needs.map((n) => n.what).join(', ')}: the theme can’t load without it, and SDDM falls back to its plain one.`, fix: 'deps', pkgs: [...new Set(needs.map((n) => n.pkg))] });
   return { dm, sddmInstalled, current: ts.current, source: ts.source, setters: ts.setters, themeDir: ts.themeDir, themes: list, ours: OURS, ourInstalled,
-    problems, errors: dm.id === 'sddm' ? await recentErrors() : [], usingOurs: dm.id === 'sddm' && ts.current === OURS && ourInstalled && !needs.length, pacman: has('pacman') };
+    problems, errors: dm.id === 'sddm' ? await recentErrors() : [], usingOurs: dm.id === 'sddm' && ts.current === OURS && ourInstalled && !needs.length, pacman: has('pacman'), web: false, webAvailable: exists(path.join(__dirname, 'greeter.js')) };
 }
 
 // Build one root script for everything that needs fixing, so there is a single password prompt.
-async function apply({ theme = OURS, switchDm = false, install = false, deps = [] } = {}) {
-  const st = await status();
+async function apply({ theme = OURS, switchDm = false, install = false, deps = [], web = false } = {}) {
+  const st = await status({ full: true });
+  if (web) return useWebGreeter(st);
   const lines = ['set -e'];
   const pm = has('pacman') ? (p) => `pacman -S --needed --noconfirm ${p.join(' ')}` : has('apt-get') ? (p) => `apt-get install -y ${p.join(' ')}` : has('dnf') ? (p) => `dnf install -y ${p.join(' ')}` : null;
   const pkgs = [...new Set([...(switchDm && !st.sddmInstalled ? ['sddm'] : []), ...deps, ...(switchDm && has('pacman') ? ['qt6-svg', 'qt6-declarative'] : [])])];
@@ -127,10 +137,34 @@ async function apply({ theme = OURS, switchDm = false, install = false, deps = [
     if (s.file === OUR_CONF || s.file.startsWith('/usr/')) continue;
     lines.push(`sed -i ${q(`/^\\[Theme\\]/,/^\\[/ s/^\\(\\s*Current\\s*=\\).*/\\1${theme.replace(/[/&]/g, '\\$&')}/`)} ${q(s.file)}`);
   }
-  if (switchDm) {
+  if (switchDm || webGreeterActive(st.dm)) {
     if (st.dm.id && st.dm.id !== 'sddm') lines.push(`systemctl disable ${q(st.dm.id + '.service')} || true`);
     lines.push('systemctl enable --force sddm.service');
   }
+  const r = await sudoScript(lines.join('\n'));
+  if (!r.ok) throw new Error(r.out.split('\n').slice(-4).join('\n') || 'It didn’t work.');
+  return status();
+}
+
+// Switch the login manager to greetd running LiquidDesktop's own login screen (in cage). The old greetd config,
+// if any, is kept; the previous login manager is only disabled, so going back is one click (Use SDDM).
+async function useWebGreeter(st) {
+  const pm = has('pacman') ? 'pacman -S --needed --noconfirm greetd cage xorg-xinit' : has('apt-get') ? 'apt-get install -y greetd cage xinit' : has('dnf') ? 'dnf install -y greetd cage xorg-x11-xinit' : null;
+  if (!pm) throw new Error('Install greetd, cage and xinit with your package manager first.');
+  const conf = path.join(__dirname, '..', 'packaging', 'greetd-config.toml');
+  const greeterBin = ['/usr/bin/liquid-desktop-greeter', '/usr/local/bin/liquid-desktop-greeter'].find(exists) || path.join(__dirname, '..', 'session', 'liquid-desktop-greeter');
+  if (!exists(conf)) throw new Error('The login screen files aren’t part of this install. Update LiquidDesktop and try again.');
+  const lines = ['set -e', pm,
+    'mkdir -p /etc/greetd',
+    `if [ -e ${GREETD_CONF} ] && ! grep -q liquid-desktop-greeter ${GREETD_CONF} && [ ! -e ${GREETD_CONF}.liquid-backup ]; then cp ${GREETD_CONF} ${GREETD_CONF}.liquid-backup; fi`,
+    `sed 's#/usr/bin/liquid-desktop-greeter#${greeterBin.replace(/#/g, '')}#' ${q(conf)} > ${GREETD_CONF}`,
+    'getent passwd greeter >/dev/null || useradd -r -M -s /usr/bin/nologin -G video greeter',
+    'mkdir -p /var/cache/liquid-desktop-greeter && chown greeter:greeter /var/cache/liquid-desktop-greeter && chmod 750 /var/cache/liquid-desktop-greeter',
+    // the greeter shows people's pictures from AccountsService's icon folder
+    'chmod a+rx /var/lib/AccountsService /var/lib/AccountsService/icons 2>/dev/null || true',
+  ];
+  if (st.dm.id && st.dm.id !== 'greetd') lines.push(`systemctl disable ${q(st.dm.id + '.service')} || true`);
+  lines.push('systemctl enable --force greetd.service');
   const r = await sudoScript(lines.join('\n'));
   if (!r.ok) throw new Error(r.out.split('\n').slice(-4).join('\n') || 'It didn’t work.');
   return status();

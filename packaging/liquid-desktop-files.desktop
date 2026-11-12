@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Files
+Comment=Browse files in LiquidDesktop
+Exec=liquid-desktop-open %U
+Icon=system-file-manager
+Terminal=false
+NoDisplay=true
+OnlyShowIn=LiquidDesktop;
+MimeType=inode/directory;x-directory/normal;

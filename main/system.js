@@ -648,6 +648,47 @@ function register({ getWindow, mode }) {
       pictures: pick('PICTURES', 'Pictures'), music: pick('MUSIC', 'Music'), videos: pick('VIDEOS', 'Videos'), trash: path.join(HOME, '.local/share/Trash/files') };
   });
 
+  // custom widgets' data sources: public web addresses only (no local network), small, quick
+  h('net:fetch', async (url) => {
+    const u = new URL(String(url));
+    if (!/^https?:$/.test(u.protocol)) throw new Error('Only web addresses');
+    const host = u.hostname.replace(/^\[|\]$/g, '');
+    if (/^(localhost|.*\.local|.*\.internal|0\.0\.0\.0|127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|::1$|fc|fd|fe80)/i.test(host)) throw new Error('Local addresses aren’t allowed');
+    const { net } = require('electron');
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 12000);
+    try {
+      const r = await net.fetch(u.toString(), { signal: ctrl.signal, headers: { 'User-Agent': 'LiquidDesktop-Widget' } });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const buf = Buffer.from(await r.arrayBuffer());
+      if (buf.length > 2 * 1024 * 1024) throw new Error('Response too large');
+      return buf.toString('utf8');
+    } finally { clearTimeout(t); }
+  });
+  // a small JPEG of a picture (widgets, previews): never decode multi-megapixel photos in the UI
+  const thumbCache = new Map();
+  h('fs:thumb', async (p, size = 360) => {
+    const st = await fsp.stat(p);
+    const key = `${p}|${st.mtimeMs}|${size}`;
+    if (thumbCache.has(key)) return thumbCache.get(key);
+    const { nativeImage } = require('electron');
+    let img = null;
+    if (typeof nativeImage.createThumbnailFromPath === 'function') img = await nativeImage.createThumbnailFromPath(p, { width: size, height: size }).catch(() => null);   // macOS/Windows only
+    if (!img || img.isEmpty()) { img = nativeImage.createFromPath(p); if (img.isEmpty()) throw new Error('Not a picture'); const s = img.getSize(), k = size / Math.min(s.width, s.height); if (k < 1) img = img.resize({ width: Math.round(s.width * k), height: Math.round(s.height * k), quality: 'good' }); }
+    const url = 'data:image/jpeg;base64,' + img.toJPEG(82).toString('base64');
+    if (thumbCache.size > 60) thumbCache.delete(thumbCache.keys().next().value);
+    thumbCache.set(key, url);
+    return url;
+  });
+  // a picture as a data URL (to embed in a widget)
+  h('fs:readDataUrl', async (p) => {
+    const st = await fsp.stat(p);
+    if (st.size > 8 * 1024 * 1024) throw new Error('That picture is too large (over 8 MB).');
+    const ext = path.extname(p).slice(1).toLowerCase();
+    const type = { jpg: 'jpeg', jpeg: 'jpeg', png: 'png', gif: 'gif', webp: 'webp', svg: 'svg+xml', avif: 'avif', bmp: 'bmp' }[ext];
+    if (!type) throw new Error('Not a picture');
+    return `data:image/${type};base64,${(await fsp.readFile(p)).toString('base64')}`;
+  });
   h('apps:list', listApps);
   watchApps();
   watchUpdates();

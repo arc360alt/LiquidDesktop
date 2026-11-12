@@ -1,0 +1,15 @@
+#!/bin/sh
+# Opens folders (or shows files) in LiquidDesktop's Files, through the org.freedesktop.FileManager1 service
+# the running session provides. Used as the session's default app for folders (liquid-desktop-files.desktop).
+#   liquid-desktop-open [FOLDER|FILE|file://URI]...
+[ $# -eq 0 ] && set -- "$HOME"
+for A in "$@"; do
+  case "$A" in file://*) U="$A" ;; *) P="$(realpath -- "$A" 2>/dev/null || echo "$A")"; U="file://$(printf '%s' "$P" | sed 's/%/%25/g; s/ /%20/g')" ;; esac
+  P="$(printf '%s' "${U#file://}" | sed 's/%20/ /g; s/%25/%/g')"
+  if [ -d "$P" ]; then M=ShowFolders; else M=ShowItems; fi
+  # gdbus follows this session's bus address; busctl --user is the fallback
+  if command -v gdbus >/dev/null && gdbus call --session --dest org.freedesktop.FileManager1 --object-path /org/freedesktop/FileManager1 \
+      --method "org.freedesktop.FileManager1.$M" "['$U']" "" >/dev/null 2>&1; then continue; fi
+  busctl --user call org.freedesktop.FileManager1 /org/freedesktop/FileManager1 org.freedesktop.FileManager1 "$M" ass 1 "$U" "" >/dev/null 2>&1 \
+    || echo "liquid-desktop-open: LiquidDesktop isn't running" >&2
+done

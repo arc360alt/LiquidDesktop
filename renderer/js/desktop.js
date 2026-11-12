@@ -5,7 +5,8 @@ import { store } from './store.js';
 import { api } from './sys.js';
 import { contextMenu, prompt } from './menus.js';
 import { wm } from './wm.js';
-import { buildWidget, WIDGETS } from './widgets.js';
+import { buildWidget, WIDGETS, widgetDef, CATEGORIES, SIZE_PX } from './widgets.js';
+import { customWidgets, validate, saveCustom, deleteCustom, toFile } from './customwidget.js';
 import { shell } from './shell.js';
 import { fileUrl } from './util.js';
 import { layer } from './layer.js';
@@ -50,12 +51,12 @@ async function renderIcons(force = true) {
 /* ---------------------------------------------- widgets */
 let widgetLayer, gallery = null;
 const WSIZE = { s: [164, 164], m: [340, 164] };
-const wsize = (type) => WSIZE[WIDGETS[type]?.size || 's'];
+const wsize = (type) => SIZE_PX[widgetDef(type)?.size || 's'] || WSIZE.s;
 // The free spot for a widget nearest to (px, py) — or the first one from the top left — keeping a gap
 // around the others and clear of the menu bar, the Dock and the desktop icons on the right.
 function freeSpot(type, px, py, skipId) {
   const [w, h] = wsize(type), gap = 12;
-  const others = store.get('widgets').filter((x) => x.id !== skipId && WIDGETS[x.type]).map((x) => [x.x, x.y, ...wsize(x.type)]);
+  const others = store.get('widgets').filter((x) => x.id !== skipId && widgetDef(x.type)).map((x) => [x.x, x.y, ...wsize(x.type)]);
   const fits = (x, y) => !others.some(([rx, ry, rw, rh]) => x < rx + rw + gap && x + w + gap > rx && y < ry + rh + gap && y + h + gap > ry);
   const maxX = innerWidth - w - 130, maxY = innerHeight - h - 110;
   let best = null, bestD = Infinity;
@@ -72,7 +73,7 @@ function freeSpot(type, px, py, skipId) {
 function renderWidgets() {
   widgetLayer.innerHTML = '';
   for (const w of store.get('widgets')) {
-    if (!WIDGETS[w.type]) continue;
+    if (!widgetDef(w.type)) continue;
     const el = buildWidget(w.type);
     el.classList.add('desk-widget');
     el.style.left = w.x + 'px'; el.style.top = w.y + 'px';
@@ -116,19 +117,64 @@ function applyEditing(on) {
   if (layer !== 'full' && layer !== 'shell') return;
   if (!on) { gallery?.remove(); gallery = null; return; }
   if (gallery) return;
-  gallery = h('div#widget-gallery.glass.panel.sheen', h('div.wg-hint', 'Drag widgets on the desktop to move them · click one below to add it · − removes'));
-  for (const [type, def] of Object.entries(WIDGETS)) {
-    const item = h('div.wg-item', buildWidget(type), h('span', def.name));
-    item.addEventListener('click', () => {
-      const list = store.get('widgets');
-      const [x, y] = freeSpot(type);
-      store.set('widgets', [...list, { id: 'w' + Date.now(), type, x, y }]);
-    });
-    gallery.append(item);
-  }
-  gallery.append(h('button.btn.primary', { style: { alignSelf: 'center', marginLeft: '8px' }, onclick: () => editWidgets(false) }, 'Done'));
+  gallery = h('div#widget-gallery.glass.panel.sheen');
+  drawGallery();
   document.body.append(gallery);
 }
+// the gallery: categories along the top, the widgets of the chosen one, Import / Create, Done
+let galleryCat = 'all';
+function addWidget(type) {
+  const [x, y] = freeSpot(type);
+  store.set('widgets', [...store.get('widgets'), { id: 'w' + Date.now(), type, x, y }]);
+}
+async function importWidget() {
+  const files = await api.dialog?.open({ title: 'Import Widget', filters: [{ name: 'LiquidDesktop widgets', patterns: ['*.ldwidget', '*.json'] }] }).catch(() => null);
+  if (!files?.length) return;
+  try {
+    const spec = validate(await api.fs.read(files[0]));
+    if (customWidgets()[spec.id]) spec.id = spec.id + Math.random().toString(36).slice(2, 5);
+    saveCustom(spec);
+    galleryCat = 'mine'; drawGallery();
+    notifyWidget(`“${spec.name}” was added to My Widgets`);
+  } catch (e) { const { alertDialog } = await import('./menus.js'); alertDialog({ title: 'Couldn’t import the widget', message: e.message }); }
+}
+function notifyWidget(body) { import('./notifications.js').then(({ notify }) => notify({ app: 'widgetcreator', title: 'Widgets', body })); }
+function drawGallery() {
+  if (!gallery) return;
+  gallery.innerHTML = '';
+  const tabs = h('div.wg-tabs', ...CATEGORIES.map(([id, name]) => h('button' + (galleryCat === id ? '.on' : ''), { onclick: () => { galleryCat = id; drawGallery(); } }, name)));
+  const row = h('div.wg-row');
+  const types = [...Object.entries(WIDGETS).map(([t, d]) => [t, d]), ...Object.values(customWidgets()).map((c) => ['custom:' + c.id, { name: c.name, cat: 'mine', size: c.size }])]
+    .filter(([, d]) => galleryCat === 'all' || d.cat === galleryCat);
+  for (const [type, def] of types) {
+    const item = h('div.wg-item.' + (def.size || 's'), buildWidget(type), h('span', def.name));
+    item.addEventListener('click', () => addWidget(type));
+    if (type.startsWith('custom:')) {
+      const id = type.slice(7);
+      item.addEventListener('contextmenu', (e) => contextMenu(e, [
+        { label: 'Add to Desktop', action: () => addWidget(type) },
+        { label: 'Edit in Widget Creator', action: () => wm.open('widgetcreator', { id }) },
+        { label: 'Export…', action: async () => {
+          const spec = customWidgets()[id];
+          const p = await api.dialog?.save({ title: 'Export Widget', name: `${spec.name.replace(/[/\\]/g, '-')}.ldwidget`, filters: [{ name: 'LiquidDesktop widget', patterns: ['*.ldwidget'] }] }).catch(() => null);
+          if (p?.[0]) { await api.fs.write(p[0], toFile(spec)); notifyWidget(`Exported to ${p[0]}`); }
+        } },
+        '-',
+        { label: 'Delete', action: () => { deleteCustom(id); drawGallery(); } },
+      ]));
+    }
+    row.append(item);
+  }
+  if (!types.length) row.append(h('div.wg-empty', galleryCat === 'mine' ? 'No widgets of your own yet. Create one, or import a .ldwidget file someone shared.' : 'No widgets here.'));
+  gallery.append(
+    h('div.wg-top', tabs, h('div.wg-actions',
+      h('button.btn', { onclick: importWidget }, 'Import…'),
+      h('button.btn', { onclick: () => wm.open('widgetcreator') }, 'Create Widget…'),
+      h('button.btn.primary', { onclick: () => editWidgets(false) }, 'Done'))),
+    h('div.wg-hint', 'Click a widget to add it · drag widgets on the desktop to move them · − removes'),
+    row);
+}
+store.on('change', (k) => { if (k === 'customWidgets') { drawGallery(); if (widgetLayer) renderWidgets(); } });
 store.on('change:widgetEditing', applyEditing);
 if (layer === 'shell' || layer === 'full') store.s.widgetEditing = false;
 

@@ -55,7 +55,10 @@ export const defaults = {
   textFontSize: 13,
   textTabSize: 4,
   terminalMiddlePaste: false, // paste the selection with the middle mouse button
-  weatherCity: null,        // { name, lat, lon }
+  weatherCity: null,
+  // Weather app (StormView-style)
+  svMode: 'weather', svShowPanel: true, svPanelSide: 'left', svOverlay: 'radar', svBaseMap: 'muted', svSatellite: false,
+  svScheme: 7, svOpacity: 0.75, svSmooth: true, svSnow: true, svSpeed: 1, svAdvisories: false, svCards: null, svRecent: [],        // { name, lat, lon }
   browserHome: 'start',
   browserSearch: 'duckduckgo',
   browserShowFavs: true,

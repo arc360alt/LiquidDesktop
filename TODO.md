@@ -1,10 +1,20 @@
 # ToDo
 
 - Integrate the DE into Vertex Linux and then remake the website and add an interactive version of the DE so users can test it (DO LATER)
-- Remake the weather app to be like my StormView Swift rewrite for MacOS https://github.com/StormView-Project/StormView-MacOS
-- Make the dock a bit less buggy, like when you go all the way to the bottom of the screen to show the dock, it shows, and then it hides and shows again and does the same thing over and over again (only happens when autohide is turned on)
 
 # Fixed
+- Whem im in a browser and I click on a button that opens an Open With dialouge it still opens my defualt file manager's open with window instead of Liquid Desktop's one (fixing this should also make it fix for other web browsers too)
+- The widget creator has a few issues, like when i click somthing in the insert list it does insert but it dosn't appear in the text box it just inserts it, so I am unable to delete anything after its inserted.
+- Add snapping to a grid and normal snapping to the widget editor (the user can select which one they want enabled) to make centering and moving object easier.
+- The photo widget is WAY too big and I'm pretty sure its just using the size of the image for the size of the widget instead of being locked to the small widget size its supposed to be.
+- Sometimes when closing the widget adding menu it remains for a few secconds after clicking done, and I am unable to move the widgets now for some reason by dragging them in edit mode.
+- Fix some visual bugs with the weather app rewrite, like the sidebar having this wierd half opaqe backround behind it that shouldnt be there and the rain precentage in the hourly forcast being all messed up and pushed inside the icons and other text and the 7 day forcast icon and precentage being too high up (and some missing features like the 7 day forcast things not being able to drop down to show more info), read the website and look through it to find what you missed and what to add, make it still have the Liquid Glass theming and everything. https://weather.nyxdev.app
+- Create a custom login screen not baised on SDDM or somthing that uses our own web baised interface like the rest of the DE to make it look like the lock screen and everything else (and allows us to add proper blur)
+- Add more widgets and create a format for users to create their own widgets, and then make an app called Widget Creator that is pre-installed that allows users to make widgest with custom images, network requests, text, backrounds, etc and they can export them as a custom file format to share with others. (this also means re-making the widget UI to have diffrent catigories, including pre-installed and user created ones, and with this add some more widgets related to the apps pre-installed with the OS), and of course add a widget import button somewhere too so there is a way to import it
+- Make the file open with dialouge use a custom one instead of the system defualt that is themed to look like MacOS Tahoe (and make the defualt file manager the one included too) to make the expereance more cohesive.
+- Remake the weather app to be like my StormView Swift rewrite for MacOS https://github.com/StormView-Project/StormView-MacOS
+- Make the dock a bit less buggy, like when you go all the way to the bottom of the screen to show the dock, it shows, and then it hides and shows again and does the same thing over and over again (only happens when autohide is turned on)
+- The display and sound sliders in the control panel look super broken, like the grabber is a rounded circle but the bar itself is a square at the end
 
 - FIx the graphics device section in the about window sometimes just showing some random device instead of your actual GPU
 - Make the website button in the appstore have a backround instead of having none wich looks kinda wierd/broken

@@ -20,6 +20,9 @@ enhanceSelects();
 
 // built-in apps register themselves on import
 import './apps/files.js';
+import './apps/filepicker.js';
+import './apps/appchooser.js';
+import './apps/widgetcreator.js';
 import './apps/terminal.js';
 import './apps/browser.js';
 import './apps/notes.js';

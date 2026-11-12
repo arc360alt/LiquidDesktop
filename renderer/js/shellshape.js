@@ -9,9 +9,9 @@ import { closeMenu } from './menus.js';
 import { dockHidden, revealDock } from './dock.js';
 import { menubarHidden, revealMenubar } from './menubar.js';
 
-const INTERACTIVE = ['#menubar', '#dock', '.dock-item', '.menu', '.cc', '#nc.open', '#toasts > *', '#switcher', '#spotlight .bar',
+const INTERACTIVE = ['#menubar', '#dock', '#dock .dock-floor', '.dock-item', '.menu', '.cc', '#nc.open', '#toasts > *', '#switcher', '#spotlight .bar',
   '#spotlight .chips > *', '#spotlight .results:not([hidden])', '#launcher', '#widget-gallery', '.global-alert-layer .alert', '#mission', '#lock', '#boot', '.quicklook', '#shot-layer'];
-const MODAL = ['.menu', '.cc', '#nc.open', '#spotlight-layer', '#launcher-layer', '.global-alert-layer', '#mission', '#lock', '#boot', '#switcher', '#widget-gallery', '.quicklook', '#shot-layer'];
+const MODAL = ['.menu', '.cc', '#nc.open', '#spotlight-layer', '#launcher-layer', '.global-alert-layer', '#mission', '#lock', '#boot', '#switcher', '.quicklook', '#shot-layer'];
 const KEYBOARD = ['#spotlight-layer', '#launcher-layer', '#lock', '.global-alert-layer', '#shot-layer'];
 // glass that gets a real blur behind it
 const GLASS = ['.glass', '#menubar.solid', '#menubar.revealed', '#mission', '.snap-preview'];

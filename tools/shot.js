@@ -28,6 +28,7 @@ app.whenReady().then(async () => {
   require('../main/appstore').register();
   require('../main/sddm').register();
   require('../main/appthemes').register({ mode: 'windowed' });
+  require('../main/portal').register({});
   require('../main/notifications').register({ resolveIcon: require('../main/system').resolveIcon });
   require('../main/tray').register({ resolveIcon: require('../main/system').resolveIcon });
   win.webContents.on('console-message', (e) => { const m = e.message ?? e; if (/error|LiquidDesktop/i.test(String(m))) console.log('[console]', m); });

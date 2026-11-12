@@ -212,11 +212,19 @@ function hueSat(hex) {
 /* ------------------------------------------------------------------ cursor theme (Settings › Mouse) */
 // The web UI draws its own cursors; any installed theme is turned into CSS cursors by the back end.
 let cursorKey = '';
+const CURSOR_KEYWORDS = ['default', 'pointer', 'text', 'move', 'copy', 'crosshair', 'not-allowed', 'progress', 'wait', 'ew-resize', 'ns-resize', 'nesw-resize', 'nwse-resize'];
 export function applyCursors() {
   const theme = store.get('cursorTheme') || 'MacOS-Tahoe-Cursor', size = store.get('cursorSize') || 48;
   const key = theme + ':' + size;
   if (key === cursorKey || !window.sys?.sys?.cursorCss) return;
   cursorKey = key;
+  // In the session, use the real (X) cursor: the same theme and size, set for the whole session by
+  // Settings › Mouse. Chromium only shows cursor images over 32px when they fit inside the window, so
+  // near any window edge it would swap ours for its native one and the cursor would jump in size.
+  if (layer === 'shell' || layer === 'desktop' || layer === 'app') {
+    for (const k of CURSOR_KEYWORDS) root.style.setProperty('--cur-' + k, k);
+    return;
+  }
   window.sys.sys.cursorCss(theme, size).then((css) => {
     if (cursorKey !== key) return;
     for (const [k, v] of Object.entries(css || {})) root.style.setProperty('--cur-' + k, v);

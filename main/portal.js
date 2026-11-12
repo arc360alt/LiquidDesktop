@@ -92,6 +92,28 @@ function appChooser() {
   return new AppChooser('org.freedesktop.impl.portal.AppChooser');
 }
 
+// Default Apps: other apps open files and links in LiquidDesktop's own apps through this
+// (session/liquid-desktop-open --app ID, from the liquiddesktop-*.desktop launchers)
+function opener() {
+  const { Interface } = dbus.interface;
+  const APPS = {
+    browser: (u) => ['browser', { url: u }, { size: [1100, 720], name: 'Browser' }],
+    preview: (u) => ['preview', { path: toPath(u) }, { size: [820, 600], name: 'Preview' }],
+    texteditor: (u) => ['texteditor', { path: toPath(u) }, { size: [760, 560], name: 'Text Editor' }],
+    files: (u) => ['files', { path: toPath(u) }, { size: [920, 560], minSize: [520, 320], name: 'Files' }],
+  };
+  class Open extends Interface {
+    OpenWith(appId, uris) {
+      const make = APPS[appId];
+      if (!make) return false;
+      for (const u of (uris || []).slice(0, 8)) openApp(...make(u));
+      return true;
+    }
+  }
+  Open.configureMembers({ methods: { OpenWith: { inSignature: 'sas', outSignature: 'b' } } });
+  return new Open('org.liquiddesktop.Open');
+}
+
 function fileManager() {
   const { Interface } = dbus.interface;
   class FileManager1 extends Interface {
@@ -119,6 +141,7 @@ async function start() {
       owned.chooser = true;
       bus.export('/org/freedesktop/portal/desktop', fileChooser());
       bus.export('/org/freedesktop/portal/desktop', appChooser());
+      bus.export('/org/liquiddesktop/Open', opener());
       // If the desktop portal started before this name existed (Chromium asks it for settings at startup), it
       // may have settled on another desktop's dialogs: restart it so it picks LiquidDesktop's.
       require('child_process').execFile('systemctl', ['--user', 'try-restart', 'xdg-desktop-portal.service'], () => {});
@@ -218,7 +241,7 @@ async function fixDialogs({ stopOther = false } = {}) {
     fs.writeFileSync(PORTAL_CONF, ['# written by LiquidDesktop at login (delete this line to keep your own edits)', '[preferred]', `default=${others};`,
       secret ? `org.freedesktop.impl.portal.Secret=${secret};` : null, `org.freedesktop.impl.portal.FileChooser=liquiddesktop;${others};`, `org.freedesktop.impl.portal.AppChooser=liquiddesktop;${others};`].filter(Boolean).join('\n') + '\n');
   }
-  if (mine(MIMEAPPS)) fs.writeFileSync(MIMEAPPS, '# written by LiquidDesktop at login (delete this line to keep your own edits)\n[Default Applications]\ninode/directory=liquid-desktop-files.desktop\nx-directory/normal=liquid-desktop-files.desktop\n');
+  if (mine(MIMEAPPS)) require('./defaultapps').refresh();   // folders → Files, plus the other Default Apps choices
   // apps opened from LiquidDesktop from now on ask the portal for their dialogs
   process.env.GTK_USE_PORTAL = '1';
   if (!/portals/.test(process.env.GDK_DEBUG || '')) process.env.GDK_DEBUG = [process.env.GDK_DEBUG, 'portals'].filter(Boolean).join(',');

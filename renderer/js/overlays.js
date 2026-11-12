@@ -236,11 +236,29 @@ export const switcherOpen = () => !!sw;
 
 /* ================================================================== HUD */
 let hud, hudT;
-export function showHud(icon, value) {
-  if (!hud) { hud = h('div#hud.glass.panel', h('span.i'), h('div.track', h('i'))); document.body.append(hud); }
-  hud.classList.remove('out');
-  hud.querySelector('.i').innerHTML = icon;
-  hud.querySelector('.track i').style.width = value + '%';
+// The volume / brightness OSD, macOS 26 style: a glass card under the menu bar's right end, with what's
+// changing ("Sound" + the output device, or "Display") and a thick level bar.
+//   showHud({ kind: 'sound' | 'display', value: 0–100, muted, sub })
+let hudDevice = '', hudDeviceAt = 0;
+export function showHud({ kind = 'sound', value = 0, muted = false, sub = '' } = {}) {
+  if (!hud) {
+    hud = h('div#hud.glass.panel', h('div.hud-head', h('b'), h('small')), h('div.hud-bar', h('div.hud-fill'), h('span.hud-ic')));
+    document.body.append(hud);
+  }
+  const sound = kind === 'sound';
+  hud.querySelector('b').textContent = sound ? 'Sound' : 'Display';
+  const small = hud.querySelector('small');
+  small.textContent = sub || (sound ? hudDevice : '');
+  // the output's name ("Creative Pebble", "AirPods"…), looked up now and then
+  if (sound && !sub && api.audio?.devices && Date.now() - hudDeviceAt > 5000) {
+    hudDeviceAt = Date.now();
+    api.audio.devices().then((d) => { hudDevice = d?.outputs?.find((o) => o.default)?.label || ''; if (hud.querySelector('b').textContent === 'Sound') small.textContent = hudDevice; }).catch(() => {});
+  }
+  const v = muted ? 0 : clamp(value, 0, 100);
+  hud.querySelector('.hud-fill').style.width = `calc(30px + (100% - 30px) * ${v / 100})`;   // the icon end always shows
+  hud.querySelector('.hud-ic').innerHTML = sound ? (muted || v === 0 ? sym.speakerMute : v < 34 ? sym.speakerLow : sym.speaker) : v < 40 ? sym.sunDim : sym.sun;
+  hud.classList.toggle('muted', muted);
+  if (hud.classList.contains('out') || !hud.classList.contains('in')) { hud.classList.remove('out'); void hud.offsetWidth; hud.classList.add('in'); }
   clearTimeout(hudT);
-  hudT = setTimeout(() => hud.classList.add('out'), 1300);
+  hudT = setTimeout(() => { hud.classList.add('out'); hud.classList.remove('in'); }, 1600);
 }

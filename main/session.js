@@ -39,7 +39,9 @@ async function startSession({ preload }) {
   wm.registerOwn(xidOf(shell), { role: 'shell' });
   shell.loadFile(INDEX, { query: { mode: 'session', layer: 'shell', login: process.env.LIQUID_SKIP_LOGIN ? '0' : '1' } });
   if (process.env.LIQUID_DEBUG) for (const bw of [shell, desktop]) bw.webContents.on('console-message', (e) => console.log('[' + bw.getTitle() + ']', e.message));
-  shell.webContents.setWindowOpenHandler(({ url }) => { openApp('browser', { url }); return { action: 'deny' }; });
+  // links open in the default browser (Settings › Default Apps): LiquidDesktop's own unless another was picked
+  const openLink = (url) => { if (!require('./defaultapps').openUrlExternally(url)) openApp('browser', { url }); };
+  shell.webContents.setWindowOpenHandler(({ url }) => { openLink(url); return { action: 'deny' }; });
 
   desktop.once('ready-to-show', () => desktop.showInactive());
   shell.once('ready-to-show', () => { shell.showInactive(); setTimeout(() => wm.setShellInput([], false), 50); });
@@ -67,7 +69,7 @@ async function startSession({ preload }) {
     bw.once('ready-to-show', () => bw.show());
     bw.on('page-title-updated', (e, t) => { const mw = wm.windows.get(id); if (mw) { mw.title = t; wm.changed(mw); } });
     bw.on('closed', () => appWindows.delete(id));
-    bw.webContents.setWindowOpenHandler(({ url }) => { openApp('browser', { url }); return { action: 'deny' }; });
+    bw.webContents.setWindowOpenHandler(({ url }) => { openLink(url); return { action: 'deny' }; });
     bw.webContents.on('did-attach-webview', (_e, wc) => wc.setWindowOpenHandler(({ url }) => { bw.webContents.send('browser:newTab', url); return { action: 'deny' }; }));
     return id;
   }

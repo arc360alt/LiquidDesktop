@@ -57,6 +57,9 @@ app.whenReady().then(async () => {
   require('./sddm').register();
   require('./notifications').register({ resolveIcon: require('./system').resolveIcon });
   require('./tray').register({ resolveIcon: require('./system').resolveIcon });
+  require('./bluetooth').register();
+  require('./audio').register(require('electron').ipcMain);
+  require('./defaultapps').register({ mode });
   require('./appthemes').register({ mode });   // before any app starts: Qt apps need QT_STYLE_OVERRIDE
   if (mode === 'session') {
     try {

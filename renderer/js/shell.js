@@ -1,6 +1,6 @@
 // Shell services shared by every component: lock screen, power, screenshots, opening files, shortcuts.
 import { h, $, bus, sleep, isCmd, extOf } from './util.js';
-import { sym, logo, appIcon, appIconSVG, IMAGE_EXT, TEXT_EXT } from './icons.js';
+import { sym, logo, appIcon, appIconSVG, IMAGE_EXT, VIDEO_EXT, AUDIO_EXT, TEXT_EXT } from './icons.js';
 import { api, isNative } from './sys.js';
 import { store } from './store.js';
 import { wm } from './wm.js';
@@ -36,13 +36,20 @@ export const shell = {
   },
 
   /** Open a path with the best built-in app, falling back to the system default. */
-  openPath(path, isDir) {
-    if (isDir) return wm.open('files', { path });
-    const ext = extOf(path);
+  async openPath(path, isDir) {
+    const ext = isDir ? '' : extOf(path);
     if (ext === 'desktop') return api.apps.info(path).then((a) => (a?.exec ? api.apps.launch(a.exec, a.terminal) : api.fs.open(path))).catch(() => api.fs.open(path));
-    if (IMAGE_EXT.has(ext)) return wm.open('preview', { path });
-    if (TEXT_EXT.has(ext)) return wm.open('texteditor', { path });
-    if (ext === 'html' || ext === 'htm' || ext === 'pdf') return wm.open('browser', { url: 'file://' + path });
+    const cat = isDir ? 'files' : IMAGE_EXT.has(ext) ? 'images' : VIDEO_EXT.has(ext) ? 'video' : AUDIO_EXT.has(ext) ? 'audio' : ext === 'pdf' ? 'pdf'
+      : ext === 'html' || ext === 'htm' ? 'web' : TEXT_EXT.has(ext) ? 'text' : null;
+    // another app picked in Settings › Default Apps
+    if (cat && api.defaults?.get) {
+      const pick = (await api.defaults.get().catch(() => ({})))?.[cat];
+      if (pick) return api.apps.openWith(pick, [path]).catch(() => api.fs.open(path));
+    }
+    if (isDir) return wm.open('files', { path });
+    if (cat === 'images' || cat === 'video' || cat === 'audio') return wm.open('preview', { path });
+    if (cat === 'text') return wm.open('texteditor', { path });
+    if (cat === 'web' || cat === 'pdf') return wm.open('browser', { url: 'file://' + path });
     return api.fs.open(path);
   },
 
@@ -190,15 +197,25 @@ function onKeyUp(e) {
 /* volume / brightness / media keys */
 function mediaKey(kind) {
   const v = status.s.volume, b = status.s.brightness;
+  // 16 steps from silent to full, like a Mac
+  const STEP = 100 / 16, step = (x, up) => Math.max(0, Math.min(100, Math.round((Math.round(x / STEP) + (up ? 1 : -1)) * STEP)));
   if (kind === 'volume-up' || kind === 'volume-down') {
-    const nv = Math.max(0, Math.min(100, (v?.level ?? 50) + (kind === 'volume-up' ? 6 : -6)));
-    api.sys.setVolume(nv); status.patch({ volume: { level: nv, muted: false } }); showHud(sym.speaker, nv);
+    const nv = step(v?.level ?? 50, kind === 'volume-up');
+    api.sys.setVolume(nv); if (v?.muted) api.sys.setMute(false);
+    status.patch({ volume: { level: nv, muted: false } }); showHud({ kind: 'sound', value: nv });
   } else if (kind === 'mute') {
-    const m = !v?.muted; api.sys.setMute(m); status.patch({ volume: { ...v, muted: m } }); showHud(m ? sym.speakerMute : sym.speaker, m ? 0 : v?.level ?? 0);
+    const m = !v?.muted; api.sys.setMute(m); status.patch({ volume: { ...v, muted: m } }); showHud({ kind: 'sound', value: v?.level ?? 0, muted: m });
   } else if (kind === 'brightness-up' || kind === 'brightness-down') {
-    if (b == null) return false;
-    const nb = Math.max(1, Math.min(100, b + (kind === 'brightness-up' ? 8 : -8)));
-    api.sys.setBrightness(nb); status.patch({ brightness: nb }); showHud(sym.sun, nb);
+    if (b == null) {
+      // no backlight to drive (desktop monitor, VM): dim the desktop instead, like the Control Center slider does
+      const nb = Math.max(10, step(store.get('softBrightness') ?? 100, kind === 'brightness-up'));
+      store.set('softBrightness', nb);
+      const d = document.getElementById('desktop'); if (d) d.style.filter = nb >= 100 ? '' : `brightness(${0.35 + 0.65 * nb / 100})`;
+      showHud({ kind: 'display', value: nb });
+      return true;
+    }
+    const nb = Math.max(1, step(b, kind === 'brightness-up'));
+    api.sys.setBrightness(nb); status.patch({ brightness: nb }); showHud({ kind: 'display', value: nb });
   } else if (kind.startsWith('media-')) api.sys.mediaCmd({ 'media-play': 'play-pause', 'media-next': 'next', 'media-prev': 'previous' }[kind]);
   return true;
 }

@@ -1,11 +1,20 @@
 # ToDo
 
 - Integrate the DE into Vertex Linux and then remake the website and add an interactive version of the DE so users can test it (DO LATER)
-- Fix the system monitor reporting that several tasks are using 20% CPU usage when the overall CPU usage is 5% (confirmed by the widget and btop, the system monitor is not reporting app usage correctly)
-- Fix the top bar not having any blur and just being slightly opaque (There are more blur issues like this all over the desktop where some elements are just slightly opaque instead of being blurred properly for some reason)
 - Maybe at some point decrease the ram/cpu usage but for right now it runs fine on any computer with above 8GB of ram (DO LATER)
 
 # Fixed
+- Fix the system monitor reporting that several tasks are using 20% CPU usage when the overall CPU usage is 5% (confirmed by the widget and btop, the system monitor is not reporting app usage correctly)
+- Fix the top bar not having any blur and just being slightly opaque (There are more blur issues like this all over the desktop where some elements are just slightly opaque instead of being blurred properly for some reason)
+- The now playing widget seems to not work, this may be an issue with the Nested instance or the code might actualy be broken
+- If i just move my mouse around the screen the size just randomly changes, like on the left and right sides of the screen if i move it all the way to the left or right the cursor just changes sizes, and going into windows timetimes changes the cursor size too
+- The bluetooth menu does not show a way to connect to/ pair exsiting or new devices, it just has a toggle to enable/disable bluetooth
+- Make the sound menu (in settings) display input and output deivces, their volume (especily for input devices) and a way to choose between them, and then in the control center like in MacOS make the sound menu able to drop down to show audio devices that you can choose from
+- Add proper OSD for Brightness and Audio (and make the brightness and volume keys that are on some keyboards actualy work, as I dont think that functionality has been added yet to the DE, idrk i didnt test it), make it look like the MacOS one (not the old pre big sur one the new one thats like the one on iPhone)
+- When I tried to move a folder that I created on the desktop to trash, it duplicated all the icons on the desktop for some reason, and then when I try to delete one of the icons both delete
+- Add a selector like on windows to the desktop, so if I hold click on the desktop i can select multiple files with a selector thing like again on windows
+- Fix this issue in the video/image viewer where it just says "File too large" sometimes with some files
+- Add a defualt app section to the settings so you can choose your defualt web browser, file explorer, video player/image viewer, etc (the defualt options there will be the DE's built in ones, but the user can choose otherwise if they want)
 - Whem im in a browser and I click on a button that opens an Open With dialouge it still opens my defualt file manager's open with window instead of Liquid Desktop's one (fixing this should also make it fix for other web browsers too)
 - The widget creator has a few issues, like when i click somthing in the insert list it does insert but it dosn't appear in the text box it just inserts it, so I am unable to delete anything after its inserted.
 - Add snapping to a grid and normal snapping to the widget editor (the user can select which one they want enabled) to make centering and moving object easier.

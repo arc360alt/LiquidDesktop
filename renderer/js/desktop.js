@@ -11,16 +11,21 @@ import { shell } from './shell.js';
 import { fileUrl } from './util.js';
 import { layer } from './layer.js';
 
-let iconsEl, places, lastSig = '';
+let iconsEl, places, lastSig = '', renderGen = 0;
 
+// Several things can ask for a redraw at once (a Trash action and the "files changed" event, the timer…).
+// Each draw builds its icons off to the side and only the newest one is put on the desktop, so two
+// overlapping draws can't both add their icons (which showed every icon twice).
 async function renderIcons(force = true) {
+  const gen = ++renderGen;
   if (!store.get('showDesktopIcons') || !places) { iconsEl.innerHTML = ''; lastSig = ''; return; }
   let items = [];
   try { items = (await api.fs.list(places.desktop)).filter((f) => !f.hidden).sort((a, b) => a.name.localeCompare(b.name)); } catch { return; }
+  if (gen !== renderGen) return;
   const sig = items.map((f) => f.name + f.mtime).join('|');
   if (!force && sig === lastSig) return;   // nothing changed: keep the selection
-  lastSig = sig;
-  iconsEl.innerHTML = '';
+  const selected = new Set($$('.desk-icon.sel', iconsEl).map((x) => x.dataset.path));
+  const out = [];
   for (const f of items) {
     const ic = h('div.fi');
     if (f.isDir) ic.innerHTML = folderIcon(f.name);
@@ -44,8 +49,12 @@ async function renderIcons(force = true) {
       { label: 'Show in Files', action: () => wm.open('files', { path: places.desktop, select: f.path }) }, '-',
       { label: 'Move to Trash', danger: true, action: async () => { await api.fs.trash(f.path); renderIcons(); bus.emit('fs-changed'); } },
     ]));
-    iconsEl.append(el);
+    if (selected.has(f.path)) el.classList.add('sel');
+    out.push(el);
   }
+  if (gen !== renderGen) return;   // a newer draw is on its way
+  lastSig = sig;
+  iconsEl.replaceChildren(...out);
 }
 
 /* ---------------------------------------------- widgets */
@@ -182,7 +191,8 @@ if (layer === 'shell' || layer === 'full') store.s.widgetEditing = false;
 function initSurface() {
   const surface = $('#desktop');
   surface.addEventListener('mousedown', (e) => {
-    if (e.target !== surface && e.target.id !== 'wallpaper' && e.target !== iconsEl && e.target.id !== 'widget-layer' && e.target.id !== 'spaces' && !e.target.classList.contains('space')) return;
+    // anywhere on the bare desktop (the wallpaper layers, the empty icon area…), not on things on it
+    if (e.target.closest('.desk-icon, .desk-widget, .widget, .win, #dock-wrap, #menubar, .menu, #widget-gallery, button, input, select, textarea, a')) return;
     if (e.button !== 0) return;
     wm.focused?.blur();
     $$('.desk-icon.sel').forEach((x) => x.classList.remove('sel'));

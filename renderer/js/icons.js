@@ -281,5 +281,7 @@ export function docIcon(ext) {
     <g stroke="#d1d1d6" stroke-width="2" stroke-linecap="round"><path d="M19 27h26M19 33h26M19 39h18"/></g>
     ${label ? `<rect x="15" y="44" width="34" height="11" rx="3" fill="${col}"/><text x="32" y="52.6" text-anchor="middle" font-family="Inter Variable, sans-serif" font-size="7.5" font-weight="700" fill="#fff">${label}</text>` : ''}</svg>`;
 }
-export const IMAGE_EXT = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp', 'ico', 'avif']);
+export const IMAGE_EXT = new Set(['png', 'jpg', 'jpeg', 'jfif', 'pjpeg', 'gif', 'webp', 'svg', 'bmp', 'ico', 'cur', 'avif', 'apng']);
+export const VIDEO_EXT = new Set(['mp4', 'm4v', 'webm', 'mkv', 'mov', 'ogv', '3gp']);
+export const AUDIO_EXT = new Set(['mp3', 'ogg', 'oga', 'opus', 'flac', 'wav', 'm4a', 'aac', 'weba']);
 export const TEXT_EXT = new Set(['txt', 'md', 'js', 'mjs', 'cjs', 'ts', 'tsx', 'jsx', 'json', 'py', 'sh', 'bash', 'zsh', 'rs', 'go', 'c', 'h', 'cpp', 'hpp', 'java', 'css', 'html', 'xml', 'yml', 'yaml', 'toml', 'ini', 'conf', 'cfg', 'log', 'csv', 'lua', 'rb', 'php', 'sql', 'desktop', 'env', 'gitignore', '']);

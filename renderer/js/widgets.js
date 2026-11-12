@@ -209,11 +209,17 @@ Object.assign(WIDGETS, {
   nowplaying: { name: 'Now Playing', cat: 'media', size: 'm', build(el) {
     const pad = h('div.w-pad.w-np');
     el.append(pad);
+    let shown = null;
     every(el, 3000, async () => {
       const m = await api.sys.media().catch(() => null);
+      const key = JSON.stringify(m && [m.title, m.artist, m.player, m.status, m.art]);
+      if (key === shown) return;   // unchanged: don't rebuild (the artwork would flash)
+      shown = key;
       pad.innerHTML = '';
       if (!m || !m.title) { pad.append(label('Now Playing'), h('div', { style: { opacity: 0.7, fontSize: '12px', marginTop: '10px' } }, 'Nothing is playing')); return; }
-      const art = m.art ? h('img', { src: m.art.startsWith('file://') || m.art.startsWith('http') ? m.art : '', draggable: false }) : h('div.w-np-noart', { html: sym.music });
+      const artOk = /^(file:|https?:|data:image\/)/.test(m.art || '');
+      const noArt = () => h('div.w-np-noart', { html: sym.music });
+      const art = artOk ? h('img', { src: m.art, draggable: false, onerror: (e) => e.target.replaceWith(noArt()) }) : noArt();
       const btn = (ic, cmd) => h('button', { html: ic, onclick: (e) => { e.stopPropagation(); api.sys.mediaCmd(cmd); } });
       pad.append(h('div.w-np-row', h('div.w-np-art', art), h('div.w-np-t', h('b', m.title), h('span', m.artist || m.player || ''),
         h('div.w-np-btns', btn(sym.prev, 'previous'), btn(m.status === 'Playing' ? sym.pause : sym.play, 'play-pause'), btn(sym.next, 'next')))));

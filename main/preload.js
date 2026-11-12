@@ -9,7 +9,8 @@ const names = ['sys:info', 'sys:status', 'sys:media', 'sys:mediaCmd', 'sys:setVo
   'sys:wifiList', 'sys:wifiConnect', 'sys:airplane', 'sys:bluetoothPower', 'sys:stats', 'sys:kill', 'sys:checkPassword', 'sys:power', 'sys:screenshot', 'sys:shells', 'sys:monoFonts', 'sys:updateCheck', 'sys:inputDevices', 'sys:inputApply', 'sys:cursorThemes', 'sys:cursorCss', 'sys:cursorApply', 'sys:displays', 'sys:setDisplay', 'dialogs:status', 'dialogs:fix', 'dialogs:test', 'picker:done', 'appchooser:done', 'net:fetch', 'fs:readDataUrl', 'fs:thumb', 'dialog:open', 'dialog:save', 'apptheme:status', 'apptheme:set', 'apptheme:install', 'sddm:status', 'sddm:apply', 'sddm:sudoStatus', 'sddm:sudoCheck', 'tray:list', 'tray:activate', 'tray:contextMenu', 'tray:menu', 'tray:event', 'sys:capture', 'sys:saveScreenshot', 'sys:account', 'sys:setRealName', 'sys:setAvatar', 'sys:changePassword',
   'fs:home', 'fs:list', 'fs:stat', 'fs:read', 'fs:write', 'fs:mkdir', 'fs:newFile', 'fs:rename', 'fs:move', 'fs:copy', 'fs:trash', 'fs:remove', 'fs:emptyTrash',
   'fs:open', 'fs:reveal', 'fs:search', 'fs:exists', 'fs:places', 'apps:list', 'apps:info', 'apps:iconFor', 'apps:launch', 'apps:run', 'clip:write', 'clip:read', 'pty:create',
-  'shell:toggleFullscreen', 'shell:devtools', 'shell:quit'];
+  'shell:toggleFullscreen', 'shell:devtools', 'shell:quit',
+  'bt:state', 'bt:scan', 'bt:pair', 'bt:connect', 'bt:forget', 'bt:power', 'audio:devices', 'audio:setDefault', 'audio:setVolume', 'audio:setMute', 'defaults:list', 'defaults:apply', 'defaults:get', 'apps:openWith'];
 const api = {};
 for (const n of names) {
   const [ns, fn] = n.split(':');
@@ -30,6 +31,8 @@ api.notif = {
 api.tray.onItems = (fn) => ipcRenderer.on('tray:items', (_e, list) => fn(list));
 api.sys.onUpdated = (fn) => ipcRenderer.on('sys:updated', () => fn());
 api.apps.onChanged = (fn) => ipcRenderer.on('apps:changed', () => fn());
+api.bt.onChanged = (fn) => ipcRenderer.on('bt:changed', () => fn());
+api.bt.onCode = (fn) => ipcRenderer.on('bt:code', (_e, c) => fn(c));
 api.shell.onOpenUrl = (fn) => ipcRenderer.on('shell:openUrl', (_e, url) => fn(url));
 // session mode: talk to the window manager (main/session.js)
 const OK = /^(wm|shell|appwin|frame):/;

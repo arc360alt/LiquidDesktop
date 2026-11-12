@@ -10,11 +10,12 @@ import { status } from '../status.js';
 import { prompt, confirmDialog, alertDialog } from '../menus.js';
 import { bus } from '../util.js';
 import { isSession } from '../layer.js';
+import { DEV_ICONS, btIcon, onBluetooth, onPairingCode } from '../devices.js';
 
 const ACCENTS = [['Multicolor', '#0a84ff'], ['Blue', '#007aff'], ['Purple', '#af52de'], ['Pink', '#ff2d55'], ['Red', '#ff3b30'], ['Orange', '#ff9500'], ['Yellow', '#ffcc00'], ['Green', '#34c759'], ['Graphite', '#8e8e93']];
 
 const PANES = [
-  ['general', 'General', '#8e8e93', sym.gear], ['appearance', 'Appearance', '#1c1c1e', sym.contrast], ['wallpaper', 'Wallpaper', '#32ade6', sym.photo],
+  ['general', 'General', '#8e8e93', sym.gear], ['defaults', 'Default Apps', '#30b0c7', sym.check], ['appearance', 'Appearance', '#1c1c1e', sym.contrast], ['wallpaper', 'Wallpaper', '#32ade6', sym.photo],
   ['dock', 'Desktop & Dock', '#1c1c1e', sym.dock], ['menubar', 'Menu Bar', '#0a84ff', sym.controls], ['display', 'Displays', '#0a84ff', sym.display],
   ['sound', 'Sound', '#ff2d55', sym.speaker], ['network', 'Wi-Fi', '#0a84ff', sym.wifi], ['bluetooth', 'Bluetooth', '#0a84ff', sym.bluetooth],
   ['notifications', 'Notifications', '#ff3b30', sym.bell], ['focus', 'Focus', '#5e5ce6', sym.moon], ['lock', 'Lock Screen', '#1c1c1e', sym.lock],
@@ -281,13 +282,47 @@ const render = {
         h('div.group', row('Full screen (testing window)', h('button.btn', { onclick: () => api.shell.toggleFullscreen() }, 'Toggle')))]));
     return out;
   },
-  sound() {
+  async sound() {
     const v = status.s.volume;
+    let d = null;
+    try { d = await api.audio?.devices(); } catch { d = null; }
+    if (!d?.available) {
+      return [
+        hero('sound', 'Sound', v ? 'Output volume of the default audio device (PipeWire / PulseAudio).' : 'No audio control found (needs wpctl or pactl).'),
+        h('div.group',
+          row('Output volume', liveSlider(v?.level, (x) => { api.sys.setVolume(x); status.patch({ volume: { level: x, muted: false } }); })),
+          row('Mute', h('label.toggle', h('input', { type: 'checkbox', checked: !!v?.muted, onchange: (e) => { api.sys.setMute(e.target.checked); status.patch({ volume: { ...v, muted: e.target.checked } }); } }), h('span')))),
+      ];
+    }
+    // one section per direction: the device in use with its volume and mute, then every device to switch to
+    const section = (kind, list, title) => {
+      const cur = list.find((x) => x.default);
+      const vol = cur ? liveSlider(cur.volume, (x) => {
+        api.audio.setVolume(kind, cur.name, x);
+        if (kind === 'output') status.patch({ volume: { level: x, muted: false } });
+        if (cur.muted) { api.audio.setMute(kind, cur.name, false); cur.muted = false; mute.querySelector('input').checked = false; }
+      }) : null;
+      const mute = h('label.toggle', h('input', { type: 'checkbox', checked: !!cur?.muted, disabled: !cur, onchange: (e) => {
+        api.audio.setMute(kind, cur.name, e.target.checked);
+        if (kind === 'output') status.patch({ volume: { level: cur.volume, muted: e.target.checked } });
+      } }), h('span'));
+      const rows = list.map((x) => h('div.row.link.snd-dev' + (x.default ? '.sel' : ''), {
+        onclick: async () => { if (x.default) return; await api.audio.setDefault(kind, x.name).catch(() => {}); if (kind === 'output') status.refresh(); rerender(); },
+      }, h('span.snd-ic', { html: DEV_ICONS[x.kind] || DEV_ICONS.speaker }), h('div.label', x.label, h('small', x.default ? 'In use' : kindName(x.kind))),
+        x.default ? h('span', { html: sym.check, style: { width: '16px', color: 'var(--accent)', display: 'flex' } }) : null));
+      return [
+        h('div.group-title', title),
+        h('div.group',
+          cur ? row(kind === 'output' ? 'Output volume' : 'Input volume', vol, cur.label) : row(h('span.muted', 'No devices'), null),
+          cur ? row(kind === 'output' ? 'Mute' : 'Mute microphone', mute) : null),
+        list.length ? h('div.group', ...rows) : null,
+      ];
+    };
+    const kindName = (k) => ({ headphones: 'Headphones', speaker: 'Speakers', display: 'Display audio (HDMI / DisplayPort)', usb: 'USB', mic: 'Microphone', camera: 'Webcam', bluetooth: 'Bluetooth' }[k] || '');
     return [
-      hero('sound', 'Sound', v ? 'Output volume of the default audio device (PipeWire / PulseAudio).' : 'No audio control found (needs wpctl or pactl).'),
-      h('div.group',
-        row('Output volume', liveSlider(v?.level, (x) => { api.sys.setVolume(x); status.patch({ volume: { level: x, muted: false } }); })),
-        row('Mute', h('label.toggle', h('input', { type: 'checkbox', checked: !!v?.muted, onchange: (e) => { api.sys.setMute(e.target.checked); status.patch({ volume: { ...v, muted: e.target.checked } }); } }), h('span')))),
+      hero('sound', 'Sound', 'Choose where sound plays and which microphone is used, and set their volumes.'),
+      ...section('output', d.outputs, 'Output'),
+      ...section('input', d.inputs, 'Input'),
     ];
   },
   async network() {
@@ -309,7 +344,31 @@ const render = {
       h('div.group-title', 'Networks'), list,
     ];
   },
-  bluetooth() {
+  async defaults() {
+    let d = null;
+    try { d = await api.defaults?.list(); } catch { d = null; }
+    if (!d) return [hero('defaults', 'Default Apps', 'Default apps can only be chosen in the LiquidDesktop app or session.')];
+    const choices = { ...d.choices };
+    const rows = Object.entries(d.categories).map(([cat, c]) => {
+      const apps = d.apps[cat] || [];
+      const sel = h('select.field.square', { style: { height: '28px', minWidth: '220px' }, onchange: async (e) => {
+        if (e.target.value) choices[cat] = e.target.value; else delete choices[cat];
+        await api.defaults.apply(choices).catch(() => {});
+      } },
+      h('option', { value: '' }, `${c.builtinName} (built in)`),
+      ...apps.map((a) => h('option', { value: a.id, selected: choices[cat] === a.id }, a.name)));
+      return row(c.label, sel, apps.length ? null : 'No other installed app opens these');
+    });
+    return [
+      hero('defaults', 'Default Apps', 'Choose which apps open links, folders, pictures, videos, music and documents — here and in your other apps.'),
+      h('div.group', ...rows),
+    ];
+  },
+  async bluetooth() {
+    if (api.bt?.state) {
+      const st = await api.bt.state().catch(() => null);
+      if (st?.available) return bluetoothPane(st);
+    }
     const b = status.s.bluetooth;
     return [
       hero('bluetooth', 'Bluetooth', b ? 'Turn Bluetooth on or off. Pair devices with your system’s Bluetooth tool.' : 'No Bluetooth controller found (bluetoothctl).'),
@@ -725,6 +784,67 @@ function softwareUpdateGroup() {
   setTimeout(check, 50);
   return group;
 }
+/* ------------------------------------------------------------------ Bluetooth */
+// Lives as long as the pane is shown: redraws itself when BlueZ reports a change, and looks for
+// nearby devices while it's open (scanning stops when you leave the pane).
+function bluetoothPane(first) {
+  const root = h('div.bt-pane');
+  let st = first, busy = new Set(), scanning = false;
+  const errors = new Map();
+  const refresh = async () => { try { st = await api.bt.state(); } catch { /* keep the last one */ } draw(); };
+  const act = async (d, fn) => {
+    busy.add(d.path); errors.delete(d.path); draw();
+    const r = await fn().catch((e) => ({ ok: false, error: e.message }));
+    busy.delete(d.path);
+    if (r && r.ok === false) errors.set(d.path, r.error);
+    await refresh();
+  };
+  const scan = (on) => { if (scanning === on || !st.powered) return; scanning = on; api.bt.scan(on).catch(() => {}); };
+
+  function devRow(d) {
+    const working = busy.has(d.path);
+    const sub = errors.get(d.path) || (working ? (d.paired ? (d.connected ? 'Disconnecting…' : 'Connecting…') : 'Pairing…')
+      : d.paired ? (d.connected ? 'Connected' : 'Not Connected') + (d.battery != null ? ` · Battery ${d.battery}%` : '') : '');
+    const btn = d.paired
+      ? h('button.btn', { disabled: working, onclick: () => act(d, () => api.bt.connect(d.path, !d.connected)) }, d.connected ? 'Disconnect' : 'Connect')
+      : h('button.btn', { disabled: working, onclick: () => act(d, () => api.bt.pair(d.path)) }, 'Connect');
+    const more = d.paired ? h('button.btn.icon-btn', { title: 'Options', html: sym.ellipsis, onclick: async () => {
+      if (await confirmDialog(`Forget “${d.name}”?`, 'It will need to be paired again before it can connect to this computer.', 'Forget Device', { danger: true })) act(d, () => api.bt.forget(d.path));
+    } }) : null;
+    return h('div.row.bt-dev', h('span.snd-ic' + (d.connected ? '.on' : ''), { html: btIcon(d.icon) }),
+      h('div.label', d.name, sub ? h('small' + (errors.has(d.path) ? '.bt-err' : ''), sub) : null), working ? h('span.spinner') : null, btn, more);
+  }
+  function draw() {
+    if (!root.isConnected && root.childElementCount) return;
+    const mine = st.devices.filter((d) => d.paired), near = st.devices.filter((d) => !d.paired);
+    root.replaceChildren(
+      hero('bluetooth', 'Bluetooth', st.powered ? `This computer appears to nearby devices as “${st.name}”.` : 'Turn Bluetooth on to connect headphones, keyboards, mice and more.'),
+      h('div.group', row('Bluetooth', h('label.toggle', h('input', { type: 'checkbox', checked: st.powered, onchange: async (e) => {
+        await api.bt.power(e.target.checked).catch(() => {}); scanning = false; status.refresh(); await refresh(); if (e.target.checked) scan(true);
+      } }), h('span')))),
+      ...(st.powered ? [
+        h('div.group-title', 'My Devices'),
+        h('div.group', ...(mine.length ? mine.map(devRow) : [row(h('span.muted', 'No devices yet. Ones you connect to show up here.'), null)])),
+        h('div.group-title.bt-near', 'Nearby Devices', h('span.spinner.small')),
+        h('div.group', ...(near.length ? near.map(devRow) : [row(h('span.muted', 'Looking for devices… Make sure yours is in pairing mode.'), null)])),
+      ] : []));
+  }
+  draw();
+  onBluetooth(root, refresh);
+  // a device that shows a code (keyboards: type it there; others: check it matches)
+  const offCode = onPairingCode((c) => {
+    $$('.bt-code', root).forEach((x) => x.remove());
+    if (!c || !root.isConnected) return;
+    const d = st.devices.find((x) => x.path === c.path);
+    root.insertBefore(h('div.group.bt-code', h('div.row', h('div.label', c.confirm ? `Pairing with ${d?.name || 'the device'}: check that it shows this code` : `Type this code on ${d?.name || 'the device'}, then press Return`,
+      h('b.bt-code-num', c.code)))), root.children[2] || null);
+  });
+  // start looking now; stop once the pane is gone
+  setTimeout(() => scan(true), 300);
+  const watch = setInterval(() => { if (root.isConnected) return; clearInterval(watch); offCode(); scan(false); }, 1500);
+  return [root];
+}
+
 const displayState = { sel: null, draft: null };
 const mouseState = { sel: '*' };
 const shellMode = () => document.documentElement.dataset.mode;

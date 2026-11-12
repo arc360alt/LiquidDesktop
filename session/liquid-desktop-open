@@ -1,11 +1,38 @@
 #!/bin/sh
-# Opens folders (or shows files) in LiquidDesktop's Files, through the org.freedesktop.FileManager1 service
-# the running session provides. Used as the session's default app for folders (liquid-desktop-files.desktop).
-#   liquid-desktop-open [FOLDER|FILE|file://URI]...
-[ $# -eq 0 ] && set -- "$HOME"
+# Opens things in the running LiquidDesktop session.
+#   liquid-desktop-open [FOLDER|FILE|file://URI]...      folders in Files (files are shown in their folder),
+#                                                        through the org.freedesktop.FileManager1 service.
+#                                                        The session's default app for folders
+#                                                        (liquid-desktop-files.desktop).
+#   liquid-desktop-open --app ID [FILE|URI]...           opens them in one of LiquidDesktop's apps (browser,
+#                                                        preview, texteditor, files): what the Default Apps
+#                                                        launchers (liquiddesktop-*.desktop) run.
+APP=
+if [ "$1" = "--app" ]; then APP="$2"; shift 2; fi
+[ $# -eq 0 ] && [ -z "$APP" ] && set -- "$HOME"
+
+# a file path or URI → a URI, with the characters that would break the D-Bus call text escaped
+to_uri() {
+  case "$1" in
+    *://*|mailto:*|about:*) U="$1" ;;
+    *) P="$(realpath -- "$1" 2>/dev/null || echo "$1")"; U="file://$(printf '%s' "$P" | sed 's/%/%25/g; s/ /%20/g')" ;;
+  esac
+  printf '%s' "$U" | sed "s/'/%27/g; s/\\\\/%5C/g"
+}
+
+if [ -n "$APP" ]; then
+  LIST=
+  for A in "$@"; do LIST="$LIST${LIST:+, }'$(to_uri "$A")'"; done
+  gdbus call --session --dest org.freedesktop.impl.portal.desktop.liquiddesktop --object-path /org/liquiddesktop/Open \
+    --method org.liquiddesktop.Open.OpenWith "'$APP'" "[$LIST]" >/dev/null 2>&1 \
+    || busctl --user call org.freedesktop.impl.portal.desktop.liquiddesktop /org/liquiddesktop/Open org.liquiddesktop.Open OpenWith sas "$APP" $# "$@" >/dev/null 2>&1 \
+    || { echo "liquid-desktop-open: LiquidDesktop isn't running" >&2; exit 1; }
+  exit 0
+fi
+
 for A in "$@"; do
-  case "$A" in file://*) U="$A" ;; *) P="$(realpath -- "$A" 2>/dev/null || echo "$A")"; U="file://$(printf '%s' "$P" | sed 's/%/%25/g; s/ /%20/g')" ;; esac
-  P="$(printf '%s' "${U#file://}" | sed 's/%20/ /g; s/%25/%/g')"
+  U="$(to_uri "$A")"
+  P="$(printf '%s' "${U#file://}" | sed 's/%20/ /g; s/%27/'"'"'/g; s/%5C/\\\\/g; s/%25/%/g')"
   if [ -d "$P" ]; then M=ShowFolders; else M=ShowItems; fi
   # gdbus follows this session's bus address; busctl --user is the fallback
   if command -v gdbus >/dev/null && gdbus call --session --dest org.freedesktop.FileManager1 --object-path /org/freedesktop/FileManager1 \

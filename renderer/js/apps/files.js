@@ -1,6 +1,6 @@
 // Files — a Finder-style file manager for the real filesystem.
 import { h, $, $$, bus, basename, dirname, fmtSize, fmtDate, fileUrl, isCmd } from '../util.js';
-import { sym, folderIcon, docIcon, IMAGE_EXT, TEXT_EXT, appIconSVG } from '../icons.js';
+import { sym, folderIcon, docIcon, IMAGE_EXT, VIDEO_EXT, AUDIO_EXT, TEXT_EXT, appIconSVG } from '../icons.js';
 import { registerApp, wm } from '../wm.js';
 import { api } from '../sys.js';
 import { contextMenu, prompt, confirmDialog, showMenu } from '../menus.js';
@@ -355,6 +355,8 @@ class FilesView {
     const ql = h('div.quicklook.glass.panel', h('div.ql-head', h('span.spacer.ellipsis', f.name), h('button.btn', { onclick: () => { ql.remove(); this.openItem(f); } }, 'Open'), h('button.tb-btn', { html: sym.close, onclick: () => ql.remove() })), body);
     if (f.isDir) body.innerHTML = `<div style="width:160px">${folderIcon(f.name)}</div>`;
     else if (IMAGE_EXT.has(f.ext)) body.append(h('img', { src: fileUrl(f.path) }));
+    else if (VIDEO_EXT.has(f.ext)) body.append(h('video', { src: fileUrl(f.path), controls: true, autoplay: true, style: { maxWidth: '100%', maxHeight: '100%' } }));
+    else if (AUDIO_EXT.has(f.ext)) body.append(h('audio', { src: fileUrl(f.path), controls: true, autoplay: true }));
     else if (TEXT_EXT.has(f.ext)) { const pre = h('pre', 'Loading…'); body.append(pre); api.fs.read(f.path).then((t) => (pre.textContent = t.slice(0, 200000))).catch((e) => (pre.textContent = e.message)); }
     else body.innerHTML = `<div style="width:160px">${docIcon(f.ext)}</div>`;
     document.body.append(ql);

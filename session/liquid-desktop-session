@@ -90,7 +90,8 @@ fi
 # Folders open in LiquidDesktop's Files: a default that only applies in this session (the
 # "liquiddesktop-mimeapps.list" is read only when XDG_CURRENT_DESKTOP is LiquidDesktop)
 MIMEAPPS="${XDG_CONFIG_HOME:-$HOME/.config}/liquiddesktop-mimeapps.list"
-if [ ! -e "$MIMEAPPS" ] || grep -q '^# written by LiquidDesktop' "$MIMEAPPS" 2>/dev/null; then
+# (LiquidDesktop rewrites it with every Default Apps choice once it's running; this is just the starting point)
+if [ ! -e "$MIMEAPPS" ]; then
   printf '%s\n' '# written by LiquidDesktop at login (delete this line to keep your own edits)' '[Default Applications]' \
     'inode/directory=liquid-desktop-files.desktop' 'x-directory/normal=liquid-desktop-files.desktop' > "$MIMEAPPS"
 fi

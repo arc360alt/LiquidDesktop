@@ -195,6 +195,7 @@ async function listApps(force) {
           id: 'desktop:' + f, file: path.join(dir, f), name: e.Name || f, comment: e.Comment || e.GenericName || '',
           exec: e.Exec, terminal: e.Terminal === 'true', icon: resolveIcon(e.Icon), iconName: e.Icon || '',
           categories: (e.Categories || '').split(';').filter(Boolean), wmClass: e.StartupWMClass || '', keywords: (e.Keywords || '').split(';').filter(Boolean),
+          mimes: (e.MimeType || '').split(';').filter(Boolean),
         });
       } catch { /* unreadable entry */ }
     }
@@ -293,6 +294,9 @@ async function wifiList() {
 }
 
 async function bluetooth() {
+  // BlueZ over D-Bus (main/bluetooth.js); bluetoothctl only if that isn't reachable
+  const st = await require('./bluetooth').state().catch(() => null);
+  if (st?.available) return { powered: st.powered, connected: st.devices.filter((d) => d.connected).map((d) => d.name) };
   if (!which('bluetoothctl')) return null;
   const r = await run('bluetoothctl', ['show'], { timeout: 2500 });
   if (!r.out.trim()) return null;
@@ -300,6 +304,9 @@ async function bluetooth() {
 }
 
 async function media() {
+  // straight over D-Bus (no playerctl needed); playerctl only if the bus isn't reachable
+  const mpris = require('./media');
+  if (mpris.available()) return mpris.current();
   if (!which('playerctl')) return null;
   const r = await run('playerctl', ['metadata', '--format', '{{status}}\t{{title}}\t{{artist}}\t{{mpris:artUrl}}\t{{playerName}}']);
   if (!r.ok || !r.out.trim()) return null;
@@ -413,7 +420,7 @@ function changePassword(current, next) {
 }
 
 /* ------------------------------------------------------------------ Activity Monitor */
-// Live numbers from /proc, sampled between calls: per-process CPU % (of one core, like top), memory,
+// Live numbers from /proc, sampled between calls: per-process CPU % (of the whole CPU, like btop), memory,
 // threads, disk I/O, plus system CPU/memory/swap and disk and network throughput.
 const PAGE = 4096, HZ = 100;
 let prevSample = null;
@@ -442,7 +449,15 @@ function netBytes() {
   }
   return ifs;
 }
+// Several things ask at once (Activity Monitor, the CPU widgets, custom widgets). They all share one sample:
+// measuring again a few milliseconds after someone else did would divide by an almost-empty interval and turn a
+// single clock tick into a big percentage. So: at most one fresh sample per ~second, everyone gets that one.
+let lastStats = null;
 function procStats() {
+  if (lastStats && prevSample && Date.now() - prevSample.t < 900) return lastStats;
+  return (lastStats = sampleStats());
+}
+function sampleStats() {
   const now = Date.now(), cpu = cpuTimes(), cores = os.cpus().length || 1;
   const prev = prevSample, dt = prev ? Math.max(0.2, (now - prev.t) / 1000) : 1;
   const dTotal = prev ? Math.max(1, cpu.total - prev.cpu.total) : 1;
@@ -463,7 +478,8 @@ function procStats() {
       let io = null;
       if (uid === me) { try { const t = fs.readFileSync(`/proc/${d}/io`, 'utf8'); io = { r: Number(t.match(/read_bytes:\s*(\d+)/)?.[1] || 0), w: Number(t.match(/write_bytes:\s*(\d+)/)?.[1] || 0) }; } catch { /* not allowed */ } }
       const p0 = prev?.procs.get(pid);
-      const cpuPct = p0 ? Math.max(0, ((ticks - p0.ticks) / dTotal) * 100 * cores) : 0;
+      // share of the whole CPU (like btop), so the processes add up to the overall CPU figure
+      const cpuPct = p0 ? Math.min(100, Math.max(0, ((ticks - p0.ticks) / dTotal) * 100)) : 0;
       seen.set(pid, { ticks, io });
       threads += nth;
       procs.push({ pid, name, user: names.get(uid) || String(uid), mine: uid === me, cpu: Math.round(cpuPct * 10) / 10, cpuTime: ticks / HZ, threads: nth, rss, ppid: Number(f[1]), state: f[0],
@@ -547,7 +563,7 @@ function register({ getWindow, mode }) {
     return { battery: battery(), volume: vol, brightness: br, wifi: wf, bluetooth: bt };
   });
   h('sys:media', media);
-  h('sys:mediaCmd', (cmd) => which('playerctl') && run('playerctl', [cmd]));
+  h('sys:mediaCmd', (cmd) => (require('./media').available() ? require('./media').command(cmd) : which('playerctl') && run('playerctl', [cmd])));
   h('sys:setVolume', async (v) => {
     v = Math.max(0, Math.min(100, Math.round(v)));
     if (which('wpctl')) return run('wpctl', ['set-volume', '@DEFAULT_AUDIO_SINK@', `${v}%`]);
@@ -561,7 +577,7 @@ function register({ getWindow, mode }) {
   h('sys:wifiConnect', (ssid, password) => which('nmcli') &&
     run('nmcli', password ? ['device', 'wifi', 'connect', ssid, 'password', password] : ['device', 'wifi', 'connect', ssid], { timeout: 30000 }));
   h('sys:airplane', (on) => which('nmcli') && run('nmcli', ['radio', 'all', on ? 'off' : 'on']));
-  h('sys:bluetoothPower', (on) => which('bluetoothctl') && run('bluetoothctl', ['power', on ? 'on' : 'off']));
+  h('sys:bluetoothPower', async (on) => (await require('./bluetooth').power(on).catch(() => false)) || (which('bluetoothctl') && run('bluetoothctl', ['power', on ? 'on' : 'off'])));
   h('sys:stats', async () => procStats());
   h('sys:account', accountInfo);
   h('sys:setRealName', setRealName);
@@ -773,4 +789,4 @@ function register({ getWindow, mode }) {
   app.on('before-quit', () => { for (const c of ptys.values()) c.kill(); });
 }
 
-module.exports = { register, resolveIcon };
+module.exports = { register, resolveIcon, listApps, launchEnv };

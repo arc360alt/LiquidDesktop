@@ -13,8 +13,35 @@ const INTERACTIVE = ['#menubar', '#dock', '#dock .dock-floor', '.dock-item', '.m
   '#spotlight .chips > *', '#spotlight .results:not([hidden])', '#launcher', '#widget-gallery', '.global-alert-layer .alert', '#mission', '#lock', '#boot', '.quicklook', '#shot-layer'];
 const MODAL = ['.menu', '.cc', '#nc.open', '#spotlight-layer', '#launcher-layer', '.global-alert-layer', '#mission', '#lock', '#boot', '#switcher', '.quicklook', '#shot-layer'];
 const KEYBOARD = ['#spotlight-layer', '#launcher-layer', '#lock', '.global-alert-layer', '#shot-layer'];
-// glass that gets a real blur behind it
-const GLASS = ['.glass', '#menubar.solid', '#menubar.revealed', '#mission', '.snap-preview'];
+// glass that gets a real blur behind it: these, plus anything the stylesheets give a backdrop blur (see glassSelectors)
+const GLASS = ['.glass', '#menubar', '#mission', '#launchpad', '.snap-preview'];
+
+// The shell page is transparent, so a CSS backdrop-filter in it has nothing to blur: it only shows a faint tint.
+// Every rule that asks for one is collected here, so those elements get a real (compositor) blur too.
+function glassSelectors() {
+  const out = new Set(GLASS);
+  const splitTop = (sel) => {
+    const parts = []; let depth = 0, cur = '';
+    for (const ch of sel) { if (ch === '(') depth++; if (ch === ')') depth--; if (ch === ',' && !depth) { parts.push(cur); cur = ''; } else cur += ch; }
+    parts.push(cur);
+    return parts.map((x) => x.trim()).filter(Boolean);
+  };
+  const walk = (rules) => {
+    for (const r of rules) {
+      if (r.cssRules && !r.selectorText) { walk(r.cssRules); continue; }
+      if (!r.selectorText || !r.style) continue;
+      const bf = r.style.getPropertyValue('backdrop-filter') || r.style.getPropertyValue('-webkit-backdrop-filter');
+      if (!bf || bf === 'none' || !/blur\(/.test(bf)) continue;
+      for (const sel of splitTop(r.selectorText)) {
+        if (sel.includes('::') || /#lock|#boot|data-layer='(app|desktop)'/.test(sel)) continue;
+        try { document.querySelector(sel); out.add(sel); } catch { /* not a selector the DOM can match */ }
+      }
+    }
+  };
+  for (const sheet of document.styleSheets) { try { walk(sheet.cssRules); } catch { /* cross-origin sheet */ } }
+  return [...out].join(', ');
+}
+let glassSel = GLASS.join(', ');
 const RADII = [0, 6, 10, 14, 18, 22, 26, 30, 36];   // must match the rules in session/picom.conf
 
 const visible = (el) => {
@@ -33,13 +60,14 @@ function measure() {
   const input = [];
   for (const sel of INTERACTIVE) for (const el of $$(sel)) { const v = visible(el); if (v) input.push(px(v.b)); }
   const blur = [];
-  const seen = new Set();
-  for (const sel of GLASS) {
-    for (const el of $$(sel)) {
-      if (seen.has(el) || el.closest('#lock, #boot')) continue;
-      seen.add(el);
+  const all = new Set($$(glassSel));
+  for (const el of all) {
+    {
+      if (el.closest('#lock, #boot')) continue;
       // glass inside other glass (e.g. widget previews in the gallery) is already covered by the outer blur
-      if (el.parentElement?.closest('.glass')) continue;
+      let inner = false;
+      for (let p = el.parentElement; p && !inner; p = p.parentElement) inner = all.has(p) && !!visible(p);
+      if (inner) continue;
       const v = visible(el);
       if (!v) continue;
       // only the part that's actually shown: clip to any scrolling / clipping container around it
@@ -60,6 +88,7 @@ function measure() {
   const modal = MODAL.some((s) => $(s));
   const key = JSON.stringify([input, modal, blur]);
   if (key !== lastKey) { lastKey = key; S.send('shell:regions', input, modal, blur); }
+  window.__liquidRegions = { input, modal, blur };   // for debugging: what the window manager was told
   const kb = KEYBOARD.some((s) => $(s));
   if (kb !== lastKb) { lastKb = kb; S.send('shell:focus', kb); }
   const edges = JSON.stringify({ bottom: dockHidden(), top: menubarHidden() });
@@ -83,6 +112,7 @@ function wake(ms = 450) {
 }
 
 export function initShellShape() {
+  glassSel = glassSelectors();
   new MutationObserver(() => wake()).observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['class', 'style', 'hidden'] });
   addEventListener('mousemove', () => wake(200), { passive: true });
   addEventListener('transitionrun', () => wake(700));

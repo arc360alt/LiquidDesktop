@@ -7,6 +7,7 @@ import { api } from './sys.js';
 import { attachLens, theme } from './theme.js';
 import { shell } from './shell.js';
 import { prompt } from './menus.js';
+import { DEV_ICONS, btIcon, onBluetooth } from './devices.js';
 
 let panel = null, mediaTimer = null, offStatus = null;
 
@@ -64,7 +65,9 @@ function mainView() {
       store.set('airplane', on);
       await api.sys.airplane(on); status.refresh();
     }));
-  conn.querySelector('.cc-tog .t').addEventListener('click', () => render('wifi'));
+  const [wifiT, btT] = conn.querySelectorAll('.cc-tog .t');
+  wifiT.addEventListener('click', () => render('wifi'));
+  btT.addEventListener('click', () => render('bluetooth'));
 
   const np = h('div.cc-mod.span2.row2', h('div.cc-np', h('div.art', { html: sym.music }), h('div.meta', h('b', 'Not Playing'), h('span', 'Music'))),
     h('div.cc-np-ctrl',
@@ -91,8 +94,11 @@ function mainView() {
 
   const vol = s.volume;
   const sound = h('div.cc-mod.span4.cc-slider-mod', h('h4', 'Sound'),
-    slider(vol?.muted ? sym.speakerMute : sym.speaker, vol?.level ?? 50, (v) => { api.sys.setVolume(v); if (vol?.muted) api.sys.setMute(false); },
-      (v) => status.patch({ volume: { level: v, muted: false } })));
+    h('div.cc-slider-row',
+      slider(vol?.muted ? sym.speakerMute : sym.speaker, vol?.level ?? 50, (v) => { api.sys.setVolume(v); if (vol?.muted) api.sys.setMute(false); },
+        (v) => status.patch({ volume: { level: v, muted: false } })),
+      api.audio?.devices ? h('button.cc-more', { title: 'Sound devices', html: sym.chevronRight, onclick: (e) => { e.stopPropagation(); render('sound'); } }) : null));
+  sound.querySelector('h4').addEventListener('click', () => render('sound'));
 
   const ns = sq(sym.nightshift, 'Night Shift', store.get('nightShift'), () => { store.set('nightShift', !store.get('nightShift')); render(); });
   const lockB = sq(sym.lock, 'Lock', false, () => { close(); shell.lock(); });
@@ -136,6 +142,63 @@ async function wifiView() {
   return [mod];
 }
 
+// Bluetooth: your devices, click one to connect or disconnect it
+async function bluetoothView() {
+  const st = await api.bt?.state().catch(() => null);
+  const list = h('div.cc-list');
+  const t = h('label.toggle', h('input', { type: 'checkbox', checked: !!st?.powered, disabled: !st?.available, onchange: async (e) => { await api.sys.bluetoothPower(e.target.checked); status.refresh(); setTimeout(() => render('bluetooth'), 600); } }), h('span'));
+  const mod = h('div.cc-mod.cc-detail', h('h3', h('button.cc-back', { html: sym.chevronLeft, onclick: () => render() }), 'Bluetooth', t), list);
+  const draw = (st) => {
+    list.innerHTML = '';
+    const mine = (st?.devices || []).filter((d) => d.paired);
+    if (!st?.available) list.append(h('div.cc-list-item', { style: { opacity: 0.6 } }, 'Bluetooth isn’t available'));
+    else if (!st.powered) list.append(h('div.cc-list-item', { style: { opacity: 0.6 } }, 'Bluetooth is off'));
+    else if (!mine.length) list.append(h('div.cc-list-item', { style: { opacity: 0.6 } }, 'No devices yet'));
+    if (st?.powered) for (const d of mine) {
+      const item = h('div.cc-list-item' + (d.connected ? '.active' : ''), h('div.circ' + (d.connected ? '.on' : ''), { html: btIcon(d.icon) }),
+        h('span.spacer.ellipsis', d.name), h('small', { style: { opacity: 0.55 } }, d.battery != null ? d.battery + '%' : d.connected ? 'Connected' : ''));
+      item.addEventListener('click', async () => {
+        item.style.opacity = 0.5; item.querySelector('small').textContent = d.connected ? 'Disconnecting…' : 'Connecting…';
+        const r = await api.bt.connect(d.path, !d.connected).catch((e) => ({ ok: false, error: e.message }));
+        if (r && r.ok === false) shell.notify({ app: 'settings', title: 'Bluetooth', body: `Couldn’t connect to “${d.name}”. ${r.error || ''}` });
+        draw(await api.bt.state().catch(() => st)); status.refresh();
+      });
+      list.append(item);
+    }
+    list.append(h('div.cc-list-item', { onclick: () => { close(); shell.openSettings('bluetooth'); } }, 'Bluetooth Settings…'));
+  };
+  draw(st);
+  onBluetooth(list, async () => draw(await api.bt.state().catch(() => null)));
+  return [mod];
+}
+
+// Sound: the volume, then where sound plays (and which microphone), click one to switch to it
+async function soundView() {
+  const vol = status.s.volume;
+  const d = await api.audio?.devices().catch(() => null);
+  const outs = h('div.cc-list'), ins = h('div.cc-list');
+  const devItem = (kind, x) => {
+    const it = h('div.cc-list-item' + (x.default ? '.active' : ''), h('div.circ' + (x.default ? '.on' : ''), { html: DEV_ICONS[x.kind] || DEV_ICONS.speaker }),
+      h('span.spacer.ellipsis', x.label), x.default ? h('span', { html: sym.check, style: { width: '14px', display: 'flex' } }) : null);
+    it.addEventListener('click', async () => {
+      if (x.default) return;
+      await api.audio.setDefault(kind, x.name).catch(() => {});
+      await status.refresh(); render('sound');
+    });
+    return it;
+  };
+  for (const x of d?.outputs || []) outs.append(devItem('output', x));
+  for (const x of d?.inputs || []) ins.append(devItem('input', x));
+  if (!d?.available) outs.append(h('div.cc-list-item', { style: { opacity: 0.6 } }, 'No sound devices found'));
+  const mod = h('div.cc-mod.cc-detail', h('h3', h('button.cc-back', { html: sym.chevronLeft, onclick: () => render() }), 'Sound'),
+    h('div.cc-detail-slider', slider(vol?.muted ? sym.speakerMute : sym.speaker, vol?.level ?? 50, (v) => { api.sys.setVolume(v); if (vol?.muted) api.sys.setMute(false); },
+      (v) => status.patch({ volume: { level: v, muted: false } }))),
+    h('h5.cc-sub', 'Output'), outs,
+    d?.inputs?.length ? h('h5.cc-sub', 'Input') : null, d?.inputs?.length ? ins : null,
+    h('div.cc-list', h('div.cc-list-item', { onclick: () => { close(); shell.openSettings('sound'); } }, 'Sound Settings…')));
+  return [mod];
+}
+
 function displayView() {
   const mod = h('div.cc-mod.cc-detail', h('h3', h('button.cc-back', { html: sym.chevronLeft, onclick: () => render() }), 'Display'),
     h('div.cc-list',
@@ -152,7 +215,7 @@ function displayView() {
 
 async function render(view) {
   if (!panel) return;
-  const kids = view === 'wifi' ? await wifiView() : view === 'display' ? displayView() : mainView();
+  const kids = view === 'wifi' ? await wifiView() : view === 'bluetooth' ? await bluetoothView() : view === 'sound' ? await soundView() : view === 'display' ? displayView() : mainView();
   panel.innerHTML = '';
   panel.append(...kids.filter(Boolean));
   panel.dataset.view = view || '';

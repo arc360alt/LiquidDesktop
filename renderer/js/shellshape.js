@@ -38,9 +38,20 @@ function measure() {
     for (const el of $$(sel)) {
       if (seen.has(el) || el.closest('#lock, #boot')) continue;
       seen.add(el);
+      // glass inside other glass (e.g. widget previews in the gallery) is already covered by the outer blur
+      if (el.parentElement?.closest('.glass')) continue;
       const v = visible(el);
       if (!v) continue;
-      const [x, y, w, h] = px(v.b);
+      // only the part that's actually shown: clip to any scrolling / clipping container around it
+      let b = { left: v.b.left, top: v.b.top, right: v.b.right, bottom: v.b.bottom };
+      for (let p = el.parentElement; p && p !== document.body; p = p.parentElement) {
+        const o = getComputedStyle(p);
+        if (o.overflowX === 'visible' && o.overflowY === 'visible') continue;
+        const r = p.getBoundingClientRect();
+        b = { left: Math.max(b.left, r.left), top: Math.max(b.top, r.top), right: Math.min(b.right, r.right), bottom: Math.min(b.bottom, r.bottom) };
+      }
+      if (b.right - b.left < 2 || b.bottom - b.top < 2) continue;
+      const [x, y, w, h] = px({ left: b.left, top: b.top, width: b.right - b.left, height: b.bottom - b.top });
       const want = Math.min((parseFloat(v.cs.borderTopLeftRadius) || 0) * dpr, h / 2, w / 2);
       const r = RADII.reduce((a, c) => (Math.abs(c - want) < Math.abs(a - want) ? c : a), 0);
       blur.push({ x, y, w, h, r });

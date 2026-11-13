@@ -82,6 +82,13 @@ body.resizing-win, body.resizing-win * { cursor: inherit; }
 .sb-item svg { width: 16px; height: 16px; color: var(--accent); flex: none; }
 .sb-item:hover { background: var(--hover); }
 .sb-item.sel { background: rgba(128, 128, 128, 0.2); }
+/* external drives in the sidebar */
+.sb-drive span { flex: 1; min-width: 0; }
+.sb-drive.unmounted { opacity: 0.7; }
+.sb-drive.busy { opacity: 0.5; pointer-events: none; }
+.sb-eject { width: 20px; height: 20px; flex: none; border: 0; padding: 0; border-radius: 50%; background: none; color: var(--text-2); display: flex; align-items: center; justify-content: center; }
+.sb-eject:hover { background: var(--hover); color: var(--text); }
+.sb-item .sb-eject svg { width: 11px; height: 11px; color: inherit; }
 .sb-item.drop { background: rgba(var(--accent-rgb), 0.25); box-shadow: inset 0 0 0 2px var(--accent); }
 .sb-item .count { margin-left: auto; color: var(--text-2); font-size: 11.5px; }
 .sb-item .ic { width: 22px; height: 22px; flex: none; }

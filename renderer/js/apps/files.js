@@ -3,7 +3,7 @@ import { h, $, $$, bus, basename, dirname, fmtSize, fmtDate, fileUrl, isCmd } fr
 import { sym, folderIcon, docIcon, IMAGE_EXT, VIDEO_EXT, AUDIO_EXT, TEXT_EXT, appIconSVG } from '../icons.js';
 import { registerApp, wm } from '../wm.js';
 import { api } from '../sys.js';
-import { contextMenu, prompt, confirmDialog, showMenu } from '../menus.js';
+import { contextMenu, prompt, confirmDialog, showMenu, alertDialog } from '../menus.js';
 import { shell } from '../shell.js';
 import { store } from '../store.js';
 
@@ -55,6 +55,23 @@ class FilesView {
       this.renderSidebar();
       this.go(args.path || p.home, { select: args.select });
     });
+    // external drives come and go: look every few seconds while this window is open
+    this.drives = [];
+    const pollDrives = async () => {
+      if (!api.drives?.list || !this.places) return;
+      const list = await api.drives.list().catch(() => null);
+      if (!list) return;
+      const key = JSON.stringify(list), had = JSON.stringify(this.drives);
+      if (key === had) return;
+      // a drive that was open here got pulled out: go home
+      if (this.path && this.drives.some((d) => d.mounted && this.path.startsWith(d.mounted)) && !list.some((d) => d.mounted && this.path.startsWith(d.mounted))) this.go(this.places.home);
+      this.drives = list;
+      this.renderSidebar();
+    };
+    const driveTimer = setInterval(pollDrives, 3000);
+    setTimeout(pollDrives, 300);
+    win.on('close', () => clearInterval(driveTimer));
+    this.pollDrives = pollDrives;
     const off = bus.on('fs-changed', () => this.refresh());
     const offS = store.on('change', (k) => {
       if (k === 'filesShowHidden') { this.showHidden = !!store.get(k); this.renderItems(); }
@@ -162,6 +179,46 @@ class FilesView {
     this.status.textContent = (this.sel.size ? `${this.sel.size} of ` : '') + `${n} item${n === 1 ? '' : 's'}`;
   }
 
+  // an external drive in the sidebar: click to open (mounting it first if needed), ⏏ to eject
+  driveItem(d) {
+    const EJECT = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 4.5 4.5 14h15z"/><rect x="4.5" y="16.5" width="15" height="3" rx="1"/></svg>';
+    const open = async () => {
+      let where = d.mounted;
+      if (!where) {
+        el.classList.add('busy');
+        where = await api.drives.mount(d.device).catch((e) => { alertDialog({ title: `“${d.name}” couldn’t be opened`, message: e.message }, this.win.el); return null; });
+        el.classList.remove('busy');
+        this.pollDrives?.();
+      }
+      if (where) this.go(where);
+    };
+    const eject = async (e) => {
+      e?.stopPropagation();
+      if (d.mounted && this.path?.startsWith(d.mounted)) this.go(this.places.home);
+      el.classList.add('busy');
+      const r = await api.drives.eject(d.device).then(() => true).catch((err) => { alertDialog({ title: `“${d.name}” couldn’t be ejected`, message: err.message }, this.win.el); return false; });
+      el.classList.remove('busy');
+      if (r) shell.notify({ app: 'files', title: 'Safe to remove', body: `“${d.name}” can be unplugged now.` });
+      this.pollDrives?.();
+    };
+    const el = h('div.sb-item.sb-drive' + (d.mounted ? '' : '.unmounted'), { 'data-path': d.mounted || '', title: `${d.name} · ${fmtSize(d.size)} · ${d.fstype}${d.mounted ? '' : ' · not open yet'}`, html: sym.drive },
+      h('span.ellipsis', d.name),
+      d.removable || d.mounted ? h('button.sb-eject', { title: 'Eject', html: EJECT, onclick: eject }) : null);
+    el.addEventListener('click', open);
+    el.addEventListener('contextmenu', (e) => contextMenu(e, [
+      { label: 'Open', action: open },
+      d.mounted ? { label: 'Open in New Window', action: () => wm.open('files', { path: d.mounted }) } : null,
+      d.mounted ? { label: 'Open in Terminal', action: () => wm.open('terminal', { cwd: d.mounted }) } : null, '-',
+      { label: 'Eject', action: eject },
+    ].filter(Boolean)));
+    if (d.mounted) {
+      el.addEventListener('dragover', (e) => { if (e.dataTransfer.types.includes('text/liquid-paths')) { e.preventDefault(); el.classList.add('drop'); } });
+      el.addEventListener('dragleave', () => el.classList.remove('drop'));
+      el.addEventListener('drop', (e) => { el.classList.remove('drop'); this.dropOn(e, d.mounted); });
+    }
+    return el;
+  }
+
   renderSidebar() {
     const p = this.places;
     const item = (icon, label, path) => {
@@ -179,7 +236,9 @@ class FilesView {
       item(sym.home, 'Home', p.home), item(sym.desktop, 'Desktop', p.desktop), item(sym.doc, 'Documents', p.documents),
       item(sym.download, 'Downloads', p.downloads), item(sym.photo, 'Pictures', p.pictures), item(sym.music, 'Music', p.music), item(sym.video, 'Videos', p.videos),
       h('div.sb-sec', 'Locations'),
-      item(sym.drive, 'Computer', '/'), item(sym.trash, 'Trash', p.trash),
+      item(sym.drive, 'Computer', '/'),
+      ...(this.drives || []).map((d) => this.driveItem(d)),
+      item(sym.trash, 'Trash', p.trash),
       h('div.sb-sec', 'Tags'),
       ...[['Red', '#ff3b30'], ['Orange', '#ff9500'], ['Green', '#34c759'], ['Blue', '#0a84ff'], ['Purple', '#af52de']].map(([n, c]) =>
         h('div.sb-item', { style: { opacity: 0.85 } }, h('span', { style: { width: '10px', height: '10px', borderRadius: '50%', background: c, margin: '0 3px' } }), n)));

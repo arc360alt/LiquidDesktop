@@ -33,6 +33,7 @@ depends=(
   'xorg-xinput'         # mouse & trackpad settings in the session
   'kvantum'             # Qt apps in the MacTahoe theme (Settings › Appearance › App Themes)
   'sassc'               # builds MacTahoe's GTK 4 / libadwaita version
+  'wlroots0.20'         # liquid-wl-bridge: Android (Waydroid) apps as their own windows
 )
 optdepends=(
   'networkmanager: Wi-Fi status, network list and joining (nmcli)'
@@ -57,7 +58,7 @@ optdepends=(
   "xorg-xinit: starting X11 sessions from LiquidDesktop's own login screen (startx)"
 )
 backup=('etc/sddm.conf.d/zz-liquid-desktop.conf')
-makedepends=('git' 'npm' 'nodejs')
+makedepends=('git' 'npm' 'nodejs' 'meson' 'wayland-protocols')
 provides=("$_name")
 conflicts=("$_name")
 options=('!strip' '!debug')
@@ -82,6 +83,9 @@ build() {
   npm ci --omit=dev --no-audit --no-fund --ignore-scripts
   # unpack the cursor theme (checksummed above) into session/cursors/MacOS-Tahoe-Cursor
   LIQUID_CURSOR_ZIP="$srcdir/MacOS-Tahoe-Cursor-$_cursor.zip" sh tools/fetch-cursors.sh
+  # the Wayland-to-X11 bridge Android apps run through (see bridge/main.c)
+  meson setup bridge/build bridge --buildtype=release
+  meson compile -C bridge/build
 }
 
 package() {
@@ -92,6 +96,7 @@ package() {
   # the login theme, so Settings › Lock Screen can (re)install it
   install -dm755 "$dest/packaging" && cp -a packaging/sddm packaging/greetd-config.toml "$dest/packaging/"
   cp -r node_modules "$dest/"
+  install -Dm755 bridge/build/liquid-wl-bridge "$dest/bridge/liquid-wl-bridge"
   rm -rf "$dest/node_modules/.package-lock.json" "$dest/tools/shot.js"
   chmod 755 "$dest/session/liquid-desktop" "$dest/session/liquid-desktop-session" "$dest/session/liquid-desktop-update" \
             "$dest/session/liquid-desktop-session-inner" "$dest/tools/nested.sh" "$dest/tools/xephyr-test.sh" \

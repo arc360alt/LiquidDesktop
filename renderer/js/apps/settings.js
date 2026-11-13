@@ -872,7 +872,7 @@ function androidPane(first) {
   function draw() {
     if (!root.isConnected && root.childElementCount) return;
     const ready = st.installed && st.initialized;
-    const kids = [hero('android', 'Android', ready ? 'Android apps run in their own Android window, with the LiquidDesktop window frame.'
+    const kids = [hero('android', 'Android', ready ? 'Android apps run right on your desktop, in windows like any other app.'
       : 'Run Android apps on LiquidDesktop with Waydroid. It installs everything for you, including Google Play if you want it.')];
     if (prog || st.busy) {
       const p = prog || { line: 'Working…' };
@@ -905,7 +905,12 @@ function androidPane(first) {
               if (!(await askSudo('Restarting Android’s container needs administrator rights (sudo).'))) return;
               act(() => api.android.forceQuit(), 'Android couldn’t be force quit');
             } }, 'Force Quit'))),
-        h('p.and-note.muted', 'Android runs in one window: apps you open from the launcher appear inside it. (Separate windows per Android app need a Wayland desktop; LiquidDesktop’s session is X11.)'));
+        h('div.group',
+          row('Separate windows', h('label.toggle', h('input', { type: 'checkbox', checked: st.multiWindow, onchange: async (e) => {
+            const on = e.target.checked;
+            if (!(await askSudo('Changing how Android shows its apps needs administrator rights (sudo).'))) { e.target.checked = !on; return; }
+            act(() => api.android.setMultiWindow(on), 'The setting couldn’t be changed');
+          } }), h('span')), st.multiWindow ? 'Every Android app opens in its own window, with its own icon in the Dock.' : 'All of Android is shown in one window, like a phone screen.')));
       if (st.gapps) {
         kids.push(h('div.group-title', 'Google Play certification'),
           h('div.group',

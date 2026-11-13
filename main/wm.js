@@ -326,6 +326,12 @@ class WindowManager extends EventEmitter {
       }
       return;
     }
+    // which app it is can be set after the window appears (the Android bridge does: main/android.js)
+    if (ev.atom === this.A.WM_CLASS) {
+      const cls = await this.getClass(w.client);
+      if (cls.join('\0') !== (w.wmClass || []).join('\0')) { w.wmClass = cls; this.changed(w); }
+      return;
+    }
     if (ev.atom === this.A._NET_WM_NAME || ev.atom === this.A.WM_NAME) {
       const t = await this.getTitle(w.client);
       if (t && t !== w.title) { w.title = t; this.changed(w); }
@@ -447,6 +453,18 @@ class WindowManager extends EventEmitter {
     this.X.ChangeWindowAttributes(wid, { eventMask: EM.PropertyChange | EM.StructureNotify, borderPixel: 0 });
     this.X.ConfigureWindow(wid, { borderWidth: 0 });
     this.X.ChangeSaveSet(true, wid);
+    // no app identity yet: some windows get theirs right after they appear (the Android bridge's do), possibly
+    // before we started listening for changes, so look again a moment later
+    if (!cls[0] && !cls[1]) {
+      for (const ms of [150, 600, 1500]) setTimeout(async () => {
+        if (!this.windows.has(w.id)) return;
+        const [c, t] = await Promise.all([this.getClass(wid), this.getTitle(wid)]);
+        let diff = false;
+        if (c.join('\0') !== (w.wmClass || []).join('\0')) { w.wmClass = c; diff = true; }
+        if (t && t !== w.title) { w.title = t; diff = true; }
+        if (diff) this.changed(w);
+      }, ms);
+    }
     if (!csd) {
       // ask the web UI for a frame (a window whose title bar it draws), then put the app inside it
       let frameXid;

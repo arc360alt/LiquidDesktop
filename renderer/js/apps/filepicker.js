@@ -55,6 +55,14 @@ registerApp({
         item('Home', sym.home, places.home), item('Desktop', sym.desktop, places.desktop), item('Documents', sym.doc, places.documents),
         item('Downloads', sym.download, places.downloads), item('Pictures', sym.photo, places.pictures), item('Music', sym.music, places.music), item('Videos', sym.video, places.videos),
         h('div.sb-sec', 'Locations'), item('Computer', sym.drive, '/'));
+      // external drives (USB sticks…): opened (mounted) when clicked
+      const drives = await api.drives?.list().catch(() => []) || [];
+      for (const d of drives) {
+        side.append(h('div.sb-item', { 'data-path': d.mounted || '', onclick: async () => {
+          const where = d.mounted || await api.drives.mount(d.device).catch(() => null);
+          if (where) { go(where); if (!d.mounted) drawSide(); }
+        } }, h('span', { html: sym.drive }), d.name));
+      }
       markSide();
     }
     const markSide = () => $$('.sb-item', side).forEach((el) => el.classList.toggle('sel', el.dataset.path === cwd));

@@ -1,9 +1,9 @@
 // Android apps through Waydroid (Settings › Android).
 //
-// Waydroid shows Android on a Wayland display, and the LiquidDesktop session is X11, so Android runs inside
-// cage (a one-app Wayland compositor) whose window is an ordinary X11 window: the window manager frames it
-// like any other app (macOS title bar and traffic lights; see getTitle/getClass in main/wm.js) and Android
-// apps opened from the launcher show up in it.
+// Waydroid shows Android on a Wayland display, and the LiquidDesktop session is X11. liquid-wl-bridge
+// (bridge/main.c) is a Wayland display whose windows are ordinary X11 windows, so with Waydroid's multi-window
+// mode every Android app gets its own LiquidDesktop window (macOS title bar, Dock icon…). The other way, one
+// window with all of Android in it, runs inside cage (see getTitle/getClass in main/wm.js).
 //
 // Root work (installing, the container service, uninstalling) goes through sudo with the password Settings
 // asked for (main/appstore.js); progress is sent to the page as "android:progress".
@@ -48,7 +48,8 @@ async function status() {
     gapps: /GAPPS/i.test(c),
     container: active.out.trim() === 'active', serviceEnabled: enabled.out.trim() === 'enabled',
     session: /Session:\s*RUNNING/i.test(st.out),
-    window: !!cage,
+    window: !!host,
+    multiWindow: multiWindow(),
     on: !exists(offFile()),
     busy: job ? job.kind : null,
   };
@@ -120,6 +121,7 @@ fi
 echo "::step 2 Downloading Android (about 1 GB)…"
 waydroid init -f -s ${type}
 echo "::step 3 Starting Android's container…"
+${multiWindowScript(true)}
 systemctl enable --now waydroid-container.service
 echo "::step 4 Done"
 `, [[0, 12], [12, 15], [15, 92], [92, 100], [100, 100]]);
@@ -163,27 +165,87 @@ async function setOn(on) {
   return status();
 }
 
-/* ------------------------------------------------------------------ the Android window */
-let cage = null, sessionUp = null;
-function openWindow() {
-  if (cage) return true;
-  if (!which('cage') || !which('waydroid')) throw new Error('Android isn’t installed yet. Install it in Settings › Android.');
+/* ------------------------------------------------------------------ Android's windows */
+// Two ways to show Android, both ordinary X11 windows the window manager frames:
+//  • separate windows (default): liquid-wl-bridge (bridge/main.c) is the Wayland display, and Waydroid's
+//    multi-window mode gives every Android app its own window, each one a LiquidDesktop window of its own
+//  • one window: cage (a one-app Wayland compositor) shows Android's whole screen in a single window
+const BRIDGE_SOCKET = 'liquid-android';
+let host = null, sessionUp = null;   // host: the running bridge or cage process
+const multiWindow = () => /persist\.waydroid\.multi_windows\s*=\s*true/i.test(cfg());
+
+// The bridge: built with the package (bridge/liquid-wl-bridge); from a source checkout it's built on demand
+async function bridgeBinary() {
+  const root = path.join(__dirname, '..', 'bridge');
+  const packaged = path.join(root, 'liquid-wl-bridge');
+  if (exists(packaged)) return packaged;
+  const built = path.join(root, 'build', 'liquid-wl-bridge');
+  const mtime = (f) => { try { return fs.statSync(f).mtimeMs; } catch { return 0; } };
+  const stale = mtime(built) < Math.max(mtime(path.join(root, 'main.c')), mtime(path.join(root, 'meson.build')));
+  if (!stale) return built;
+  if (!which('meson') || !exists(path.join(root, 'main.c'))) return exists(built) ? built : null;
+  if (!exists(path.join(root, 'build', 'build.ninja'))) await run('meson', ['setup', path.join(root, 'build'), root, '--buildtype=release'], 120000);
+  await run('meson', ['compile', '-C', path.join(root, 'build')], 300000);
+  return exists(built) ? built : null;
+}
+
+async function startBridge() {
+  const bin = await bridgeBinary();
+  if (!bin) return null;
+  return new Promise((resolve) => {
+    // a stale socket from a bridge that didn't exit cleanly would block the name
+    const rt = process.env.XDG_RUNTIME_DIR || `/run/user/${process.getuid()}`;
+    for (const f of [BRIDGE_SOCKET, BRIDGE_SOCKET + '.lock']) { try { fs.rmSync(path.join(rt, f), { force: true }); } catch { /* none */ } }
+    const p = spawn(bin, ['--socket', BRIDGE_SOCKET, '--no-activate'], { env: userEnv(), stdio: ['ignore', 'pipe', 'pipe'], detached: true });
+    let done = false;
+    const finish = (ok) => { if (!done) { done = true; resolve(ok ? p : null); } };
+    p.stdout.on('data', (d) => { if (/WAYLAND_DISPLAY=/.test(String(d))) finish(true); });
+    p.stderr.on('data', (d) => console.warn('[android bridge]', String(d).trim()));
+    p.on('exit', () => finish(false));
+    p.on('error', () => finish(false));
+    setTimeout(() => finish(false), 8000);
+  });
+}
+
+async function openWindow() {
+  if (host) {
+    // already running: bring Android's home screen (its launcher) up
+    if (await (sessionUp || waitForSession(5))) execFile('waydroid', ['show-full-ui'], { env: hostEnv() }, () => {});
+    return true;
+  }
+  if (!which('waydroid')) throw new Error('Android isn’t installed yet. Install it in Settings › Android.');
   if (exists(offFile())) throw new Error('Android is turned off. Turn it on in Settings › Android.');
-  // inside cage: start Android's session, wait for it, then show Android's home screen (apps open in it)
-  const inner = `
+  const env = userEnv();
+  const startup = `
 waydroid session start & S=$!
 i=0; until waydroid status 2>/dev/null | grep -q 'Session:.*RUNNING'; do sleep 1; i=$((i+1)); [ $i -ge 90 ] && break; done
 waydroid show-full-ui
 wait $S`;
-  const env = userEnv();
-  // cage draws into an X11 window here; no client-side decorations (LiquidDesktop frames the window)
-  cage = spawn('cage', ['-d', '--', 'sh', '-c', inner], { env, stdio: 'ignore', detached: true });
+  let bridge = multiWindow() ? await startBridge() : null;
+  if (bridge) {
+    host = bridge;
+    host.mode = 'windows';
+    const sess = spawn('sh', ['-c', startup], { env: { ...env, WAYLAND_DISPLAY: BRIDGE_SOCKET }, stdio: 'ignore', detached: true });
+    host.session = sess;
+  } else {
+    if (!which('cage')) throw new Error('Android’s window can’t open: cage is missing. Reinstall Android in Settings › Android.');
+    // cage draws into one X11 window; no client-side decorations (LiquidDesktop frames the window)
+    host = spawn('cage', ['-d', '--', 'sh', '-c', startup], { env, stdio: 'ignore', detached: true });
+    host.mode = 'window';
+  }
+  const me = host;
   sessionUp = waitForSession(120);
-  cage.on('exit', () => { cage = null; sessionUp = null; execFile('waydroid', ['session', 'stop'], { env }, () => {}); broadcast('android:changed'); });
-  cage.on('error', () => { cage = null; });
+  me.on('exit', () => {
+    if (host !== me) return;
+    host = null; sessionUp = null;
+    execFile('waydroid', ['session', 'stop'], { env }, () => {});
+    broadcast('android:changed');
+  });
+  me.on('error', () => { if (host === me) host = null; });
   broadcast('android:changed');
   return true;
 }
+const hostEnv = () => (host?.mode === 'windows' ? { ...userEnv(), WAYLAND_DISPLAY: BRIDGE_SOCKET } : userEnv());
 async function waitForSession(secs) {
   for (let i = 0; i < secs; i++) {
     if (/Session:\s*RUNNING/i.test((await run('waydroid', ['status'], 5000)).out)) return true;
@@ -191,26 +253,52 @@ async function waitForSession(secs) {
   }
   return false;
 }
+function killHost(sig) {
+  const h = host;
+  if (!h) return;
+  for (const p of [h.session, h]) if (p) { try { process.kill(-p.pid, sig); } catch { /* gone */ } }
+}
 async function stopWindow() {
   await run('waydroid', ['session', 'stop'], 20000);
-  if (cage) { try { process.kill(-cage.pid, 'SIGTERM'); } catch { /* gone */ } }
+  killHost('SIGTERM');
   broadcast('android:changed');
   return true;
 }
-// Android stuck: kill the window and everything in it, stop the session, and restart the container
+// Android stuck: kill its windows and everything in them, stop the session, and restart the container
 async function forceQuit() {
-  if (cage) { try { process.kill(-cage.pid, 'SIGKILL'); } catch { /* gone */ } cage = null; }
+  killHost('SIGKILL');
+  host = null; sessionUp = null;
   await run('waydroid', ['session', 'stop'], 10000);
   const { sudoScript } = require('./appstore');
   await sudoScript('systemctl restart waydroid-container.service');
   broadcast('android:changed');
   return status();
 }
-// an Android app from the launcher (Exec=waydroid app launch PKG): open the Android window first if needed
+// separate windows per app, or one Android window (a Waydroid setting: needs Android restarted)
+async function setMultiWindow(on) {
+  await stopWindow();
+  const { sudoScript } = require('./appstore');
+  const r = await sudoScript(multiWindowScript(on));
+  if (!r.ok) throw new Error(/password/i.test(r.out) ? 'Your password wasn’t accepted.' : r.out.split('\n').pop() || 'Couldn’t change the setting.');
+  broadcast('android:changed');
+  return status();
+}
+function multiWindowScript(on) {
+  return `
+CFG=/var/lib/waydroid/waydroid.cfg
+[ -f "$CFG" ] || exit 0
+grep -q '^\\[properties\\]' "$CFG" || printf '\\n[properties]\\n' >> "$CFG"
+sed -i '/^persist.waydroid.multi_windows/d' "$CFG"
+sed -i '/^\\[properties\\]/a persist.waydroid.multi_windows = ${on ? 'true' : 'false'}' "$CFG"
+waydroid upgrade --offline >/dev/null 2>&1 || true`;
+}
+// an Android app from the launcher (Exec=waydroid app launch PKG): start Android first if needed
 async function launchApp(pkg) {
-  openWindow();
+  const wasRunning = !!host;
+  await openWindow();
   if (!(await (sessionUp || waitForSession(120)))) return false;
-  if (pkg) execFile('waydroid', ['app', 'launch', pkg], { env: userEnv() }, () => {});
+  if (pkg) execFile('waydroid', ['app', 'launch', pkg], { env: hostEnv() }, () => {});
+  else if (wasRunning) execFile('waydroid', ['show-full-ui'], { env: hostEnv() }, () => {});
   return true;
 }
 
@@ -238,7 +326,8 @@ function register() {
   h('android:stop', () => stopWindow());
   h('android:forceQuit', () => forceQuit());
   h('android:playId', () => playId());
-  app.on('before-quit', () => { if (cage) { try { process.kill(-cage.pid, 'SIGTERM'); } catch { /* gone */ } } });
+  h('android:setMultiWindow', (on) => setMultiWindow(!!on));
+  app.on('before-quit', () => killHost('SIGTERM'));
 }
 
 module.exports = { register, launchApp, isOff: () => exists(offFile()) };

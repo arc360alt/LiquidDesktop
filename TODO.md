@@ -2,6 +2,7 @@
 
 - Integrate the DE into Vertex Linux and then remake the website and add an interactive version of the DE so users can test it (DO LATER)
 - Maybe at some point decrease the ram/cpu usage but for right now it runs fine on any computer with above 8GB of ram (DO LATER)
+- Make it so in the wallpapers menu intead of choosing one image you can choose multiple images to upload into the library and then you can select from there instead of having to look through your library each time to upload a wallpaper
 
 # Fixed
 - Fix the system monitor reporting that several tasks are using 20% CPU usage when the overall CPU usage is 5% (confirmed by the widget and btop, the system monitor is not reporting app usage correctly)

@@ -213,6 +213,19 @@ body.resizing-win, body.resizing-win * { cursor: inherit; }
 .wall-thumb.sel { box-shadow: 0 0 0 3px var(--accent), 0 1px 4px rgba(0, 0, 0, 0.2); }
 .wall-thumb span { position: absolute; bottom: -20px; left: 0; right: 0; text-align: center; font-size: 11px; color: var(--text-2); }
 .wall-grid.labels { row-gap: 30px; padding-bottom: 28px; }
+/* your pictures (the wallpaper library) */
+.wall-lib-title { display: flex; align-items: center; justify-content: space-between; }
+.wall-lib-title .btn { font-size: 12px; height: 24px; padding: 0 10px; text-transform: none; letter-spacing: 0; }
+.wall-lib .wall-thumb { cursor: var(--cur-pointer, pointer); background-color: rgba(128, 128, 128, 0.15); }
+.wall-del { position: absolute; top: -7px; right: -7px; width: 22px; height: 22px; border-radius: 50%; border: 0; padding: 0; display: flex; align-items: center; justify-content: center;
+  background: rgba(60, 60, 67, 0.85); color: #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3); opacity: 0; transform: scale(0.8); transition: opacity 0.15s, transform 0.15s; }
+.wall-del svg { width: 10px; height: 10px; }
+.wall-thumb:hover .wall-del { opacity: 1; transform: none; }
+.wall-add { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; box-shadow: none !important; border: 1.5px dashed rgba(128, 128, 128, 0.45); background: none !important; color: var(--text-2); }
+.wall-add span { position: static; width: 20px; height: 20px; display: flex; }
+.wall-add span svg { width: 20px; height: 20px; }
+.wall-add small { font-size: 11px; }
+.wall-add:hover { border-color: var(--accent); color: var(--accent); }
 .accent-row { display: flex; gap: 10px; }
 .accent-row button { width: 20px; height: 20px; border-radius: 50%; border: 0; box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.2); position: relative; }
 .accent-row button.sel::after { content: ''; position: absolute; inset: 6px; border-radius: 50%; background: #fff; }
@@ -868,3 +881,13 @@ body.mission-open #spaces { z-index: 7550; }
 .pv-none-ic { width: 96px; height: 96px; display: flex; align-items: center; justify-content: center; }
 .pv-none-ic svg { width: 100%; height: 100%; }
 .pv-none .btn { margin-top: 8px; }
+
+/* Settings › Android */
+.and-mark { width: 20px; height: 20px; flex: none; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 800; color: #fff; }
+.and-mark.ok { background: #30d158; } .and-mark.warn { background: #ff9f0a; } .and-mark.bad { background: #ff453a; }
+.and-prog .label { gap: 8px; }
+.and-bar { height: 6px; border-radius: 3px; background: rgba(128, 128, 128, 0.25); overflow: hidden; margin-top: 6px; }
+.and-bar i { display: block; height: 100%; border-radius: 3px; background: var(--accent); transition: width 0.4s ease; }
+.and-note { font-size: 12px; margin: 8px 14px 18px; line-height: 1.45; }
+.and-id { font-variant-numeric: tabular-nums; letter-spacing: 0.03em; user-select: text; }
+.android-pane .row .btn + .btn { margin-left: 6px; }

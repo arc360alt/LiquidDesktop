@@ -228,6 +228,8 @@ function onMediaKey(e) {
 /** Session mode: global shortcuts arrive from the X11 window manager. */
 export function initSessionShell({ windowMenu }) {
   S.on('session:notify', (n) => notify(n));
+  // an Android app couldn't open (Android turned off, not installed…)
+  api.android?.onError?.((msg) => notify({ app: 'settings', title: 'Android', body: msg, action: () => shell.openSettings('android') }));
   S.on('session:windowMenu', (id, x, y, kind) => windowMenu(id, x, y, kind));
   S.on('session:shortcut', (name, arg) => {
     if (shell.locked && name !== 'lock') return;

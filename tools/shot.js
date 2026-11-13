@@ -30,6 +30,7 @@ app.whenReady().then(async () => {
   require('../main/bluetooth').register();
   require('../main/audio').register(require('electron').ipcMain);
   require('../main/defaultapps').register({ mode: 'windowed' });
+  require('../main/android').register();
   require('../main/appthemes').register({ mode: 'windowed' });
   require('../main/portal').register({});
   require('../main/notifications').register({ resolveIcon: require('../main/system').resolveIcon });

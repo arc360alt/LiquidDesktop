@@ -20,6 +20,7 @@ const PANES = [
   ['sound', 'Sound', '#ff2d55', sym.speaker], ['network', 'Wi-Fi', '#0a84ff', sym.wifi], ['bluetooth', 'Bluetooth', '#0a84ff', sym.bluetooth],
   ['notifications', 'Notifications', '#ff3b30', sym.bell], ['focus', 'Focus', '#5e5ce6', sym.moon], ['lock', 'Lock Screen', '#1c1c1e', sym.lock],
   ['mouse', 'Mouse & Trackpad', '#8e8e93', '<svg class="sym" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="6" y="3" width="12" height="18" rx="6"/><path d="M12 3v6"/></svg>'], ['keyboard', 'Keyboard', '#8e8e93', sym.keyboard], ['terminal', 'Terminal', '#1c1c1e', sym.terminal], ['apps', 'Apps', '#5e5ce6', sym.grid],
+  ['android', 'Android', '#30c06b', '<svg class="sym" viewBox="0 0 24 24" fill="currentColor"><path d="M5.5 11a6.5 6.5 0 0 1 13 0z"/><rect x="5.5" y="12" width="13" height="8" rx="2"/><path d="M8.6 5.6 7.2 3.5M15.4 5.6l1.4-2.1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="9.4" cy="8.6" r="1" fill="#30c06b"/><circle cx="14.6" cy="8.6" r="1" fill="#30c06b"/></svg>'],
   ['account', 'Users & Accounts', '#0a84ff', sym.user],
 ];
 
@@ -106,20 +107,47 @@ const render = {
       grid.append(t);
     }
     const custom = store.get('customWallpaper');
+    // your pictures: a library (copies in ~/.local/share/LiquidDesktop/wallpapers), filled in below
+    const lib = h('div.wall-grid.wall-lib');
+    const PICS = ['*.png', '*.jpg', '*.jpeg', '*.webp', '*.avif', '*.gif', '*.bmp'];
+    const addPictures = async () => {
+      const home = await api.fs.home();
+      let files = null;
+      if (api.dialog?.open) files = await api.dialog.open({ title: 'Add Pictures', folder: home + '/Pictures', multiple: true, filters: [{ name: 'Pictures', patterns: PICS }] }).catch(() => null);
+      else { const p = await prompt('Add a picture', home + '/Pictures/', { ok: 'Add', message: 'Path to a PNG, JPG or WebP image.' }); files = p ? [p] : null; }
+      if (!files?.length) return;
+      if (!api.wall?.add) { store.set('customWallpaper', fileUrl(files[0])); rerender(); return; }
+      const added = await api.wall.add(files).catch((e) => { alertDialog({ title: 'Couldn’t add those pictures', message: e.message }); return []; });
+      if (added.length === 1) store.set('customWallpaper', fileUrl(added[0]));   // one picture: use it right away
+      rerender();
+    };
+    const fillLibrary = async () => {
+      const pics = api.wall?.list ? await api.wall.list().catch(() => []) : [];
+      lib.replaceChildren();
+      for (const p of pics) {
+        const url = fileUrl(p.path);
+        const t = h('div.wall-thumb' + (custom === url ? '.sel' : ''), { title: p.name, onclick: () => { store.set('customWallpaper', url); rerender(); } },
+          h('button.wall-del', { title: 'Remove from library', html: sym.close, onclick: async (e) => {
+            e.stopPropagation();
+            if (!(await confirmDialog(`Remove “${p.name}” from your wallpapers?`, 'The copy in your wallpaper library is deleted. The original picture isn’t touched.', 'Remove'))) return;
+            await api.wall.remove(p.path).catch(() => {});
+            if (store.get('customWallpaper') === url) store.set('customWallpaper', '');
+            rerender();
+          } }));
+        // small thumbnails, made by the back end (full photos are many megapixels); the file itself if that can't
+        api.fs.thumb?.(p.path, 320).then((src) => (t.style.backgroundImage = `url("${src}")`)).catch(() => (t.style.backgroundImage = `url("${url}")`));
+        lib.append(t);
+      }
+      lib.append(h('div.wall-thumb.wall-add', { title: 'Add pictures', onclick: addPictures }, h('span', { html: sym.plus }), h('small', 'Add Pictures…')));
+    };
+    fillLibrary();
     return [
       h('div.group', { style: { padding: '14px', display: 'flex', gap: '14px', alignItems: 'center' } },
         h('div.wall-thumb', { style: { width: '180px', backgroundImage: `url("${custom || wallpaperUrl(store.get('wallpaper'), 320, 200, theme.dark && store.get('dynamicWallpaper'))}")` } }),
-        h('div', h('b', custom ? 'Custom image' : WALLPAPERS[store.get('wallpaper')]?.name), h('div.muted', { style: { fontSize: '12px', marginTop: '4px' } }, store.get('dynamicWallpaper') ? 'Dynamic — changes with light and dark mode' : 'Still'))),
-      h('div.group', row('Dynamic wallpaper', toggle('dynamicWallpaper'), 'Switch to the night palette in dark mode.'),
-        row('Use an image file', h('button.btn', { onclick: async () => {
-          const home = await api.fs.home();
-          let p = null;
-          if (api.dialog?.open) {
-            const files = await api.dialog.open({ title: 'Choose a Wallpaper', folder: home + '/Pictures', filters: [{ name: 'Pictures', patterns: ['*.png', '*.jpg', '*.jpeg', '*.webp', '*.avif', '*.gif', '*.bmp', '*.svg'] }] }).catch(() => null);
-            p = files?.[0] || null;
-          } else p = await prompt('Choose a wallpaper image', home + '/Pictures/', { ok: 'Set Wallpaper', message: 'Path to a PNG, JPG or WebP image. Tip: use “Set as Wallpaper” in Preview.' });
-          if (p) { store.set('customWallpaper', fileUrl(p)); rerender(); }
-        } }, 'Choose…'))),
+        h('div', h('b', custom ? decodeURIComponent(custom.split('/').pop()) : WALLPAPERS[store.get('wallpaper')]?.name), h('div.muted', { style: { fontSize: '12px', marginTop: '4px' } }, custom ? 'Your picture' : store.get('dynamicWallpaper') ? 'Dynamic — changes with light and dark mode' : 'Still'))),
+      h('div.group', row('Dynamic wallpaper', toggle('dynamicWallpaper'), 'Switch to the night palette in dark mode.')),
+      h('div.group-title.wall-lib-title', 'Your pictures', h('button.btn', { onclick: addPictures }, 'Add Pictures…')),
+      h('div.group', lib),
       h('div.group-title', 'LiquidDesktop wallpapers'),
       h('div.group', grid),
     ];
@@ -343,6 +371,12 @@ const render = {
       h('div.group', row('Wi-Fi', h('label.toggle', h('input', { type: 'checkbox', checked: !!w?.enabled, onchange: async (e) => { await api.sys.wifiPower(e.target.checked); status.refresh(); setTimeout(rerender, 1500); } }), h('span')))),
       h('div.group-title', 'Networks'), list,
     ];
+  },
+  async android() {
+    if (!api.android?.status) return [hero('android', 'Android', 'Android apps can only be set up in the LiquidDesktop session.')];
+    const st = await api.android.status().catch(() => null);
+    if (!st) return [hero('android', 'Android', 'Android’s status couldn’t be read.')];
+    return androidPane(st);
   },
   async defaults() {
     let d = null;
@@ -784,6 +818,124 @@ function softwareUpdateGroup() {
   setTimeout(check, 50);
   return group;
 }
+/* ------------------------------------------------------------------ Android (Waydroid) */
+// administrator rights for the root parts (installing, the container service…): asks for the password once
+async function askSudo(why) {
+  if (!(await api.sddm.sudoStatus()).needed) return true;
+  for (let i = 0; i < 3; i++) {
+    const pw = await prompt('Enter your password', '', { type: 'password', ok: 'Authenticate', message: why });
+    if (pw == null) return false;
+    if (await api.sddm.sudoCheck(pw)) return true;
+    await alertDialog({ title: 'Incorrect password', message: 'Try again.' });
+  }
+  return false;
+}
+// one listener per page for Android's events; each pane registers while it's shown
+const androidListeners = new Set();
+let androidHooked = false;
+function onAndroid(fn) {
+  if (!androidHooked && api.android?.onProgress) {
+    androidHooked = true;
+    api.android.onProgress((m) => androidListeners.forEach((f) => f('progress', m)));
+    api.android.onChanged(() => androidListeners.forEach((f) => f('changed')));
+  }
+  androidListeners.add(fn);
+  return () => androidListeners.delete(fn);
+}
+
+function androidPane(first) {
+  const root = h('div.android-pane');
+  let st = first, prog = null, gapps = true, playId = null;
+  const refresh = async () => { try { st = await api.android.status(); } catch { /* keep */ } draw(); };
+  const fail = (title, e) => alertDialog({ title, message: e?.message || String(e || 'Something went wrong.') });
+  const act = async (fn, title) => { try { await fn(); } catch (e) { fail(title, e); } await refresh(); };
+  const mark = (ok, warn) => h('span.and-mark' + (ok ? '.ok' : warn ? '.warn' : '.bad'), ok ? '✓' : '!');
+
+  async function install() {
+    if (!(await askSudo('Installing Android needs administrator rights (sudo).'))) return;
+    prog = { line: 'Starting…', percent: 0 }; draw();
+    const r = await api.android.install({ gapps }).catch((e) => ({ ok: false, error: e.message }));
+    prog = null;
+    if (!r.ok) fail('Android couldn’t be installed', r.error);
+    await refresh();
+  }
+  async function uninstall() {
+    const ok = await confirmDialog('Uninstall Android?', 'Waydroid, Android and every Android app and its data are deleted from this computer. This can’t be undone.', 'Uninstall', { danger: true });
+    if (!ok || !(await askSudo('Uninstalling Android needs administrator rights (sudo).'))) return;
+    prog = { line: 'Stopping Android…', percent: 0 }; draw();
+    const r = await api.android.uninstall().catch((e) => ({ ok: false, error: e.message }));
+    prog = null;
+    if (!r.ok) fail('Android couldn’t be uninstalled', r.error);
+    await refresh();
+  }
+
+  function draw() {
+    if (!root.isConnected && root.childElementCount) return;
+    const ready = st.installed && st.initialized;
+    const kids = [hero('android', 'Android', ready ? 'Android apps run in their own Android window, with the LiquidDesktop window frame.'
+      : 'Run Android apps on LiquidDesktop with Waydroid. It installs everything for you, including Google Play if you want it.')];
+    if (prog || st.busy) {
+      const p = prog || { line: 'Working…' };
+      kids.push(h('div.group', h('div.row.and-prog', h('div.label', p.line || 'Working…', h('div.and-bar', h('i', { style: { width: (p.percent ?? 0) + '%' } }))), h('span.spinner'))));
+      root.replaceChildren(...kids);
+      return;
+    }
+    if (!ready) {
+      kids.push(h('div.group-title', 'Before you start'),
+        h('div.group',
+          h('div.row', mark(st.binder), h('div.label', 'Android support in the Linux kernel', h('small', st.binder ? 'Available' : 'Missing: the installer tries to load it. If that fails, use the linux-zen kernel.'))),
+          h('div.row', mark(!st.nvidia, true), h('div.label', 'Graphics', h('small', st.nvidia ? 'NVIDIA graphics aren’t supported by Waydroid. Android may be very slow or not start.' : 'Supported'))),
+          h('div.row', mark(true), h('div.label', 'Download', h('small', 'About 1 GB, plus a few small packages. Needs your password.')))),
+        h('div.group',
+          row('Include Google Play', h('label.toggle', h('input', { type: 'checkbox', checked: gapps, onchange: (e) => { gapps = e.target.checked; } }), h('span')), 'The Play Store and Google services. You can get Play certified afterwards.'),
+          h('div.row', h('div.label'), h('button.btn.primary', { onclick: install }, st.installed ? 'Finish Setting Up Android' : 'Install Android'))));
+    } else {
+      const state = !st.on ? 'Off' : st.session ? 'Running' : st.window ? 'Starting…' : st.container ? 'Ready' : 'Stopped';
+      kids.push(
+        h('div.group',
+          row('Android', h('label.toggle', h('input', { type: 'checkbox', checked: st.on, onchange: async (e) => {
+            const on = e.target.checked;
+            if (!(await askSudo(`Turning Android ${on ? 'on' : 'off'} needs administrator rights (sudo).`))) { e.target.checked = !on; return; }
+            act(() => api.android.setOn(on), `Android couldn’t be turned ${on ? 'on' : 'off'}`);
+          } }), h('span')), 'When it’s off nothing of Android runs, and its apps leave the launcher.'),
+          h('div.row', h('div.label', 'Status', h('small', state)),
+            h('button.btn', { disabled: !st.on || st.window, onclick: () => act(() => api.android.open(), 'Android couldn’t open') }, 'Open Android'),
+            h('button.btn', { disabled: !st.session && !st.window, onclick: () => act(() => api.android.stop(), 'Android couldn’t be stopped') }, 'Stop'),
+            h('button.btn', { title: 'Close Android and restart its container, for when it’s stuck', disabled: !st.on, onclick: async () => {
+              if (!(await askSudo('Restarting Android’s container needs administrator rights (sudo).'))) return;
+              act(() => api.android.forceQuit(), 'Android couldn’t be force quit');
+            } }, 'Force Quit'))),
+        h('p.and-note.muted', 'Android runs in one window: apps you open from the launcher appear inside it. (Separate windows per Android app need a Wayland desktop; LiquidDesktop’s session is X11.)'));
+      if (st.gapps) {
+        kids.push(h('div.group-title', 'Google Play certification'),
+          h('div.group',
+            h('div.row', h('div.label', 'Device ID', h('small', playId ? 'Register this ID with Google, then restart Android.' : 'Google Play needs this device registered before it signs you in. Open the Play Store once first.')),
+              playId ? h('b.and-id', playId) : null,
+              playId ? h('button.btn', { onclick: () => api.clip.write(playId) }, 'Copy') : null,
+              h('button.btn', { disabled: !st.session, title: st.session ? '' : 'Open Android first', onclick: async () => {
+                if (!(await askSudo('Reading Android’s device ID needs administrator rights (sudo).'))) return;
+                try { playId = await api.android.playId(); draw(); } catch (e) { fail('Couldn’t get the device ID', e); }
+              } }, playId ? 'Get Again' : 'Get Device ID')),
+            h('div.row', h('div.label', 'Register with Google', h('small', '1. Copy the device ID.  2. Sign in on Google’s page and register it.  3. Wait a few minutes, then Stop and open Android again.')),
+              h('button.btn', { onclick: () => wm.open('browser', { url: 'https://www.google.com/android/uncertified' }) }, 'Open Google’s Page…'))));
+      }
+      kids.push(h('div.group-title', 'Remove'),
+        h('div.group', h('div.row', h('div.label', 'Uninstall Android', h('small', 'Deletes Waydroid, Android, and every Android app and its data.')),
+          h('button.btn.danger', { onclick: uninstall }, 'Uninstall…'))));
+    }
+    root.replaceChildren(...kids);
+  }
+  draw();
+  const off = onAndroid((type, m) => {
+    if (!root.isConnected) { off(); return; }
+    if (type === 'progress') { if (m.done) return; prog = { ...(prog || {}), ...m, percent: m.percent ?? prog?.percent }; draw(); }
+    else refresh();
+  });
+  // the status changes on its own while Android starts or stops: look again now and then while the pane is open
+  const poll = setInterval(() => { if (!root.isConnected) { clearInterval(poll); off(); return; } if (!prog) refresh(); }, 4000);
+  return [root];
+}
+
 /* ------------------------------------------------------------------ Bluetooth */
 // Lives as long as the pane is shown: redraws itself when BlueZ reports a change, and looks for
 // nearby devices while it's open (scanning stops when you leave the pane).

@@ -228,4 +228,11 @@ function sudoScript(script) {
   });
 }
 
-module.exports = { register, sudoStatus, checkSudo, sudoScript };
+/** Same as sudoScript, but returns the running process so its output can be followed (long jobs). */
+function sudoSpawn(script) {
+  const c = spawn('sudo', ['-S', '-p', '', 'sh', '-c', script], { env: { ...process.env, LC_ALL: 'C' } });
+  c.stdin.end((sudoPass || '') + '\n');
+  return c;
+}
+
+module.exports = { register, sudoStatus, checkSudo, sudoScript, sudoSpawn };

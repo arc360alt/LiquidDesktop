@@ -2,9 +2,11 @@
 
 - Integrate the DE into Vertex Linux and then remake the website and add an interactive version of the DE so users can test it (DO LATER)
 - Maybe at some point decrease the ram/cpu usage but for right now it runs fine on any computer with above 8GB of ram (DO LATER)
-- Make it so in the wallpapers menu intead of choosing one image you can choose multiple images to upload into the library and then you can select from there instead of having to look through your library each time to upload a wallpaper
+- Switch the DE to using Wayland instead of X11 (do this over Thanksgiving break when I have time)
 
 # Fixed
+- Make it so in the wallpapers menu intead of choosing one image from files to use you can choose multiple images to upload into the library and then you can select from there instead of having to look through your files each time to upload a wallpaper
+- Implement android compatibility with a waydorid installer in settings to allow android apps to run inside of the OS, it will run Waydroid in the windowing mode and make it easy to install it by fetching all of the needed things and running the installer and stuff automaticly and eveyrthing through settings (in its own waydroid section), and like I said before it will run in windowing mode so all the Android winodws can be in their own window, and try to see if you can make them have the MacOS Window borders instead of the android ones to make it more immersive, make it easy to disable or force quit or uninstall waydroid if the user isnt happy, and make gapps enabled by defualt and add a section for making your device play certified. (Note: Android runs in ONE LiquidDesktop-framed window; one window per Android app needs a Wayland session)
 - Fix the system monitor reporting that several tasks are using 20% CPU usage when the overall CPU usage is 5% (confirmed by the widget and btop, the system monitor is not reporting app usage correctly)
 - Fix the top bar not having any blur and just being slightly opaque (There are more blur issues like this all over the desktop where some elements are just slightly opaque instead of being blurred properly for some reason)
 - The now playing widget seems to not work, this may be an issue with the Nested instance or the code might actualy be broken

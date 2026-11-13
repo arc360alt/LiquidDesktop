@@ -191,6 +191,8 @@ async function listApps(force) {
         const e = parseDesktopFile(path.join(dir, f));
         if (e.Type !== 'Application' || e.NoDisplay === 'true' || e.Hidden === 'true' || !e.Exec) { seen.set(f, null); continue; }
         if (e.OnlyShowIn && !e.OnlyShowIn.split(';').some((d) => desktopEnv.includes(d))) { seen.set(f, null); continue; }
+        // Android turned off (Settings › Android): its apps leave the launcher
+        if (/^waydroid\b/.test(e.Exec) && require('./android').isOff()) { seen.set(f, null); continue; }
         seen.set(f, {
           id: 'desktop:' + f, file: path.join(dir, f), name: e.Name || f, comment: e.Comment || e.GenericName || '',
           exec: e.Exec, terminal: e.Terminal === 'true', icon: resolveIcon(e.Icon), iconName: e.Icon || '',
@@ -205,6 +207,9 @@ async function listApps(force) {
 }
 
 function launchExec(exec, terminal) {
+  // Android apps (and Waydroid itself) open in LiquidDesktop's Android window (main/android.js)
+  const wd = exec.match(/^\s*waydroid\s+(?:app\s+launch\s+(\S+)|first-launch|show-full-ui|session\s+start)/);
+  if (wd) { require('./android').launchApp(wd[1] || null).catch((e) => { for (const wc of require('electron').webContents.getAllWebContents()) if (!wc.isDestroyed()) wc.send('android:error', e.message); }); return true; }
   let cmd = exec.replace(/%[fFuUdDnNickvm]/g, '').replace(/%%/g, '%').trim();
   if (terminal) {
     for (const t of ['kitty', 'alacritty', 'foot', 'xfce4-terminal', 'gnome-terminal', 'konsole', 'xterm']) {
@@ -681,6 +686,37 @@ function register({ getWindow, mode }) {
       return buf.toString('utf8');
     } finally { clearTimeout(t); }
   });
+  // Settings › Wallpaper: your own pictures, copied into a library so they're one click away
+  const WALL_DIR = path.join(process.env.XDG_DATA_HOME || path.join(HOME, '.local/share'), 'LiquidDesktop', 'wallpapers');
+  const WALL_EXT = /\.(png|jpe?g|webp|avif|gif|bmp)$/i;
+  h('wall:list', async () => {
+    let names = [];
+    try { names = (await fsp.readdir(WALL_DIR)).filter((n) => WALL_EXT.test(n)); } catch { return []; }
+    const out = await Promise.all(names.map(async (n) => { const p = path.join(WALL_DIR, n); const st = await fsp.stat(p).catch(() => null); return st && { path: p, name: n, added: st.mtimeMs }; }));
+    return out.filter(Boolean).sort((a, b) => b.added - a.added);
+  });
+  h('wall:add', async (paths) => {
+    await fsp.mkdir(WALL_DIR, { recursive: true });
+    const added = [];
+    for (const src of [].concat(paths).map(String)) {
+      if (!WALL_EXT.test(src)) continue;
+      // same name already there: keep both
+      const ext = path.extname(src), base = path.basename(src, ext);
+      let dest = path.join(WALL_DIR, base + ext);
+      for (let i = 2; fs.existsSync(dest); i++) dest = path.join(WALL_DIR, `${base} ${i}${ext}`);
+      await fsp.copyFile(src, dest);
+      const now = new Date(); await fsp.utimes(dest, now, now).catch(() => {});   // newest first in the library
+      added.push(dest);
+    }
+    return added;
+  });
+  h('wall:remove', async (p) => {
+    p = path.resolve(String(p));
+    if (path.dirname(p) !== WALL_DIR) throw new Error('Not in the wallpaper library');
+    await fsp.unlink(p);
+    return true;
+  });
+
   // a small JPEG of a picture (widgets, previews): never decode multi-megapixel photos in the UI
   const thumbCache = new Map();
   h('fs:thumb', async (p, size = 360) => {

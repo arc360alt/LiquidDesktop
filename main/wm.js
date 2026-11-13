@@ -196,16 +196,22 @@ class WindowManager extends EventEmitter {
   attrs(wid) { return new Promise((res) => this.X.GetWindowAttributes(wid, (e, a) => res(e ? null : a))); }
   pointer() { return new Promise((res) => this.X.QueryPointer(this.root, (e, p) => res(e ? null : p))); }
 
-  async getTitle(wid) {
+  async rawTitle(wid) {
     const n = await this.getProp(wid, '_NET_WM_NAME', this.A.UTF8_STRING);
     if (n && n.data && n.data.length) return n.data.toString('utf8');
     const o = await this.getProp(wid, 'WM_NAME');
     return o && o.data ? o.data.toString('latin1') : '';
   }
+  // Android (Waydroid) runs inside cage, a small Wayland compositor whose window is just "wlroots - X11-1":
+  // it's shown as Android, with Waydroid's icon (see main/android.js)
+  async getTitle(wid) {
+    const t = await this.rawTitle(wid);
+    return /^wlroots - X11-\d+$/.test(t) ? 'Android' : t;
+  }
   async getClass(wid) {
     const p = await this.getProp(wid, 'WM_CLASS', this.A.STRING);
-    if (!p || !p.data) return ['', ''];
-    const [inst = '', cls = ''] = p.data.toString('latin1').split('\0');
+    const [inst = '', cls = ''] = p && p.data ? p.data.toString('latin1').split('\0') : [];
+    if ((!cls || /wlroots/i.test(cls)) && /^wlroots - X11-\d+$/.test(await this.rawTitle(wid))) return ['waydroid', 'Waydroid'];
     return [inst, cls];
   }
 

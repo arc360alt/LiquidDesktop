@@ -221,7 +221,15 @@ async function startBridge() {
   });
 }
 
-async function openWindow() {
+// several opens at once (two app icons clicked quickly) share one start
+let starting = null;
+function openWindow() {
+  if (!host && starting) return starting;
+  const p = openWindowNow();
+  if (!host) { starting = p; p.finally(() => { if (starting === p) starting = null; }).catch(() => {}); }
+  return p;
+}
+async function openWindowNow() {
   if (host) {
     // already running: bring Android's home screen (its launcher) up
     if (await (sessionUp || waitForSession(5))) execFile('waydroid', ['show-full-ui'], { env: hostEnv() }, () => {});
@@ -230,6 +238,12 @@ async function openWindow() {
   if (!which('waydroid')) throw new Error('Android isn’t installed yet. Install it in Settings › Android.');
   if (exists(offFile())) throw new Error('Android is turned off. Turn it on in Settings › Android.');
   const env = userEnv();
+  // An Android session still running from before (LiquidDesktop restarted, logged out…) draws to a display that
+  // no longer exists: it plays sounds and sends notifications but can't show a single window. Start it afresh.
+  if (/Session:\s*RUNNING/i.test((await run('waydroid', ['status'], 5000)).out)) {
+    await run('waydroid', ['session', 'stop'], 20000);
+    for (let i = 0; i < 20 && /Session:\s*RUNNING/i.test((await run('waydroid', ['status'], 5000)).out); i++) await new Promise((r) => setTimeout(r, 500));
+  }
   const startup = `
 waydroid session start & S=$!
 i=0; until waydroid status 2>/dev/null | grep -q 'Session:.*RUNNING'; do sleep 1; i=$((i+1)); [ $i -ge 90 ] && break; done

@@ -49,7 +49,9 @@ async function status() {
     container: active.out.trim() === 'active', serviceEnabled: enabled.out.trim() === 'enabled',
     session: /Session:\s*RUNNING/i.test(st.out),
     window: !!host,
+    mode: host ? host.mode : null,
     multiWindow: multiWindow(),
+    bridgeError: lastBridgeError || null,
     on: !exists(offFile()),
     busy: job ? job.kind : null,
   };
@@ -172,6 +174,7 @@ async function setOn(on) {
 //  • one window: cage (a one-app Wayland compositor) shows Android's whole screen in a single window
 const BRIDGE_SOCKET = 'liquid-android';
 let host = null, sessionUp = null;   // host: the running bridge or cage process
+let lastBridgeError = '';
 const multiWindow = () => /persist\.waydroid\.multi_windows\s*=\s*true/i.test(cfg());
 
 // The bridge: built with the package (bridge/liquid-wl-bridge); from a source checkout it's built on demand
@@ -191,16 +194,27 @@ async function bridgeBinary() {
 
 async function startBridge() {
   const bin = await bridgeBinary();
-  if (!bin) return null;
+  if (!bin) { lastBridgeError = 'liquid-wl-bridge isn’t installed: update LiquidDesktop'; return null; }
   return new Promise((resolve) => {
     // a stale socket from a bridge that didn't exit cleanly would block the name
     const rt = process.env.XDG_RUNTIME_DIR || `/run/user/${process.getuid()}`;
     for (const f of [BRIDGE_SOCKET, BRIDGE_SOCKET + '.lock']) { try { fs.rmSync(path.join(rt, f), { force: true }); } catch { /* none */ } }
-    const p = spawn(bin, ['--socket', BRIDGE_SOCKET, '--no-activate'], { env: userEnv(), stdio: ['ignore', 'pipe', 'pipe'], detached: true });
+    const p = spawn(bin, ['--socket', BRIDGE_SOCKET, '--no-activate', '--crop-to-content', '--verbose'], { env: userEnv(), stdio: ['ignore', 'pipe', 'pipe'], detached: true });
+    // what Android's windows send (sizes…), for working out window-size problems: ~/.local/state/liquid-desktop/android-bridge.log
+    let log = null;
+    try {
+      const dir = path.join(process.env.XDG_STATE_HOME || path.join(HOME, '.local/state'), 'liquid-desktop');
+      fs.mkdirSync(dir, { recursive: true });
+      log = fs.createWriteStream(path.join(dir, 'android-bridge.log'));
+    } catch { /* no log */ }
     let done = false;
     const finish = (ok) => { if (!done) { done = true; resolve(ok ? p : null); } };
     p.stdout.on('data', (d) => { if (/WAYLAND_DISPLAY=/.test(String(d))) finish(true); });
-    p.stderr.on('data', (d) => console.warn('[android bridge]', String(d).trim()));
+    p.stderr.on('data', (d) => {
+      log?.write(d);
+      const err = String(d).split('\n').filter((l) => l.startsWith('liquid-wl-bridge:')).pop();
+      if (err) lastBridgeError = err.replace(/^liquid-wl-bridge:\s*/, '');
+    });
     p.on('exit', () => finish(false));
     p.on('error', () => finish(false));
     setTimeout(() => finish(false), 8000);
@@ -221,7 +235,12 @@ waydroid session start & S=$!
 i=0; until waydroid status 2>/dev/null | grep -q 'Session:.*RUNNING'; do sleep 1; i=$((i+1)); [ $i -ge 90 ] && break; done
 waydroid show-full-ui
 wait $S`;
-  let bridge = multiWindow() ? await startBridge() : null;
+  let bridge = null;
+  if (multiWindow()) {
+    bridge = await startBridge().catch((e) => { lastBridgeError = e.message; return null; });
+    // separate windows were asked for but can't work: say why, then show Android in one window instead
+    if (!bridge) broadcast('android:error', `Android apps can’t open in separate windows (${lastBridgeError || 'the window bridge didn’t start'}), so Android opens in one window.`);
+  }
   if (bridge) {
     host = bridge;
     host.mode = 'windows';
@@ -235,6 +254,7 @@ wait $S`;
   }
   const me = host;
   sessionUp = waitForSession(120);
+  if (host.mode === 'windows') sessionUp.then((up) => up && execFile('waydroid', ['prop', 'set', 'persist.waydroid.multi_windows', 'true'], { env: hostEnv() }, () => {}));
   me.on('exit', () => {
     if (host !== me) return;
     host = null; sessionUp = null;
@@ -290,7 +310,9 @@ CFG=/var/lib/waydroid/waydroid.cfg
 grep -q '^\\[properties\\]' "$CFG" || printf '\\n[properties]\\n' >> "$CFG"
 sed -i '/^persist.waydroid.multi_windows/d' "$CFG"
 sed -i '/^\\[properties\\]/a persist.waydroid.multi_windows = ${on ? 'true' : 'false'}' "$CFG"
-waydroid upgrade --offline >/dev/null 2>&1 || true`;
+waydroid upgrade --offline >/dev/null 2>&1 || true
+# Android reads its settings when its container starts
+systemctl is-enabled -q waydroid-container.service 2>/dev/null && systemctl restart waydroid-container.service || true`;
 }
 // an Android app from the launcher (Exec=waydroid app launch PKG): start Android first if needed
 async function launchApp(pkg) {

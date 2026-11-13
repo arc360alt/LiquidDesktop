@@ -4,7 +4,13 @@
 const { ipcMain } = require('electron');
 const { execFile } = require('child_process');
 
-const run = (cmd, args, timeout = 20000) => new Promise((res) => execFile(cmd, args, { timeout }, (err, out, errOut) => res({ ok: !err, out: String(out || ''), err: String(errOut || err?.message || '') })));
+const run = (cmd, args, timeout = 20000) => new Promise((res, rej) => execFile(cmd, args, { timeout }, (err, out, errOut) => {
+  // the program itself is missing: say what to install, not "spawn … ENOENT"
+  if (err?.code === 'ENOENT') return rej(new Error(cmd === 'udisksctl'
+    ? 'Opening drives needs udisks2. Install it (sudo pacman -S udisks2), or update LiquidDesktop, then try again.'
+    : `${cmd} isn’t installed.`));
+  res({ ok: !err, out: String(out || ''), err: String(errOut || err?.message || '') });
+}));
 const USER_MOUNT = /^\/(run\/media|media|mnt)\//;
 
 async function list() {

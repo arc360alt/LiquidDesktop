@@ -5,7 +5,7 @@
 // ordinary top-level X11 window (one wlroots X11-backend "output" per window, sized to it), so the X11
 // window manager frames, moves, resizes and focuses it like any other app.
 //
-//   liquid-wl-bridge [--socket NAME] [--no-activate]   prints "WAYLAND_DISPLAY=NAME" once ready
+//   liquid-wl-bridge [--socket NAME] [--no-activate] [--crop-to-content]   prints "WAYLAND_DISPLAY=NAME" once ready
 //
 // The X11 side: window title = the app's title; WM_CLASS = the app's id (Waydroid: waydroid.<package>,
 // matching the .desktop files Waydroid writes, so the Dock shows the right icon). Keyboard focus follows the
@@ -84,6 +84,8 @@ struct view {
 	xcb_window_t xwin;
 	int slot, w, h;
 	bool mapped, closing;
+	char *last_log;
+	struct wlr_box content;   // --crop-to-content: the part of the window that's shown
 	struct wl_listener map, unmap, commit, destroy, set_title, set_app_id;
 	struct wl_listener out_frame, out_request_state, out_destroy;
 };
@@ -113,6 +115,11 @@ struct decoration {
 };
 
 static struct server server;
+static bool verbose_log = false;
+// --crop-to-content (Android): Waydroid's multi-window mode makes every window as big as the whole Android
+// screen, with the app as sub-surfaces at its place on it. The window shown is just those sub-surfaces;
+// and its size is the app's to change (asking Waydroid to resize would resize the whole Android screen).
+static bool crop = false;
 
 /* ------------------------------------------------------------------ X11 side (our own connection) */
 static xcb_atom_t atom(const char *name) {
@@ -163,6 +170,16 @@ static void set_x_identity(struct view *v) {
 	memcpy(cls + n + 1, id, n + 1);
 	xcb_change_property(server.xcb, XCB_PROP_MODE_REPLACE, v->xwin, server.a_wm_class, XCB_ATOM_STRING, 8, 2 * n + 2, cls);
 	free(cls);
+	xcb_flush(server.xcb);
+}
+
+// min = max size: the window manager doesn't offer resizing (WM_NORMAL_HINTS, flags PMinSize|PMaxSize)
+static void set_fixed_size_hints(struct view *v, int w, int h) {
+	if (!v->xwin || w <= 0 || h <= 0) return;
+	uint32_t hints[18] = { 0 };
+	hints[0] = 16 | 32;
+	hints[5] = w; hints[6] = h; hints[7] = w; hints[8] = h;
+	xcb_change_property(server.xcb, XCB_PROP_MODE_REPLACE, v->xwin, XCB_ATOM_WM_NORMAL_HINTS, XCB_ATOM_WM_SIZE_HINTS, 32, 18, hints);
 	xcb_flush(server.xcb);
 }
 
@@ -232,6 +249,10 @@ static bool xcb_setup(void) {
 }
 
 /* ------------------------------------------------------------------ one X11 window (output) per Wayland window */
+static struct wlr_box shown_box(struct view *v);
+static void place(struct view *v);
+static void set_fixed_size_hints(struct view *v, int w, int h);
+
 static void resize_output(struct view *v, int w, int h) {
 	if (!v->output || w <= 0 || h <= 0 || (w == v->w && h == v->h)) return;
 	struct wlr_output_state st;
@@ -244,6 +265,7 @@ static void resize_output(struct view *v, int w, int h) {
 static void out_frame(struct wl_listener *l, void *data) {
 	struct view *v = wl_container_of(l, v, out_frame);
 	if (!v->scene_output) return;
+	if (crop && v->mapped) place(v);
 	wlr_scene_output_commit(v->scene_output, NULL);
 	struct timespec now;
 	clock_gettime(CLOCK_MONOTONIC, &now);
@@ -255,6 +277,12 @@ static void out_request_state(struct wl_listener *l, void *data) {
 	struct view *v = wl_container_of(l, v, out_request_state);
 	const struct wlr_output_event_request_state *ev = data;
 	wlr_output_commit_state(v->output, ev->state);
+	if (crop) {   // the app's size isn't ours to change: back to it
+		int w = v->content.width, h = v->content.height;
+		v->w = v->output->width; v->h = v->output->height;
+		if (w > 0 && h > 0) resize_output(v, w, h);
+		return;
+	}
 	if (v->output->width != v->w || v->output->height != v->h) {
 		v->w = v->output->width; v->h = v->output->height;
 		wlr_xdg_toplevel_set_size(v->toplevel, v->w, v->h);
@@ -277,8 +305,8 @@ static void out_destroy(struct wl_listener *l, void *data) {
 
 static void create_window(struct view *v) {
 	struct server *s = v->server;
-	struct wlr_box *g = &v->toplevel->base->geometry;
-	int w = g->width > 0 ? g->width : DEFAULT_W, h = g->height > 0 ? g->height : DEFAULT_H;
+	struct wlr_box b = shown_box(v);
+	int w = b.width > 0 ? b.width : DEFAULT_W, h = b.height > 0 ? b.height : DEFAULT_H;
 	v->output = wlr_x11_output_create(s->backend);
 	if (!v->output) return;
 	wlr_output_init_render(v->output, s->allocator, s->renderer);
@@ -313,9 +341,36 @@ static void create_window(struct view *v) {
 }
 
 /* ------------------------------------------------------------------ Wayland windows */
+// the part of the window to show, in the toplevel surface's coordinates
+static struct wlr_box shown_box(struct view *v) {
+	struct wlr_box g = v->toplevel->base->geometry;
+	if (!crop) return g;
+	struct wlr_surface *srf = v->toplevel->base->surface;
+	int x1 = 0, y1 = 0, x2 = 0, y2 = 0;
+	bool any = false;
+	struct wlr_subsurface *sub;
+	struct wl_list *lists[2] = { &srf->current.subsurfaces_above, &srf->current.subsurfaces_below };
+	for (int i = 0; i < 2; i++) wl_list_for_each(sub, lists[i], current.link) {
+		struct wlr_surface *ss = sub->surface;
+		if (!ss->mapped || ss->current.width < 2 || ss->current.height < 2) continue;
+		int ax = sub->current.x, ay = sub->current.y, bx = ax + ss->current.width, by = ay + ss->current.height;
+		// a layer covering the whole Android screen is a background, not the app
+		if (ss->current.width >= g.width && ss->current.height >= g.height) continue;
+		if (!any) { x1 = ax; y1 = ay; x2 = bx; y2 = by; any = true; }
+		else { if (ax < x1) x1 = ax; if (ay < y1) y1 = ay; if (bx > x2) x2 = bx; if (by > y2) y2 = by; }
+	}
+	if (!any) return g;
+	return (struct wlr_box){ .x = x1, .y = y1, .width = x2 - x1, .height = y2 - y1 };
+}
+
 static void place(struct view *v) {
-	struct wlr_box *g = &v->toplevel->base->geometry;
-	wlr_scene_node_set_position(&v->tree->node, v->slot * SLOT_SPACING - g->x, -g->y);
+	struct wlr_box b = shown_box(v);
+	wlr_scene_node_set_position(&v->tree->node, v->slot * SLOT_SPACING - b.x, -b.y);
+	if (crop && v->mapped && v->output && (b.width != v->content.width || b.height != v->content.height || b.x != v->content.x || b.y != v->content.y)) {
+		v->content = b;
+		resize_output(v, b.width, b.height);
+		set_fixed_size_hints(v, b.width, b.height);
+	}
 }
 
 static void view_map(struct wl_listener *l, void *data) {
@@ -343,9 +398,22 @@ static void view_commit(struct wl_listener *l, void *data) {
 		return;
 	}
 	if (!v->mapped) return;
+	// --verbose: what the app sends (sizes, sub-surfaces), whenever it changes, to work out how to frame it
+	if (verbose_log) {
+		struct wlr_surface *srf = xs->surface;
+		char line[512];
+		int n = snprintf(line, sizeof line, "%s: buffer %dx%d geometry %d,%d %dx%d", v->toplevel->app_id ? v->toplevel->app_id : "?",
+			srf->current.width, srf->current.height, xs->geometry.x, xs->geometry.y, xs->geometry.width, xs->geometry.height);
+		struct wlr_subsurface *sub;
+		wl_list_for_each(sub, &srf->current.subsurfaces_above, current.link)
+			if (n < (int)sizeof line - 40) n += snprintf(line + n, sizeof line - n, " | sub %d,%d %dx%d", sub->current.x, sub->current.y, sub->surface->current.width, sub->surface->current.height);
+		wl_list_for_each(sub, &srf->current.subsurfaces_below, current.link)
+			if (n < (int)sizeof line - 40) n += snprintf(line + n, sizeof line - n, " | below %d,%d %dx%d", sub->current.x, sub->current.y, sub->surface->current.width, sub->surface->current.height);
+		if (!v->last_log || strcmp(v->last_log, line) != 0) { fprintf(stderr, "%s\n", line); free(v->last_log); v->last_log = strdup(line); }
+	}
 	place(v);
 	// the app changed its size itself: the X11 window follows
-	resize_output(v, xs->geometry.width, xs->geometry.height);
+	if (!crop) resize_output(v, xs->geometry.width, xs->geometry.height);
 }
 
 static void view_destroy(struct wl_listener *l, void *data) {
@@ -359,6 +427,7 @@ static void view_destroy(struct wl_listener *l, void *data) {
 	wl_list_remove(&v->set_title.link);
 	wl_list_remove(&v->set_app_id.link);
 	wl_list_remove(&v->link);
+	free(v->last_log);
 	free(v);
 }
 
@@ -593,15 +662,16 @@ static int on_signal_quit(int sig, void *data) { wl_display_terminate(server.dis
 
 int main(int argc, char **argv) {
 	const char *socket_name = NULL;
-	static struct option opts[] = { { "socket", required_argument, 0, 's' }, { "verbose", no_argument, 0, 'v' }, { "no-activate", no_argument, 0, 'n' }, { 0, 0, 0, 0 } };
-	int c, verbose = 0;
-	while ((c = getopt_long(argc, argv, "s:vn", opts, NULL)) != -1) {
+	static struct option opts[] = { { "socket", required_argument, 0, 's' }, { "verbose", no_argument, 0, 'v' }, { "no-activate", no_argument, 0, 'n' }, { "crop-to-content", no_argument, 0, 'c' }, { 0, 0, 0, 0 } };
+	int c;
+	while ((c = getopt_long(argc, argv, "s:vnc", opts, NULL)) != -1) {
 		if (c == 's') socket_name = optarg;
 		else if (c == 'n') no_activate = true;
-		else if (c == 'v') verbose = 1;
-		else { fprintf(stderr, "usage: %s [--socket NAME] [--no-activate] [--verbose]\n", argv[0]); return 2; }
+		else if (c == 'c') crop = true;
+		else if (c == 'v') verbose_log = true;   // wlroots' own debug output: set WLR_DEBUG=1
+		else { fprintf(stderr, "usage: %s [--socket NAME] [--no-activate] [--crop-to-content] [--verbose]\n", argv[0]); return 2; }
 	}
-	wlr_log_init(verbose ? WLR_DEBUG : WLR_ERROR, NULL);
+	wlr_log_init(getenv("WLR_DEBUG") ? WLR_DEBUG : WLR_ERROR, NULL);
 	if (!getenv("DISPLAY")) { fprintf(stderr, "liquid-wl-bridge: needs an X11 display ($DISPLAY)\n"); return 1; }
 
 	wl_list_init(&server.views);

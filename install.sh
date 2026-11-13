@@ -107,7 +107,7 @@ install_arch() {
   fi
   if [ -z "$MINIMAL" ]; then
     say "Installing Control Center helpers…"
-    run sudo pacman -S --needed --noconfirm --asdeps networkmanager wireplumber brightnessctl bluez-utils playerctl upower xorg-xwayland mesa-utils flatpak pacman-contrib archlinux-appstream-data xorg-xinput kvantum sassc || true
+    run sudo pacman -S --needed --noconfirm --asdeps networkmanager wireplumber brightnessctl bluez-utils playerctl upower xorg-xwayland mesa-utils flatpak pacman-contrib archlinux-appstream-data xorg-xinput kvantum sassc udisks2 || true
   fi
   BIN=/usr/bin
 }
@@ -122,17 +122,17 @@ install_generic() {
         libnss3 libgtk-3-0 libgbm1 libxss1 libxtst6 libatk-bridge2.0-0 libdrm2
       # the ALSA library was renamed on newer Ubuntu/Debian
       run sudo apt-get install -y libasound2t64 2>/dev/null || run sudo apt-get install -y libasound2
-      [ -z "$MINIMAL" ] && { run sudo apt-get install -y network-manager wireplumber brightnessctl bluez playerctl upower mesa-utils flatpak || true; }
+      [ -z "$MINIMAL" ] && { run sudo apt-get install -y network-manager wireplumber brightnessctl bluez playerctl upower mesa-utils flatpak udisks2 || true; }
       ;;
     fedora)
       say "Installing dependencies with dnf…"
       run sudo dnf install -y git nodejs npm picom python3 xdg-utils xorg-x11-server-Xorg xrdb xsettingsd nss gtk3 mesa-libgbm alsa-lib libXScrnSaver libXtst
-      [ -z "$MINIMAL" ] && { run sudo dnf install -y NetworkManager wireplumber brightnessctl bluez playerctl upower glx-utils flatpak || true; }
+      [ -z "$MINIMAL" ] && { run sudo dnf install -y NetworkManager wireplumber brightnessctl bluez playerctl upower glx-utils flatpak udisks2 || true; }
       ;;
     suse)
       say "Installing dependencies with zypper…"
       run sudo zypper --non-interactive install git nodejs npm picom python3 xdg-utils xorg-x11-server mozilla-nss gtk3-tools libgtk-3-0 libgbm1 alsa
-      [ -z "$MINIMAL" ] && { run sudo zypper --non-interactive install NetworkManager wireplumber brightnessctl bluez playerctl upower Mesa-demo-x flatpak || true; }
+      [ -z "$MINIMAL" ] && { run sudo zypper --non-interactive install NetworkManager wireplumber brightnessctl bluez playerctl upower Mesa-demo-x flatpak udisks2 || true; }
       ;;
   esac
   fetch

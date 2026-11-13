@@ -123,6 +123,25 @@ function register() {
   const s = ses();
   // look like Chrome to websites (Electron's user agent makes some sites refuse to work)
   s.setUserAgent(s.getUserAgent().replace(/\s(Electron|liquid-desktop|LiquidDesktop)\/\S+/gi, ''));
+  // Google's sign-in refuses Chromium-based browsers it doesn't recognise ("This browser may not be secure"),
+  // but allows Firefox: on its sign-in pages only, the browser introduces itself as Firefox — in the request
+  // headers (without Chromium's client hints) and to the page's scripts
+  const FIREFOX_UA = 'Mozilla/5.0 (X11; Linux x86_64; rv:140.0) Gecko/20100101 Firefox/140.0';
+  const CHROME_UA = s.getUserAgent();
+  const signIn = (u) => { try { return new URL(u).hostname === 'accounts.google.com'; } catch { return false; } };
+  s.webRequest.onBeforeSendHeaders({ urls: ['https://accounts.google.com/*'] }, (d, cb) => {
+    const headers = { ...d.requestHeaders, 'User-Agent': FIREFOX_UA };
+    for (const k of Object.keys(headers)) if (/^sec-ch-ua/i.test(k)) delete headers[k];
+    cb({ requestHeaders: headers });
+  });
+  app.on('web-contents-created', (_e, wc) => {
+    if (wc.session !== s) return;
+    wc.on('did-start-navigation', (d) => {
+      if (!d.isMainFrame) return;
+      const ua = signIn(d.url) ? FIREFOX_UA : CHROME_UA;
+      if (wc.getUserAgent() !== ua) wc.setUserAgent(ua);
+    });
+  });
   s.setPermissionRequestHandler((_wc, perm, cb) => cb(['fullscreen', 'clipboard-sanitized-write', 'notifications', 'pointerLock', 'clipboard-read'].includes(perm)));
   // fill gaps in Electron's extension APIs inside extension service workers (see ext-sw-preload.js)
   try {

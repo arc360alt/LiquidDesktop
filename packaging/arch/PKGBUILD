@@ -34,6 +34,7 @@ depends=(
   'kvantum'             # Qt apps in the MacTahoe theme (Settings › Appearance › App Themes)
   'sassc'               # builds MacTahoe's GTK 4 / libadwaita version
   'wlroots0.20'         # liquid-wl-bridge: Android (Waydroid) apps as their own windows
+  'udisks2'             # USB drives in Files: opening (mounting) and ejecting
 )
 optdepends=(
   'networkmanager: Wi-Fi status, network list and joining (nmcli)'

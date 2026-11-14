@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <title>LiquidDesktop Login</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/cursors.css">
+  <link rel="stylesheet" href="css/greeter.css">
+</head>
+<body class="greeter">
+  <div id="g-wall"></div>
+  <main id="g">
+    <div class="g-clock"><div class="g-date"></div><div class="g-time"></div></div>
+    <div class="g-login">
+      <div class="g-people"></div>
+      <div class="g-avatar"></div>
+      <div class="g-name"></div>
+      <form class="g-field glass">
+        <input class="g-user" placeholder="Name" autocomplete="off" spellcheck="false" hidden>
+        <input class="g-pass" type="password" placeholder="Enter Password" autocomplete="off">
+        <button class="g-go" type="submit" aria-label="Log in"></button>
+      </form>
+      <div class="g-msg"></div>
+    </div>
+    <div class="g-bottom">
+      <button class="g-session glass"></button>
+      <div class="g-power"></div>
+    </div>
+  </main>
+  <!-- what's left on screen while the desktop starts: the same black + logo as the desktop's boot screen -->
+  <div id="g-bye"><div class="g-bye-logo"></div><div class="g-bye-bar"></div></div>
+  <script type="module" src="js/greeter.js"></script>
+</body>
+</html>

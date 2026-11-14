@@ -1,0 +1,106 @@
+/* Leaflet renders only the map itself — every piece of UI chrome (controls,
+   popups, menus, scrubber) is native SwiftUI Liquid Glass layered on top. */
+
+:root { color-scheme: light dark; }
+
+html, body, #map {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  -webkit-user-select: none;
+  user-select: none;
+  cursor: default;
+}
+
+body { background: #dfe5ec; }
+body.theme-dark { background: #0d1015; }
+
+.leaflet-container {
+  background: transparent;
+  font: 11px -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+  outline: none;
+}
+
+.leaflet-grab { cursor: grab; }
+.leaflet-dragging .leaflet-grab { cursor: grabbing; }
+.leaflet-container.aqi-mode { cursor: crosshair; }
+
+/* Dark mode for the OpenStreetMap "Streets" base map — invert the light tiles. */
+body.theme-dark .basemap-invert {
+  filter: invert(1) hue-rotate(180deg) brightness(0.92) contrast(0.88) saturate(0.6);
+}
+
+/* GPU-composited radar frames with a short crossfade between frames. */
+.leaflet-radar-pane { will-change: transform; }
+.radar-frame {
+  will-change: opacity;
+  transition: opacity 160ms linear;
+}
+.radar-frame img.leaflet-tile { image-rendering: auto; }
+
+.leaflet-labels-pane { pointer-events: none; }
+.leaflet-labels-pane .leaflet-tile { opacity: 0.95; }
+
+.aqi-canvas-overlay {
+  transition: opacity 300ms ease;
+  image-rendering: auto;
+}
+
+/* Location marker: soft pulsing dot. */
+.sv-pin {
+  position: relative;
+  width: 22px;
+  height: 22px;
+}
+.sv-pin-dot {
+  position: absolute;
+  inset: 4px;
+  border-radius: 50%;
+  background: var(--sv-accent, #4f8ef5);
+  border: 2.5px solid #fff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+.sv-pin-pulse {
+  position: absolute;
+  inset: -10px;
+  border-radius: 50%;
+  background: var(--sv-accent, #4f8ef5);
+  opacity: 0.25;
+  animation: sv-pulse 2.4s ease-out infinite;
+}
+@keyframes sv-pulse {
+  0% { transform: scale(0.35); opacity: 0.45; }
+  100% { transform: scale(1.2); opacity: 0; }
+}
+
+/* Context-menu crosshair marker. */
+.sv-ctx-mark {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  background: rgba(0, 0, 0, 0.25);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.3);
+}
+
+/* Compact attribution, tucked in the corner. */
+.leaflet-control-attribution {
+  background: rgba(255, 255, 255, 0.55) !important;
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  border-radius: 8px 0 0 0;
+  padding: 1px 6px !important;
+  font-size: 9.5px;
+  color: #333;
+}
+body.theme-dark .leaflet-control-attribution {
+  background: rgba(20, 22, 28, 0.55) !important;
+  color: #aab;
+}
+.leaflet-control-attribution a { color: inherit; }
+.leaflet-control-attribution .leaflet-attribution-flag { display: none !important; }
+
+/* Alert polygons: smooth hover emphasis. */
+path.sv-alert { transition: fill-opacity 120ms ease, stroke-width 120ms ease; cursor: pointer; }

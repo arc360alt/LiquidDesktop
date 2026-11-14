@@ -1,0 +1,293 @@
+/* ==========================================================================
+   LiquidDesktop — design tokens, Liquid Glass material, shared controls
+   ========================================================================== */
+@font-face {
+  font-family: 'Inter Variable';
+  font-style: normal;
+  font-display: block;
+  font-weight: 100 900;
+  src: url('../../node_modules/@fontsource-variable/inter/files/inter-latin-wght-normal.woff2') format('woff2-variations');
+}
+@font-face {
+  font-family: 'Inter Variable';
+  font-style: normal;
+  font-weight: 100 900;
+  src: url('../../node_modules/@fontsource-variable/inter/files/inter-latin-ext-wght-normal.woff2') format('woff2-variations');
+  unicode-range: U+0100-02AF, U+0304, U+0308, U+0329, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+:root {
+  --font: 'Inter Variable', -apple-system, 'SF Pro Text', system-ui, 'Noto Sans', sans-serif;
+  --mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', 'DejaVu Sans Mono', ui-monospace, monospace;
+  --accent: #0a84ff;
+  --accent-rgb: 10, 132, 255;
+  --accent-text: #fff;
+
+  --text: rgba(0, 0, 0, 0.86);
+  --text-2: rgba(0, 0, 0, 0.55);
+  --text-3: rgba(0, 0, 0, 0.32);
+  --on-glass: rgba(0, 0, 0, 0.88);
+  --on-glass-2: rgba(0, 0, 0, 0.55);
+
+  /* the glass material */
+  --glass-rgb: 255, 255, 255;
+  --glass-a: 0.26;
+  --glass-blur: 24px;
+  --glass-sat: 1.9;
+  --glass-rim: rgba(255, 255, 255, 0.75);
+  --glass-rim-2: rgba(255, 255, 255, 0.28);
+  --glass-shadow: 0 10px 40px rgba(0, 0, 0, 0.16), 0 1px 3px rgba(0, 0, 0, 0.08);
+  --glass-hi: rgba(255, 255, 255, 0.55);
+
+  /* thicker glass for menus / panels that carry text */
+  --panel-a: 0.56;
+
+  --win-bg: #f6f6f8;
+  --win-rgb: 246, 246, 248;
+  --win-alpha: 0.74;
+  --win-content: rgba(255, 255, 255, 0.9);
+  --win-shadow: 0 34px 90px rgba(0, 0, 0, 0.32), 0 6px 18px rgba(0, 0, 0, 0.12), 0 0 0 0.5px rgba(0, 0, 0, 0.2);
+  --win-shadow-inactive: 0 18px 50px rgba(0, 0, 0, 0.18), 0 0 0 0.5px rgba(0, 0, 0, 0.14);
+  --sidebar-rgb: 255, 255, 255;
+  --sidebar-a: 0.55;
+  --separator: rgba(0, 0, 0, 0.09);
+  --hover: rgba(0, 0, 0, 0.055);
+  --press: rgba(0, 0, 0, 0.1);
+  --field: rgba(0, 0, 0, 0.05);
+  --group: #ffffff;
+  --group-border: rgba(0, 0, 0, 0.06);
+  --control: rgba(255, 255, 255, 0.85);
+  --toggle-off: rgba(0, 0, 0, 0.12);
+  --radius-win: 24px;
+  --menubar-h: 30px;
+  --ease: cubic-bezier(0.32, 0.72, 0, 1);
+  --spring: cubic-bezier(0.34, 1.36, 0.64, 1);
+  color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+  --text: rgba(255, 255, 255, 0.9);
+  --text-2: rgba(255, 255, 255, 0.55);
+  --text-3: rgba(255, 255, 255, 0.3);
+  --on-glass: rgba(255, 255, 255, 0.94);
+  --on-glass-2: rgba(255, 255, 255, 0.6);
+  --glass-rgb: 28, 28, 32;
+  --glass-a: 0.34;
+  --glass-rim: rgba(255, 255, 255, 0.38);
+  --glass-rim-2: rgba(255, 255, 255, 0.1);
+  --glass-hi: rgba(255, 255, 255, 0.18);
+  --glass-shadow: 0 10px 40px rgba(0, 0, 0, 0.4), 0 1px 3px rgba(0, 0, 0, 0.3);
+  --panel-a: 0.62;
+  --win-bg: #232326;
+  --win-rgb: 35, 35, 38;
+  --win-alpha: 0.72;
+  --win-content: rgba(28, 28, 31, 0.9);
+  --win-shadow: 0 34px 90px rgba(0, 0, 0, 0.6), 0 6px 18px rgba(0, 0, 0, 0.3), 0 0 0 0.5px rgba(255, 255, 255, 0.16);
+  --win-shadow-inactive: 0 18px 50px rgba(0, 0, 0, 0.4), 0 0 0 0.5px rgba(255, 255, 255, 0.1);
+  --sidebar-rgb: 60, 60, 66;
+  --sidebar-a: 0.45;
+  --separator: rgba(255, 255, 255, 0.09);
+  --hover: rgba(255, 255, 255, 0.07);
+  --press: rgba(255, 255, 255, 0.13);
+  --field: rgba(255, 255, 255, 0.07);
+  --group: rgba(255, 255, 255, 0.05);
+  --group-border: rgba(255, 255, 255, 0.06);
+  --control: rgba(255, 255, 255, 0.16);
+  --toggle-off: rgba(255, 255, 255, 0.16);
+  color-scheme: dark;
+}
+
+/* "Tinted" glass (Settings › Appearance) — frostier, more legible */
+:root[data-glass='tinted'] { --glass-a: 0.55; --panel-a: 0.75; --glass-blur: 34px; }
+:root[data-theme='dark'][data-glass='tinted'] { --glass-a: 0.55; --panel-a: 0.75; }
+:root[data-reduce-transparency='true'] { --glass-a: 0.92; --panel-a: 0.95; --sidebar-a: 0.95; --win-alpha: 1; }
+/* No GPU (software rendering, main/main.js): there's no real blur (picom's xrender backend can't, and CSS blur on the
+   CPU is very slow), so glass is drawn mostly solid instead of see-through: same colours and shapes, no blur. */
+:root[data-render='software'] { --glass-a: 0.9; --panel-a: 0.94; --sidebar-a: 0.94; --win-alpha: 1; --glass-blur: 0px; }
+:root[data-render='software'] *, :root[data-render='software'] *::before, :root[data-render='software'] *::after { -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }
+:root[data-render='software'][data-layer='shell'] #menubar { background: rgba(var(--glass-rgb), 0.86); }
+
+* { box-sizing: border-box; }
+html, body {
+  margin: 0; width: 100%; height: 100%; overflow: hidden;
+  font-family: var(--font); font-size: 13px; color: var(--text);
+  -webkit-font-smoothing: antialiased; user-select: none; cursor: var(--cur-default, default);
+  font-feature-settings: 'cv11', 'ss01', 'ss03';
+  background: #000;
+}
+button, input, textarea, select { font: inherit; color: inherit; }
+button { cursor: var(--cur-default, default); }
+input, textarea, [contenteditable] { user-select: text; }
+::selection { background: rgba(var(--accent-rgb), 0.35); }
+img { -webkit-user-drag: none; }
+[hidden] { display: none !important; }
+
+::-webkit-scrollbar { width: 11px; height: 11px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(128, 128, 128, 0.45); border-radius: 10px; border: 3px solid transparent; background-clip: content-box; }
+::-webkit-scrollbar-thumb:hover { background: rgba(128, 128, 128, 0.7); border: 3px solid transparent; background-clip: content-box; }
+::-webkit-scrollbar-corner { background: transparent; }
+
+/* ---------------------------------------------------------------- Liquid Glass */
+.glass {
+  position: relative;
+  background: rgba(var(--glass-rgb), var(--glass-a));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  box-shadow: var(--glass-shadow), inset 0 0.5px 0 var(--glass-hi);
+  isolation: isolate;
+}
+.glass.panel { background: rgba(var(--glass-rgb), var(--panel-a)); }
+/* the rim: a bright specular edge that is strongest top-left and bottom-right, like light through a lens */
+.glass::before {
+  content: ''; position: absolute; inset: 0; border-radius: inherit; padding: 1px; pointer-events: none; z-index: 5;
+  background:
+    linear-gradient(135deg, var(--glass-rim) 0%, var(--glass-rim-2) 22%, transparent 45%, transparent 60%, var(--glass-rim-2) 82%, var(--glass-rim) 100%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor; mask-composite: exclude;
+}
+/* inner sheen: a soft highlight that sits on the top of the material */
+.glass.sheen::after {
+  content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; z-index: -1;
+  background: radial-gradient(120% 70% at 30% 0%, rgba(255, 255, 255, 0.22), transparent 60%);
+}
+:root[data-theme='dark'] .glass.sheen::after { background: radial-gradient(120% 70% at 30% 0%, rgba(255, 255, 255, 0.08), transparent 60%); }
+
+/* real refraction: the backdrop is displaced at the edges through an SVG lens (Chromium only) */
+:root[data-refraction='true'] .glass.lens {
+  -webkit-backdrop-filter: url(#lg-lens) blur(var(--glass-blur)) saturate(var(--glass-sat));
+  backdrop-filter: url(#lg-lens) blur(var(--glass-blur)) saturate(var(--glass-sat));
+}
+:root[data-refraction='true'] .glass.lens-soft {
+  backdrop-filter: url(#lg-lens-soft) blur(calc(var(--glass-blur) * 0.6)) saturate(var(--glass-sat));
+}
+
+/* ---------------------------------------------------------------- controls */
+.btn {
+  height: 28px; padding: 0 14px; border-radius: 999px; border: 0; outline: 0;
+  background: var(--control); color: var(--text); font-weight: 500;
+  box-shadow: 0 0.5px 1.5px rgba(0, 0, 0, 0.18), inset 0 0.5px 0 rgba(255, 255, 255, 0.5);
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px; white-space: nowrap;
+  transition: transform 0.15s var(--spring), background 0.15s;
+}
+.btn:active { transform: scale(0.96); filter: brightness(0.95); }
+.btn.primary { background: var(--accent); color: var(--accent-text); }
+.btn.danger { background: #ff3b30; color: #fff; }
+.btn.plain { background: transparent; box-shadow: none; }
+.btn.plain:hover { background: var(--hover); }
+.btn:disabled { opacity: 0.45; pointer-events: none; }
+.btn.lg { height: 34px; padding: 0 20px; font-size: 13.5px; }
+
+/* toolbar capsule groups — the floating glass pills of macOS 26 toolbars */
+.tb-group {
+  display: inline-flex; align-items: center; height: 34px; padding: 0 3px; border-radius: 999px; gap: 1px;
+  background: rgba(var(--glass-rgb), 0.55); position: relative;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08), 0 0 0 0.5px rgba(0, 0, 0, 0.08), inset 0 0.5px 0 rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(14px) saturate(1.8);
+}
+:root[data-theme='dark'] .tb-group { background: rgba(70, 70, 76, 0.55); box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2), 0 0 0 0.5px rgba(255, 255, 255, 0.1), inset 0 0.5px 0 rgba(255, 255, 255, 0.15); }
+.tb-btn {
+  width: 32px; height: 28px; border-radius: 999px; border: 0; background: transparent; color: var(--text);
+  display: inline-flex; align-items: center; justify-content: center; opacity: 0.85;
+}
+.tb-btn:hover { background: var(--hover); opacity: 1; }
+.tb-btn:active { background: var(--press); }
+.tb-btn.on { color: var(--accent); opacity: 1; }
+.tb-btn:disabled { opacity: 0.3; }
+.tb-btn svg { width: 17px; height: 17px; }
+
+.field {
+  height: 30px; border-radius: 999px; border: 0; outline: 0; padding: 0 12px;
+  background: var(--field); color: var(--text);
+  box-shadow: inset 0 0 0 0.5px var(--separator);
+  transition: box-shadow 0.2s;
+}
+.field:focus { box-shadow: 0 0 0 3.5px rgba(var(--accent-rgb), 0.35), inset 0 0 0 0.5px rgba(var(--accent-rgb), 0.6); }
+.field.square { border-radius: 8px; }
+.search-field { position: relative; display: inline-flex; align-items: center; }
+.search-field svg { position: absolute; left: 10px; width: 14px; height: 14px; opacity: 0.5; pointer-events: none; }
+.search-field input { padding-left: 30px; width: 100%; }
+
+/* toggle switch */
+.toggle { position: relative; width: 38px; height: 22px; flex: none; display: inline-block; }
+.toggle input { display: none; }
+.toggle span {
+  position: absolute; inset: 0; border-radius: 999px; background: var(--toggle-off); transition: background 0.25s;
+}
+.toggle span::after {
+  content: ''; position: absolute; top: 2px; left: 2px; width: 26px; height: 18px; border-radius: 999px; background: #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25); transition: transform 0.3s var(--spring), width 0.15s;
+}
+.toggle input:checked + span { background: #34c759; }
+.toggle:active span::after { width: 30px; }
+.toggle input:checked + span::after { transform: translateX(10px); }
+.toggle:active input:checked + span::after { transform: translateX(6px); }
+
+/* slider: a thick glass track with a lozenge thumb (macOS 26 style) */
+.slider { -webkit-appearance: none; appearance: none; width: 100%; height: 22px; background: transparent; outline: none; --v: 50%; }
+.slider::-webkit-slider-runnable-track {
+  height: 6px; border-radius: 999px;
+  background: linear-gradient(to right, var(--accent) var(--v), var(--toggle-off) var(--v));
+}
+.slider::-webkit-slider-thumb {
+  -webkit-appearance: none; width: 34px; height: 22px; margin-top: -8px; border-radius: 999px; background: #fff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25), 0 0 0 0.5px rgba(0, 0, 0, 0.08); transition: transform 0.2s var(--spring);
+}
+.slider:active::-webkit-slider-thumb, .slider.dragging::-webkit-slider-thumb {
+  transform: scale(1.35, 1.55); background: rgba(255, 255, 255, 0.22);
+  -webkit-backdrop-filter: blur(1.5px) saturate(2) brightness(1.15); backdrop-filter: blur(1.5px) saturate(2) brightness(1.15);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.9), inset 0 1px 2px rgba(255, 255, 255, 0.8), 0 4px 14px rgba(0, 0, 0, 0.22);
+}
+
+/* segmented control */
+.segmented { display: inline-flex; padding: 2px; border-radius: 999px; background: var(--field); gap: 2px; box-shadow: inset 0 0 0 0.5px var(--separator); }
+.segmented button { border: 0; background: transparent; height: 24px; padding: 0 12px; border-radius: 999px; font-weight: 500; color: var(--text-2); }
+.segmented button.on { background: var(--control); color: var(--text); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15); }
+:root[data-theme='dark'] .segmented button.on { background: rgba(255, 255, 255, 0.2); }
+
+select.field { padding-right: 26px; -webkit-appearance: none; appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'%3E%3Cpath d='M2 3.5l3 3 3-3' stroke='%23888' stroke-width='1.6' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 10px center; }
+
+/* settings-style inset grouped list */
+.group { background: var(--group); border-radius: 14px; box-shadow: 0 0 0 0.5px var(--group-border), 0 1px 2px rgba(0, 0, 0, 0.03); overflow: hidden; }
+.group + .group, .group-title + .group { margin-top: 6px; }
+.group-title { font-size: 12px; font-weight: 600; color: var(--text-2); margin: 20px 10px 6px; }
+.row { display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 8px 14px; position: relative; }
+.row + .row::before { content: ''; position: absolute; top: 0; left: 14px; right: 14px; height: 0.5px; background: var(--separator); }
+.row .label { flex: 1; min-width: 0; }
+.row .label small { display: block; color: var(--text-2); font-size: 11.5px; margin-top: 2px; }
+.row.link:hover { background: var(--hover); }
+
+.kbd { font-family: var(--font); font-size: 11px; padding: 2px 6px; border-radius: 5px; background: var(--field); color: var(--text-2); box-shadow: inset 0 -1px 0 var(--separator); }
+.muted { color: var(--text-2); }
+.spacer { flex: 1; }
+.ellipsis { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sym { width: 16px; height: 16px; flex: none; }
+
+/* ---------------------------------------------------------------- session layers */
+:root[data-layer='shell'], :root[data-layer='shell'] body, :root[data-layer='app'], :root[data-layer='app'] body { background: transparent; }
+:root[data-layer='shell'] :is(#wallpaper, #wallpaper-next, #widget-layer, #desk-icons, #spaces, #night-shift) { display: none; }
+:root[data-layer='desktop'] :is(#menubar, #dock-wrap, #toasts) { display: none; }
+:root[data-layer='app'] :is(#wallpaper, #wallpaper-next, #widget-layer, #desk-icons, #menubar, #dock-wrap, #toasts, #night-shift, #boot) { display: none; }
+/* app windows are real windows: the compositor (picom) rounds their corners and draws their shadows */
+:root[data-layer='app'] { --radius-win: 22px; }
+:root[data-layer='app'] .win, :root[data-layer='app'] .win.focused { box-shadow: none; animation: none; }
+/* the menu bar sits over app windows too, so give it a light frosted material */
+:root[data-layer='shell'] #menubar { background: rgba(var(--glass-rgb), 0.14); }
+:root[data-layer='shell'] #menubar.solid { background: rgba(var(--glass-rgb), 0.5); }
+/* in a session the compositor blurs behind the shell's glass; a CSS blur there would only cost frames */
+:root[data-layer='shell'] .glass, :root[data-layer='shell'] .glass.lens, :root[data-layer='shell'] .tb-group,
+:root[data-layer='shell'] #launchpad, :root[data-layer='shell'] #mission, :root[data-layer='shell'] .snap-preview { -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }
+/* menus open over other shell glass (the Apps launcher, Spotlight…), which picom's blur underneath can't see:
+   they blur what's behind them inside the shell themselves (cheap: menus are small and short-lived) */
+:root[data-layer='shell'] .menu.glass { -webkit-backdrop-filter: blur(28px) saturate(1.8) !important; backdrop-filter: blur(28px) saturate(1.8) !important; }
+
+/* the lock screen draws its own wallpaper, so its glass can blur in-page even in a session */
+#lock .pw, #lock .l-actions button { background: rgba(255, 255, 255, 0.2); }
+:root #lock .glass, :root[data-layer='shell'] #lock .glass {
+  -webkit-backdrop-filter: blur(22px) saturate(1.7) !important; backdrop-filter: blur(22px) saturate(1.7) !important;
+}
+
+/* native dropdown lists (only seen if the glass menu can't open) follow the theme */
+select option, select optgroup { background: var(--win-bg); color: var(--text); }

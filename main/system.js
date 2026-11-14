@@ -368,6 +368,9 @@ async function renderingInfo() {
     renderer, rendererSoftware: renderer ? /llvmpipe|softpipe|swrast|software/i.test(renderer) : null,
     systemSoftware: /^\s*(export\s+)?(LIQUID_SOFTWARE_RENDERING|LIBGL_ALWAYS_SOFTWARE)\s*=\s*"?1"?/m.test(env),
     lumenGraphics: fs.existsSync('/usr/bin/lumen-graphics'),
+    // for Settings › Developer › Performance: the screens' refresh rates and how the compositor was started
+    refresh: (() => { try { return require('electron').screen.getAllDisplays().map((d) => Math.round(d.displayFrequency || 0)); } catch { return []; } })(),
+    picomArgs: process.env.LIQUID_PICOM_ARGS || '',
   };
 }
 function setRendering(choice) {

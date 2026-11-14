@@ -444,6 +444,21 @@ const render = {
         row('Now using', h('span.muted', { style: { textAlign: 'right' }, title: r.renderer || '' }, `${now}${r.renderer ? ' · ' + r.renderer.replace(/\s*\(.*\)\s*$/, '') : ''}`),
           pending ? `Your choice takes effect at your next login.` : r.rendererSoftware && !r.software ? 'OpenGL is software (llvmpipe), but LiquidDesktop isn’t in software mode.' : null),
         r.lumenGraphics ? row('System-wide setting', h('code.dev-cmd', 'sudo lumen-graphics auto|hardware|software'), 'Lumen’s setting for every user, in /etc/environment. The choice above overrides it for you.') : null));
+    // Performance: how fast the UI actually draws, next to what the screen can show
+    const fps = h('span.muted', '…');
+    let frames = 0, t0 = performance.now();
+    const tick = (t) => {
+      if (!fps.isConnected && t - t0 > 2000) return;   // the pane was closed
+      frames++;
+      if (t - t0 >= 1000) { if (fps.isConnected) fps.textContent = `${Math.round((frames * 1000) / (t - t0))} fps`; frames = 0; t0 = t; }
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+    out.push(h('div.group-title', 'Performance'),
+      h('div.group',
+        row('Screen refresh rate', h('span.muted', r.refresh?.length ? r.refresh.map((hz) => hz + ' Hz').join(', ') : 'Unknown')),
+        row('Drawing now', fps, 'How often LiquidDesktop draws this window. It should match the screen’s refresh rate.'),
+        r.picomArgs ? row('Compositor options', h('code.dev-cmd', r.picomArgs)) : null));
     return out;
   },
   async defaults() {

@@ -606,6 +606,22 @@ class WindowManager extends EventEmitter {
     if (this.clientGuard) return;
     this.clientGuard = setInterval(() => { for (const w of this.windows.values()) if (w.kind === 'native' && !w.minimized) this.raiseClient(w, false); }, 1500);
   }
+  /**
+   * How often drags and animations step: once per frame of the fastest screen (a 240 Hz panel gets ~4 ms,
+   * not a fixed 16 ms that capped window dragging at 60 fps and stuttered against the display).
+   */
+  frameMs() {
+    let hz = 60;
+    try { hz = Math.max(...require('electron').screen.getAllDisplays().map((d) => d.displayFrequency || 60)); } catch { /* no screen info */ }
+    return Math.max(3, Math.round(1000 / Math.min(Math.max(hz, 30), 360)));
+  }
+
+  /** Only the position changed (dragging): moving the outer window is enough; nothing inside is resized. */
+  moveGeometry(w) {
+    if (w.kind === 'native') { this.X.ConfigureWindow(w.frame, { x: w.x, y: w.y }); this.sendConfigureNotify(w); }
+    else this.X.ConfigureWindow(w.client, { x: w.x, y: w.y });
+  }
+
   applyGeometry(w) {
     const full = w.fullscreen;
     if (w.kind === 'native') {
@@ -768,7 +784,7 @@ class WindowManager extends EventEmitter {
       this.applyGeometry(w);
       // tell the web UI where the window ended up (the Dock's smart hide, Mission Control… use it)
       if (k >= 1) { clearInterval(w.anim); w.anim = null; Object.assign(w, target); this.applyGeometry(w); done?.(); this.emit('changed'); }
-    }, 16);
+    }, this.frameMs());
   }
 
   tile(id, kind) {
@@ -852,7 +868,7 @@ class WindowManager extends EventEmitter {
     if (!p0) return;
     this.dragging = true;
     let start = { px: p0.rootX, py: p0.rootY, x: w.x, y: w.y };
-    let snap = null, moved = false;
+    let snap = null, moved = false, resized = false, lastSnap = 'none';
     const tick = async () => {
       const p = await this.pointer();
       if (!p || !(p.keyMask & BUTTON1)) return end();
@@ -863,22 +879,22 @@ class WindowManager extends EventEmitter {
         if (w.maximized || w.tile) {   // tear a tiled window off at its old size, under the pointer
           const r = w.restoreRect || { w: w.w * 0.7, h: w.h * 0.7 };
           const rel = (start.px - w.x) / w.w;
-          w.maximized = false; w.tile = null; w.w = r.w; w.h = r.h;
+          w.maximized = false; w.tile = null; w.w = r.w; w.h = r.h; resized = true;
           start = { px: p.rootX, py: p.rootY, x: Math.round(p.rootX - r.w * rel), y: w.y };
           this.emit('changed');
         }
       }
       w.x = start.x + (p.rootX - start.px);
       w.y = Math.max(this.workarea.top, start.y + (p.rootY - start.py));
-      this.applyGeometry(w);
+      if (resized) { resized = false; this.applyGeometry(w); } else this.moveGeometry(w);
       const edge = 3, corner = this.sh * 0.18;
       snap = p.rootY <= this.workarea.top - 2 ? 'fill'
         : p.rootX <= edge ? (p.rootY < corner + this.workarea.top ? 'tl' : p.rootY > this.sh - corner ? 'bl' : 'left')
           : p.rootX >= this.sw - edge - 1 ? (p.rootY < corner + this.workarea.top ? 'tr' : p.rootY > this.sh - corner ? 'br' : 'right') : null;
-      this.emit('snap-preview', snap ? this.tileRect(snap) : null);
+      if (snap !== lastSnap) { lastSnap = snap; this.emit('snap-preview', snap ? this.tileRect(snap) : null); }
     };
     let busy = false;
-    const timer = setInterval(async () => { if (busy) return; busy = true; try { await tick(); } finally { busy = false; } }, 16);
+    const timer = setInterval(async () => { if (busy) return; busy = true; try { await tick(); } finally { busy = false; } }, this.frameMs());
     const end = () => {
       clearInterval(timer);
       this.dragging = false;
@@ -922,9 +938,10 @@ class WindowManager extends EventEmitter {
         if (dir.includes('w')) x = f.x + f.w - ww;
         if (dir.includes('n')) y = f.y + f.h - hh;
       }
+      if (x === w.x && y === w.y && ww === w.w && hh === w.h) return;   // the pointer didn't move: nothing to redo
       Object.assign(w, { x, y, w: ww, h: hh });
       this.applyGeometry(w);
-    }, 16);
+    }, this.frameMs());
   }
 
   /* ================================================================ shell layer */

@@ -307,6 +307,7 @@ class WindowManager extends EventEmitter {
   }
   onDestroy(wid) {
     if (DEBUG && this.byXid.has(wid)) console.log('[wm] destroy', wid, 'of', this.byXid.get(wid).id);
+    if (this.managing?.has(wid)) this.vanished.add(wid);   // still being set up: manageNative cleans up
     this.ours.delete(wid);
     this.others.delete(wid);
     const w = this.byXid.get(wid);
@@ -411,9 +412,16 @@ class WindowManager extends EventEmitter {
   // round trips, so without this each request created its own frame (left behind when the app quit).
   async manageNative(wid) {
     this.managing ||= new Set();
+    this.vanished ||= new Set();
     if (this.managing.has(wid)) return;
     this.managing.add(wid);
-    try { await this.manageNativeOnce(wid); } finally { this.managing.delete(wid); }
+    this.vanished.delete(wid);
+    try { await this.manageNativeOnce(wid); } finally {
+      this.managing.delete(wid);
+      // it went away while it was being set up (a window that opens and closes at once): don't leave its
+      // frame behind (an empty title bar that can't be closed)
+      if (this.vanished.delete(wid)) { const w = this.byXid.get(wid); if (w && w.client === wid) this.unmanage(w, false); }
+    }
   }
   async manageNativeOnce(wid) {
     const at = await this.attrs(wid);
@@ -472,6 +480,12 @@ class WindowManager extends EventEmitter {
       let frameXid;
       try { frameXid = await this.requestFrame(w); } catch (e) { console.error('[wm] frame', e); }
       if (!this.windows.has(w.id)) return; // vanished while we waited
+      if (this.vanished?.has(wid) || !(await this.attrs(wid))) {
+        // gone: manageNative unmanages it, which closes the title-bar window that was just made for it
+        if (frameXid) w.fb = frameXid;
+        this.vanished.add(wid);
+        return;
+      }
       if (frameXid) {
         // The frame is a plain container window of ours holding two children that never overlap: the title
         // bar (an Electron window, TB tall) at the top and the app below it. (Putting the app inside the Electron
@@ -547,9 +561,9 @@ class WindowManager extends EventEmitter {
     }
     if (w.fb) {
       this.X.ReparentWindow(w.fb, this.root, -10000, -10000);   // Electron destroys its own window (frame-gone)
-      this.X.DestroyWindow(w.frame);
+      if (w.frame !== w.client) this.X.DestroyWindow(w.frame);
     }
-    if (w.frame !== w.client) this.emit('frame-gone', w);
+    if (w.frame !== w.client || w.fb) this.emit('frame-gone', w);
     if (this.focused === w) { this.focused = null; this.focusTop(); }
     this.updateClientList();
     this.emit('changed');

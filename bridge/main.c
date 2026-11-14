@@ -85,11 +85,14 @@ struct view {
 	xcb_window_t xwin;
 	int slot, w, h;
 	bool mapped, closing;
+	bool waiting;   // --crop-to-content: mapped, but no X11 window until the app has drawn something
+	bool has_content;   // set by shown_box: it found the app's own layers
 	char *last_log;
 	struct wlr_box content;   // --crop-to-content: the part of the window that's shown
 	// --crop-to-content: per layer, where its solid pixels are (Android draws a soft shadow around each app)
 	struct solid { struct wlr_surface *surface; int w, h; struct wlr_box box; int64_t tried; } solid[16];
 	struct wlr_box pending; int64_t pending_since;   // a new size is only taken once it holds still
+	int64_t created_ms;   // when its X11 window was made (the window manager settles it in just after)
 	double zoom, applied_zoom;   // --crop-to-content: drawn this much bigger (keeps the shape); 1 = actual size
 	struct wl_listener map, unmap, commit, destroy, set_title, set_app_id;
 	struct wl_listener out_frame, out_request_state, out_destroy;
@@ -125,6 +128,10 @@ static bool verbose_log = false;
 // screen, with the app as sub-surfaces at its place on it. The window shown is just those sub-surfaces;
 // and its size is the app's to change (asking Waydroid to resize would resize the whole Android screen).
 static bool crop = false;
+// the X screen (set at start); the monitor apps see is this size
+static int screen_w = 1920, screen_h = 1080, screen_mm_w = 0, screen_mm_h = 0;
+static int64_t now_ms(void);
+static int64_t focus_ms;   // when the keyboard last moved to another window (see ptr_button)
 // Android's own title bar (back, minimise, maximise, close) over the top of each app: cropped off, since the
 // window manager's title bar does that job. Its height is measured by LiquidDesktop (adb) and sent on stdin.
 static int crop_top = 0;
@@ -229,6 +236,7 @@ static void focus_view(struct view *v) {
 	if (s->focused == v) return;
 	if (s->focused && s->focused->mapped) set_activated(s->focused, false);
 	s->focused = v;
+	focus_ms = now_ms();
 	if (!v) { wlr_seat_keyboard_notify_clear_focus(s->seat); return; }
 	set_activated(v, true);
 	struct wlr_keyboard *kb = wlr_seat_get_keyboard(s->seat);
@@ -249,11 +257,22 @@ static void check_active(void) {
 	else if (server.focused) focus_view(NULL);
 }
 
+// the part of the screen windows can use (no menu bar, no Dock), from the window manager (_NET_WORKAREA)
+static int work_w = 0, work_h = 0;
+static xcb_atom_t a_workarea;
+static void read_workarea(void) {
+	xcb_get_property_reply_t *r = xcb_get_property_reply(server.xcb,
+		xcb_get_property(server.xcb, 0, server.root, a_workarea, XCB_ATOM_CARDINAL, 0, 4), NULL);
+	if (r && xcb_get_property_value_length(r) >= 16) { uint32_t *v = xcb_get_property_value(r); work_w = v[2]; work_h = v[3]; }
+	free(r);
+}
+
 static int on_xcb(int fd, uint32_t mask, void *data) {
 	xcb_generic_event_t *ev;
 	bool active = false;
 	while ((ev = xcb_poll_for_event(server.xcb))) {
 		if ((ev->response_type & ~0x80) == XCB_PROPERTY_NOTIFY && ((xcb_property_notify_event_t *)ev)->atom == server.a_net_active) active = true;
+		if ((ev->response_type & ~0x80) == XCB_PROPERTY_NOTIFY && ((xcb_property_notify_event_t *)ev)->atom == a_workarea) read_workarea();
 		free(ev);
 	}
 	if (active) check_active();
@@ -270,6 +289,8 @@ static bool xcb_setup(void) {
 	server.a_net_wm_name = atom("_NET_WM_NAME");
 	server.a_utf8 = atom("UTF8_STRING");
 	server.a_net_active = atom("_NET_ACTIVE_WINDOW");
+	a_workarea = atom("_NET_WORKAREA");
+	read_workarea();
 	uint32_t ev = XCB_EVENT_MASK_PROPERTY_CHANGE;
 	xcb_change_window_attributes(server.xcb, server.root, XCB_CW_EVENT_MASK, &ev);
 	xcb_flush(server.xcb);
@@ -279,10 +300,28 @@ static bool xcb_setup(void) {
 
 /* ------------------------------------------------------------------ one X11 window (output) per Wayland window */
 static struct wlr_box shown_box(struct view *v);
+static bool hidden_window(struct view *v);
+static void create_window(struct view *v);
 static void place(struct view *v);
 static void set_fixed_size_hints(struct view *v, int w, int h);
 
-static double view_zoom(struct view *v) { return v->zoom > 0 ? v->zoom : 1.0; }
+// how much of a w×h window fits on the usable screen (leaving room for the title bar the window manager adds
+// and a small margin): 1 or less
+#define FRAME_TITLE 38
+#define FIT_MARGIN 16
+static double fit_for(int w, int h) {
+	int aw = work_w > 0 ? work_w : screen_w, ah = work_h > 0 ? work_h : screen_h;
+	if (w <= 0 || h <= 0 || aw <= 0 || ah <= 0) return 1.0;
+	double f = (double)(aw - 2 * FIT_MARGIN) / w, g = (double)(ah - FRAME_TITLE - 2 * FIT_MARGIN) / h;
+	if (g < f) f = g;
+	return f < 1.0 ? (f > 0.2 ? f : 0.2) : 1.0;
+}
+// the zoom a window is drawn at: the app's (or yours), but never bigger than the screen has room for
+static double view_zoom(struct view *v) {
+	double z = v->zoom > 0 ? v->zoom : 1.0;
+	if (crop && v->content.width > 0) { double f = fit_for(v->content.width, v->content.height); if (z > f) z = f; }
+	return z;
+}
 static void resize_output(struct view *v, int w, int h) {
 	if (!v->output || w <= 0 || h <= 0) return;
 	// zoomed: the output is drawn at this scale (the app's layout, and Waydroid, don't change)
@@ -318,6 +357,10 @@ static int tick(void *data) {
 	struct view *v;
 	wl_list_for_each(v, &server.views, link) {
 		if (!v->toplevel->base->surface->mapped) continue;
+		if (crop && v->mapped && v->waiting && !hidden_window(v)) {
+			shown_box(v);
+			if (v->has_content) { v->waiting = false; place(v); create_window(v); focus_view(v); }
+		}
 		if (crop && v->mapped) place(v);
 		wlr_xdg_surface_for_each_surface(v->toplevel->base, send_done, &now);
 	}
@@ -335,10 +378,18 @@ static void out_request_state(struct wl_listener *l, void *data) {
 		int cw = v->content.width, ch = v->content.height;
 		int nw = v->output->width;
 		v->w = v->output->width; v->h = v->output->height;
+		if (cw > 0 && ch > 0 && (now_ms() - v->created_ms < 2000 || !v->content.width)) {
+			// the window manager placing the new window, not you resizing it: back to the size we chose
+			double z = view_zoom(v);
+			v->applied_zoom = -1;
+			resize_output(v, (int)(cw * z + 0.5), (int)(ch * z + 0.5));
+			return;
+		}
 		if (cw > 0 && ch > 0) {
 			double z = (double)nw / cw;
 			if (z < ZOOM_MIN) z = ZOOM_MIN; if (z > ZOOM_MAX) z = ZOOM_MAX;
 			if (z > 0.97 && z < 1.03) z = 1.0;   // close to actual size: snap to it
+			{ double f = fit_for(cw, ch); if (z > f) z = f; }   // no bigger than the screen has room for
 			v->zoom = z;
 			remember_zoom(v->toplevel->app_id, z);
 			printf("zoom %s %.4f\n", v->toplevel->app_id ? v->toplevel->app_id : "-", z);
@@ -372,6 +423,8 @@ static void create_window(struct view *v) {
 	struct server *s = v->server;
 	struct wlr_box b = shown_box(v);
 	int w = b.width > 0 ? b.width : DEFAULT_W, h = b.height > 0 ? b.height : DEFAULT_H;
+	if (crop) { double f = fit_for(w, h); w = (int)(w * f + 0.5); h = (int)(h * f + 0.5); }
+	v->created_ms = now_ms();
 	v->output = wlr_x11_output_create(s->backend);
 	if (!v->output) return;
 	wlr_output_init_render(v->output, s->allocator, s->renderer);
@@ -464,6 +517,7 @@ static struct wlr_box shown_box(struct view *v) {
 		if (!any) { x1 = ax; y1 = ay; x2 = bx; y2 = by; any = true; }
 		else { if (ax < x1) x1 = ax; if (ay < y1) y1 = ay; if (bx > x2) x2 = bx; if (by > y2) y2 = by; }
 	}
+	v->has_content = any;
 	if (!any) return g;
 	struct wlr_box b = { .x = x1, .y = y1, .width = x2 - x1, .height = y2 - y1 };
 	// an Android app's own title bar: off (not on Android's whole desktop, the "Waydroid" window)
@@ -484,7 +538,10 @@ static void place(struct view *v) {
 		if (!same_box(b, v->content) && now_ms() - v->pending_since < 250) b = v->content;
 	}
 	wlr_scene_node_set_position(&v->tree->node, v->slot * SLOT_SPACING - b.x, -b.y);
+	struct wlr_box was = v->content;
+	if (crop) v->content = b;   // (the zoom below fits this size to the screen)
 	double z = view_zoom(v);
+	if (crop) v->content = was;
 	if (crop && v->mapped && v->output && (b.width != v->content.width || b.height != v->content.height || b.x != v->content.x || b.y != v->content.y || z != v->applied_zoom)) {
 		v->content = b;
 		resize_output(v, (int)(b.width * z + 0.5), (int)(b.height * z + 0.5));
@@ -503,6 +560,9 @@ static void view_map(struct wl_listener *l, void *data) {
 	v->mapped = true;
 	v->closing = false;
 	if (hidden_window(v)) return;
+	// Android: no window until the app has drawn into it. Windows that open and close straight away (and
+	// Waydroid's own start-up placeholder) never reach the desktop; see tick()
+	if (crop) { shown_box(v); if (!v->has_content) { v->waiting = true; return; } }
 	place(v);
 	create_window(v);
 	focus_view(v);   // a new window is the active one (the window manager focuses it too)
@@ -511,6 +571,7 @@ static void view_map(struct wl_listener *l, void *data) {
 static void view_unmap(struct wl_listener *l, void *data) {
 	struct view *v = wl_container_of(l, v, unmap);
 	v->mapped = false;
+	v->waiting = false;
 	if (server.focused == v) focus_view(NULL);
 	if (v->output) { v->closing = true; wlr_output_destroy(v->output); }
 }
@@ -698,11 +759,32 @@ static void ptr_motion(struct wl_listener *l, void *data) {
 	wlr_seat_pointer_notify_enter(server.seat, surface, sx, sy);
 	wlr_seat_pointer_notify_motion(server.seat, ev->time_msec, sx, sy);
 }
+// Clicks right after the keyboard moved to another window wait a moment. Waydroid brings an app to the front
+// inside Android when its window gets the keyboard, but asynchronously: a click passed on at once reaches
+// Android before that, and lands in whichever app is in front there (another app's window, overlapping it on
+// Android's screen). Held clicks go out in order once the switch has had time.
+#define FOCUS_SETTLE_MS 160
+static struct { uint32_t time, button, state; } held[16];
+static int held_n;
+static struct wl_event_source *held_timer;
+static int release_held(void *data) {
+	for (int i = 0; i < held_n; i++) wlr_seat_pointer_notify_button(server.seat, held[i].time, held[i].button, held[i].state);
+	if (held_n) wlr_seat_pointer_notify_frame(server.seat);
+	held_n = 0;
+	return 0;
+}
 static void ptr_button(struct wl_listener *l, void *data) {
 	struct pointer *p = wl_container_of(l, p, button);
 	struct wlr_pointer_button_event *ev = data;
 	// a click in a window makes it the keyboard's too (the window manager activates it as well)
 	if (ev->state == WL_POINTER_BUTTON_STATE_PRESSED && p->over && p->over != server.focused) focus_view(p->over);
+	int64_t since = now_ms() - focus_ms;
+	if (crop && (held_n > 0 || since < FOCUS_SETTLE_MS) && held_n < 16) {
+		held[held_n].time = ev->time_msec; held[held_n].button = ev->button; held[held_n].state = ev->state; held_n++;
+		if (!held_timer) held_timer = wl_event_loop_add_timer(server.loop, release_held, NULL);
+		if (held_n == 1) wl_event_source_timer_update(held_timer, (int)(FOCUS_SETTLE_MS - (since < FOCUS_SETTLE_MS ? since : 0)) + 1);
+		return;
+	}
 	wlr_seat_pointer_notify_button(server.seat, ev->time_msec, ev->button, ev->state);
 }
 static void ptr_axis(struct wl_listener *l, void *data) {
@@ -810,7 +892,6 @@ static int on_stdin(int fd, uint32_t mask, void *data) {
 /* ------------------------------------------------------------------ the monitor apps see */
 // Apps expect at least one monitor before they open a window, but the bridge's real outputs only exist per
 // window. So: one virtual wl_output the size of the X screen, always there.
-static int screen_w = 1920, screen_h = 1080, screen_mm_w = 0, screen_mm_h = 0;
 static void output_release(struct wl_client *c, struct wl_resource *r) { wl_resource_destroy(r); }
 static const struct wl_output_interface output_impl = { .release = output_release };
 static void bind_output(struct wl_client *client, void *data, uint32_t version, uint32_t id) {

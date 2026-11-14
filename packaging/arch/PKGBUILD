@@ -38,6 +38,8 @@ depends=(
   'android-tools'       # adb: Android app window sizes and desktop settings (Settings › Android)
 )
 optdepends=(
+  'power-profiles-daemon: power modes (Settings › Battery)'
+  'openrgb: RGB lighting control (the Lighting app)'
   'networkmanager: Wi-Fi status, network list and joining (nmcli)'
   'wireplumber: volume control (wpctl)'
   'libpulse: volume control fallback (pactl)'

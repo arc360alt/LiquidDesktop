@@ -108,6 +108,8 @@ install_arch() {
   if [ -z "$MINIMAL" ]; then
     say "Installing Control Center helpers…"
     run sudo pacman -S --needed --noconfirm --asdeps networkmanager wireplumber brightnessctl bluez-utils playerctl upower xorg-xwayland mesa-utils flatpak pacman-contrib archlinux-appstream-data xorg-xinput kvantum sassc udisks2 || true
+    # power modes (Settings › Battery); on its own, since it conflicts with tlp and that mustn't stop the rest
+    run sudo pacman -S --needed --noconfirm --asdeps power-profiles-daemon || true
   fi
   BIN=/usr/bin
 }

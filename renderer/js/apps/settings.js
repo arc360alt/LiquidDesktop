@@ -17,7 +17,7 @@ const ACCENTS = [['Multicolor', '#0a84ff'], ['Blue', '#007aff'], ['Purple', '#af
 const PANES = [
   ['general', 'General', '#8e8e93', sym.gear], ['defaults', 'Default Apps', '#30b0c7', sym.check], ['appearance', 'Appearance', '#1c1c1e', sym.contrast], ['wallpaper', 'Wallpaper', '#32ade6', sym.photo],
   ['dock', 'Desktop & Dock', '#1c1c1e', sym.dock], ['menubar', 'Menu Bar', '#0a84ff', sym.controls], ['display', 'Displays', '#0a84ff', sym.display],
-  ['sound', 'Sound', '#ff2d55', sym.speaker], ['network', 'Wi-Fi', '#0a84ff', sym.wifi], ['bluetooth', 'Bluetooth', '#0a84ff', sym.bluetooth],
+  ['energy', 'Battery', '#34c759', sym.bolt], ['sound', 'Sound', '#ff2d55', sym.speaker], ['network', 'Wi-Fi', '#0a84ff', sym.wifi], ['bluetooth', 'Bluetooth', '#0a84ff', sym.bluetooth],
   ['notifications', 'Notifications', '#ff3b30', sym.bell], ['focus', 'Focus', '#5e5ce6', sym.moon], ['lock', 'Lock Screen', '#1c1c1e', sym.lock],
   ['mouse', 'Mouse & Trackpad', '#8e8e93', '<svg class="sym" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="6" y="3" width="12" height="18" rx="6"/><path d="M12 3v6"/></svg>'], ['keyboard', 'Keyboard', '#8e8e93', sym.keyboard], ['terminal', 'Terminal', '#1c1c1e', sym.terminal], ['apps', 'Apps', '#5e5ce6', sym.grid],
   ['android', 'Android', '#30c06b', '<svg class="sym" viewBox="0 0 24 24" fill="currentColor"><path d="M5.5 11a6.5 6.5 0 0 1 13 0z"/><rect x="5.5" y="12" width="13" height="8" rx="2"/><path d="M8.6 5.6 7.2 3.5M15.4 5.6l1.4-2.1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="9.4" cy="8.6" r="1" fill="#30c06b"/><circle cx="14.6" cy="8.6" r="1" fill="#30c06b"/></svg>'],
@@ -49,6 +49,8 @@ const liveSlider = (value, onInput) => {
   paint();
   return h('div', { style: { width: '230px' } }, s);
 };
+// like macOS: "Battery" on a laptop, "Energy" on a desktop
+const paneLabel = (id, label) => (id === 'energy' && !status.s.battery?.percent && status.s.battery?.percent !== 0 ? 'Energy' : label);
 const hero = (pane, title, text) => {
   const p = PANES.find((x) => x[0] === pane);
   return h('div.set-hero', h('div', { style: { width: '62px', height: '62px', borderRadius: '15px', background: p[2], color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 14px rgba(0,0,0,.2)' }, html: p[3].replace('class="sym"', 'style="width:34px;height:34px"') }), h('h2', title), h('p', text));
@@ -378,6 +380,42 @@ const render = {
     const st = await api.android.status().catch(() => null);
     if (!st) return [hero('android', 'Android', 'Android’s status couldn’t be read.')];
     return androidPane(st);
+  },
+  async energy() {
+    const b = status.s.battery;
+    const laptop = b && b.percent != null;
+    const title = laptop ? 'Battery' : 'Energy';
+    let st = null;
+    try { st = await api.power?.state(); } catch { st = null; }
+    const out = [hero('energy', title, laptop ? 'Battery level and how your computer balances speed against battery life.' : 'How your computer balances speed against power use.')];
+    if (laptop) {
+      out.push(h('div.group', row('Battery level', h('div.en-batt', h('div.en-batt-bar', h('i', { style: { width: b.percent + '%', background: b.percent < 20 ? '#ff3b30' : '#34c759' } })), h('b', b.percent + '%')),
+        b.charging ? 'Charging' : b.status || 'On battery')));
+    }
+    out.push(h('div.group-title', 'Power Mode'));
+    if (!st?.available) {
+      out.push(h('div.group', row('Power modes aren’t available', null, 'They need power-profiles-daemon, the service GNOME and KDE use: sudo pacman -S power-profiles-daemon, then log out and back in.')));
+      return out;
+    }
+    const MODES = [
+      ['power-saver', 'Power Saver', 'Slower, quieter and cooler; makes the battery last longest.', '<svg class="sym" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 20c0-8 5-14 15-15-1 10-7 15-15 15z"/><path d="M5 20l7-7"/></svg>'],
+      ['balanced', 'Balanced', 'Speed when you need it, saving power the rest of the time. Recommended.', '<svg class="sym" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 3v18M5 7h14M7 7l-3 7a3 3 0 0 0 6 0zM17 7l-3 7a3 3 0 0 0 6 0z"/></svg>'],
+      ['performance', 'Performance', 'Full speed all the time; uses more power and runs warmer.', sym.bolt],
+    ].filter(([id]) => st.profiles.includes(id));
+    const cards = h('div.en-modes');
+    const draw = (active) => {
+      cards.replaceChildren(...MODES.map(([id, name, text, icon]) => h('button.en-mode' + (id === active ? '.on' : ''), { onclick: async () => {
+        if (id === active) return;
+        draw(id);   // right away; the daemon confirms below
+        try { const r = await api.power.set(id); draw(r.active); } catch (e) { draw(active); alertDialog({ title: 'The power mode couldn’t be changed', message: e.message }); }
+      } }, h('span.en-ic', { html: icon }), h('b', name), h('small', text))));
+    };
+    draw(st.active);
+    out.push(h('div.group', { style: { padding: '12px' } }, cards));
+    const why = { 'lap-detected': 'the computer is on your lap', 'high-operating-temperature': 'it’s running hot' };
+    if (st.degraded && st.active === 'performance') out.push(h('p.en-note.muted', `Performance is limited right now because ${why[st.degraded] || st.degraded}.`));
+    if (st.inhibited) out.push(h('p.en-note.muted', `Performance mode isn’t available right now (${st.inhibited}).`));
+    return out;
   },
   async developer() {
     const out = [hero('developer', 'Developer', 'Settings for testing and troubleshooting LiquidDesktop.')];
@@ -1113,7 +1151,8 @@ registerApp({
     const drawSidebar = () => {
       const q = search.value.toLowerCase();
       items.innerHTML = '';
-      for (const [id, label, color, icon] of PANES) {
+      for (const [id, label0, color, icon] of PANES) {
+        const label = paneLabel(id, label0);
         if (q && !label.toLowerCase().includes(q)) continue;
         const el = h('div.sb-item', { 'data-pane': id, onclick: () => show(id) }, h('div.ic.sq', { style: { background: color }, html: icon }), label);
         items.append(el);
@@ -1127,7 +1166,7 @@ registerApp({
     const show = async (id) => {
       current = id; hist.push(id);
       drawSidebar();
-      const label = PANES.find((p) => p[0] === id)?.[1];
+      const label = paneLabel(id, PANES.find((p) => p[0] === id)?.[1]);
       title.textContent = label; win.setTitle(label);
       const kids = await render[id]();
       if (current !== id) return;

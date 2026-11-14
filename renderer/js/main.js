@@ -35,6 +35,7 @@ import './apps/monitor.js';
 import './apps/settings.js';
 import './apps/about.js';
 import './apps/appstore.js';
+import './apps/lighting.js';
 
 const progress = (p) => { const b = $('#boot .bar i'); if (b) b.style.width = p + '%'; };
 const hideBoot = () => {

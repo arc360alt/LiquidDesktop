@@ -36,6 +36,8 @@ app.whenReady().then(async () => {
   require('../main/defaultapps').register({ mode: 'windowed' });
   require('../main/android').register();
   require('../main/drives').register();
+  require('../main/power').register();
+  require('../main/openrgb').register();
   require('../main/appthemes').register({ mode: 'windowed' });
   require('../main/portal').register({});
   require('../main/notifications').register({ resolveIcon: require('../main/system').resolveIcon });

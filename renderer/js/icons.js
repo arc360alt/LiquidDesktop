@@ -150,6 +150,18 @@ const APP_ICONS = {
     draw: (c) => { const d = new Date(); const dow = d.toLocaleDateString('en', { weekday: 'short' }).toUpperCase();
       return `<text x="50" y="33" text-anchor="middle" font-family="Inter Variable, sans-serif" font-weight="600" font-size="13" fill="${c.ac}" letter-spacing=".5">${dow}</text>
       <text x="50" y="76" text-anchor="middle" font-family="Inter Variable, sans-serif" font-weight="400" font-size="44" fill="${c.ink}" letter-spacing="-1.5">${d.getDate()}</text>`; } },
+  // Lighting: a ring of RGB light around a soft glow
+  lighting: { bg: ['#2a2238', '#0d0b14'], tone: '#bf5af2', c: { fg: '#fff', ac: '#bf5af2', ac2: '#64d2ff', paper: '#1c1c1e', ink: '#fff' },
+    draw: () => {
+      const cols = ['#ff375f', '#ff9f0a', '#ffd60a', '#30d158', '#64d2ff', '#0a84ff', '#bf5af2', '#ff2d92'];
+      const arcs = cols.map((col, i) => {
+        const a0 = (i / cols.length) * Math.PI * 2 - Math.PI / 2 + 0.06, a1 = ((i + 1) / cols.length) * Math.PI * 2 - Math.PI / 2 - 0.06;
+        const p = (a) => `${(50 + 25 * Math.cos(a)).toFixed(2)} ${(50 + 25 * Math.sin(a)).toFixed(2)}`;
+        return `<path d="M${p(a0)}A25 25 0 0 1 ${p(a1)}" stroke="${col}" stroke-width="9" stroke-linecap="round" fill="none"/>`;
+      }).join('');
+      return `<defs><radialGradient id="lglow" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#fff" stop-opacity=".95"/><stop offset=".45" stop-color="#e3c8ff" stop-opacity=".55"/><stop offset="1" stop-color="#bf5af2" stop-opacity="0"/></radialGradient></defs>
+        <circle cx="50" cy="50" r="20" fill="url(#lglow)"/>${arcs}`;
+    } },
   weather: { bg: ['#5ab8ff', '#1f63e0'], tone: '#4aa8ff', c: { fg: '#fff', ac: '#ffd60a', ac2: '#ffb000', paper: '#fff', ink: '#fff' },
     draw: (c) => `<circle cx="40" cy="40" r="15" fill="${c.ac}"/>
       <path d="M36 74h32a12 12 0 0 0 1.5-23.9A15 15 0 0 0 41 53.6 10.3 10.3 0 0 0 36 74z" fill="${c.fg}" opacity=".97"/>` },

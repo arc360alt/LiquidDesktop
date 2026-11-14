@@ -97,6 +97,8 @@ package() {
   cp -a main renderer session tools package.json "$dest/"
   # the login theme, so Settings › Lock Screen can (re)install it
   install -dm755 "$dest/packaging" && cp -a packaging/sddm packaging/greetd-config.toml "$dest/packaging/"
+  # Android (Settings › Android): the overlay that removes Android’s own title bar from app windows
+  install -Dm644 packaging/android/LiquidNoCaption.apk "$dest/packaging/android/LiquidNoCaption.apk"
   cp -r node_modules "$dest/"
   install -Dm755 bridge/build/liquid-wl-bridge "$dest/bridge/liquid-wl-bridge"
   rm -rf "$dest/node_modules/.package-lock.json" "$dest/tools/shot.js"

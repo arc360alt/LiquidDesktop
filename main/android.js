@@ -45,13 +45,15 @@ async function status() {
   const [active, enabled, st] = installed ? await Promise.all([
     run('systemctl', ['is-active', 'waydroid-container.service']), run('systemctl', ['is-enabled', 'waydroid-container.service']), run('waydroid', ['status'], 8000),
   ]) : [{ out: '' }, { out: '' }, { out: '' }];
+  const session = /Session:\s*RUNNING/i.test(st.out);
   return {
+    captionsHidden: captionsHidden(),
     installed, initialized, cage: which('cage'), binder: binderOk(), restartNeeded: restartNeeded(),
     nvidia: exists('/proc/driver/nvidia'),
     gapps: /GAPPS/i.test(c),
     arm: armStatus(c), cpu: cpuVendor(),
     container: active.out.trim() === 'active', serviceEnabled: enabled.out.trim() === 'enabled',
-    session: /Session:\s*RUNNING/i.test(st.out),
+    session,
     window: !!host,
     mode: host ? host.mode : null,
     multiWindow: multiWindow(),
@@ -254,7 +256,9 @@ async function startBridge() {
     p.stdin.on('error', () => {});
     // tell it each app's remembered zoom, and the title-bar height if it's known already
     for (const [app, z] of Object.entries(loadZooms())) p.stdin.write(`zoom ${app} ${z}\n`);
-    if (captionPx) p.stdin.write(`crop-top ${captionPx}\n`);
+    // Android's title bars are reduced to a 1px strip (see hideCaptions): crop that off too
+    if (captionsHidden()) p.stdin.write('crop-top 1\n');
+
     // what Android's windows send (sizes…), for working out window-size problems: ~/.local/state/liquid-desktop/android-bridge.log
     let log = null;
     try {
@@ -405,26 +409,57 @@ async function launchApp(pkg) {
   if (!(await (sessionUp || waitForSession(180)))) return false;
   if (pkg) {
     execFile('waydroid', ['app', 'launch', pkg], { env: hostEnv() }, () => {});
-    // once its window is up; adb can need a moment to (re)connect after Android starts, so a few tries
-    if (!captionPx) for (const ms of [4000, 12000, 25000]) setTimeout(() => { if (!captionPx) measureCaption().catch(() => {}); }, ms);
+    // Android's own title bars still on: offer to remove them (needs the password once)
+    if (!captionOfferShown) setTimeout(() => offerHideCaptions().catch(() => {}), 8000);
+    // an app Android placed (or that was dragged) off its screen can't be clicked: back on screen
+    for (const ms of [3000, 9000]) setTimeout(() => keepOnScreen(pkg).catch(() => {}), ms);
   }
   return true;
 }
 
-/* ------------------------------------------------------------------ Android's own title bar, and zoom */
-// Every Android app window has Android's own title bar (back, minimise, maximise, close) under ours. The
-// bridge crops it off; its height (it depends on Android's screen density) is read from Android over adb.
-let captionPx = 0;
-const toBridge = (line) => { try { if (host?.mode === 'windows' && host.stdin?.writable) host.stdin.write(line + '\n'); } catch { /* gone */ } };
-async function measureCaption() {
-  if (captionPx || !adbBin()) return;
-  await adbConnect();
-  const out = (await adb(['shell', 'dumpsys', 'input'])).out;
-  const m = out.match(/Caption of Task=\d+\}[^\n]*?frame=\[(\d+),(\d+)\]\[(\d+),(\d+)\]/);
-  if (!m) return;
-  const px = Number(m[4]) - Number(m[2]);
-  if (px > 0 && px < 300) { captionPx = px; toBridge(`crop-top ${px}`); }
+/* ------------------------------------------------------------------ Android's own title bar */
+// Android (WindowManager Shell, part of SystemUI) draws a title bar (back, minimise, maximise, close) OVER the
+// top of every app window, hiding what the app has there. It can't be switched off, but its height is a SystemUI
+// resource: a small overlay package (packaging/android/no-caption) sets it to 0, so the bar is gone and the app
+// gets its whole window. It has to be built into the system image (Android throws away overlays made at run
+// time when it restarts): Waydroid adds files from /var/lib/waydroid/overlay to it on every start.
+const CAPTION_APK = path.join(__dirname, '..', 'packaging', 'android', 'LiquidNoCaption.apk');
+const CAPTION_DEST = '/var/lib/waydroid/overlay/system/product/overlay/LiquidNoCaption';
+let captionOfferShown = false;
+// Android 13 has two title-bar systems: the old one is drawn by each app itself, unless this property is on;
+// then only WindowManager Shell's is drawn, and the overlay makes that one zero height. Both are needed.
+const CAPTION_PROP = 'persist.wm.debug.caption_on_shell';
+// on only when the installed overlay is this version's (an older one made the caption 0 high, which broke clicks)
+const sameFile = (a, b) => { try { return fs.readFileSync(a).equals(fs.readFileSync(b)); } catch { return false; } };
+const captionsHidden = () => sameFile(path.join(CAPTION_DEST, 'LiquidNoCaption.apk'), CAPTION_APK) && new RegExp(`^${CAPTION_PROP.replace(/\./g, '\\.')}\\s*=\\s*true`, 'm').test(cfg());
+async function hideCaptions(hide = true) {
+  if (hide && !exists(CAPTION_APK)) throw new Error('LiquidDesktop’s Android title-bar package is missing: update LiquidDesktop.');
+  await stopWindow();   // Android restarts with it (SystemUI only reads the title-bar height when it starts)
+  const { sudoScript } = require('./appstore');
+  const q = (x) => `'${String(x).replace(/'/g, `'\\''`)}'`;
+  // the property goes in Waydroid's config ([properties]), which Android reads when it starts
+  const prop = `
+CFG=/var/lib/waydroid/waydroid.cfg
+grep -q '^\\[properties\\]' "$CFG" || printf '\\n[properties]\\n' >> "$CFG"
+sed -i '/^${CAPTION_PROP.replace(/\./g, '\\.')}/d' "$CFG"
+${hide ? `sed -i '/^\\[properties\\]/a ${CAPTION_PROP} = true' "$CFG"` : ''}
+waydroid upgrade --offline >/dev/null 2>&1 || true`;
+  const restart = '(systemctl is-active -q waydroid-container.service && systemctl restart waydroid-container.service || true)';
+  const r = await sudoScript(hide
+    ? `set -e\ninstall -Dm644 ${q(CAPTION_APK)} ${q(CAPTION_DEST + '/LiquidNoCaption.apk')}\n${prop}\n${restart}`
+    : `set -e\nrm -rf ${q(CAPTION_DEST)}\n${prop}\n${restart}`);
+  if (!r.ok) throw new Error(/password/i.test(r.out) ? 'Your password wasn’t accepted.' : r.out.split('\n').pop() || 'The change couldn’t be made.');
+  broadcast('android:changed');
+  return true;
 }
+async function offerHideCaptions() {
+  if (captionOfferShown) return;
+  captionOfferShown = true;
+  if (!captionsHidden()) broadcast('android:captions', true);
+}
+
+/* ------------------------------------------------------------------ zoom */
+const toBridge = (line) => { try { if (host?.mode === 'windows' && host.stdin?.writable) host.stdin.write(line + '\n'); } catch { /* gone */ } };
 // zoom per app: the window drawn bigger (or smaller), same shape, same layout inside
 const zoomsFile = () => path.join(app.getPath('userData'), 'android-zoom.json');
 function loadZooms() { try { return JSON.parse(fs.readFileSync(zoomsFile(), 'utf8')) || {}; } catch { return {}; } }
@@ -477,6 +512,21 @@ async function desktopTweaks() {
   }
 }
 
+/* ------------------------------------------------------------------ keeping apps on Android's screen */
+// Android only takes clicks inside its own screen. An app whose window sits partly outside it (Android's
+// cascading, or a drag on its old title bar) shows fine in its LiquidDesktop window but ignores clicks there:
+// moved back inside, same size.
+async function keepOnScreen(pkg) {
+  if (!adbBin()) return;
+  const t = await taskOf(pkg);
+  const [mx1, my1, mx2, my2] = t.max, [l, tp, r, b] = t.bounds, w = r - l, hh = b - tp;
+  const nl = Math.max(mx1, Math.min(l, mx2 - w)), nt = Math.max(my1, Math.min(tp, my2 - hh));
+  if (nl === l && nt === tp) return;
+  // too big for the screen: the shape kept, shrunk to fit
+  const k = Math.min(1, (mx2 - mx1) / w, (my2 - my1) / hh), nw = Math.round(w * k), nh = Math.round(hh * k);
+  await adb(['shell', 'am', 'task', 'resize', t.id, String(Math.max(mx1, Math.min(nl, mx2 - nw))), String(Math.max(my1, Math.min(nt, my2 - nh))), String(Math.max(mx1, Math.min(nl, mx2 - nw)) + nw), String(Math.max(my1, Math.min(nt, my2 - nh)) + nh)]);
+}
+
 /* ------------------------------------------------------------------ app window sizes (View menu) */
 // Like iPhone/iPad apps on a Mac: an Android app's window has a few fixed shapes, switched from the menu bar.
 // Android decides an app's size itself, so the change is made inside Android over adb (Android's debugging
@@ -525,7 +575,7 @@ async function taskOf(pkg) {
   for (const block of out.split(/\n(?=RootTask )/)) {
     const mb = block.match(/mMaxBounds=Rect\((\d+), (\d+) - (\d+), (\d+)\)/);
     if (mb) max = mb.slice(1).map(Number);
-    const t = block.match(new RegExp(`taskId=(\\d+): ${pkg.replace(/\./g, '\\.')}/\\S+ bounds=\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]`));
+    const t = block.match(new RegExp(`taskId=(\\d+): ${pkg.replace(/\./g, '\\.')}/\\S+ bounds=\\[(-?\\d+),(-?\\d+)\\]\\[(-?\\d+),(-?\\d+)\\]`));
     if (t) {
       const dpi = Number(block.match(/ (\d+)dpi /)?.[1]) || 160;
       return { id: t[1], bounds: t.slice(2).map(Number), max: max || [0, 0, 1920, 1080], dpi };
@@ -566,6 +616,8 @@ function register() {
   h('android:resizeApp', (pkg, shape) => resizeApp(String(pkg), String(shape)));
   h('android:setArm', (kind) => setArm(kind ? String(kind) : null));
   h('android:zoomApp', (appId, how) => zoomApp(appId, String(how)));
+  h('android:captions', () => captionsHidden());
+  h('android:hideCaptions', (hide) => hideCaptions(hide !== false));
   // Android's Back (its title bar, with the back arrow, is hidden): to the app that has the keyboard
   h('android:back', async () => { await adbConnect(); await adb(['shell', 'input', 'keyevent', 'KEYCODE_BACK']); return true; });
   app.on('before-quit', () => killHost('SIGTERM'));

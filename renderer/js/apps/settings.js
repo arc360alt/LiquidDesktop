@@ -911,6 +911,17 @@ function androidPane(first) {
             if (!(await askSudo('Changing how Android shows its apps needs administrator rights (sudo).'))) { e.target.checked = !on; return; }
             act(() => api.android.setMultiWindow(on), 'The setting couldn’t be changed');
           } }), h('span')), st.multiWindow ? 'Every Android app opens in its own window, with its own icon in the Dock.' : 'All of Android is shown in one window, like a phone screen.')));
+      // Android's own title bar, drawn over the top of every app: removed inside Android (needs Android running)
+      if (st.multiWindow) {
+        const capRow = row('Hide Android’s title bars', h('label.toggle', h('input', { type: 'checkbox', checked: !!st.captionsHidden, onchange: async (e) => {
+          const hide = e.target.checked;
+          if (st.session && !(await confirmDialog('Restart Android?', 'Android restarts to apply this, so your open Android apps will close.', 'Restart Android'))) { e.target.checked = !hide; return; }
+          if (!(await askSudo('Changing Android’s title bars needs administrator rights (sudo).'))) { e.target.checked = !hide; return; }
+          act(() => api.android.hideCaptions(hide), 'Android’s title bars couldn’t be changed');
+        } }), h('span')), st.captionsHidden ? 'Android apps use their whole window. Back is in the View menu.'
+          : 'Android draws its own title bar over the top of every app, hiding part of it. Turn this on to remove it.');
+        kids.push(h('div.group', capRow));
+      }
       // ARM apps: most mobile games are built only for phone processors; a translation layer runs them on a PC
       const best = st.cpu === 'intel' ? 'libhoudini' : 'libndk';
       const armSel = h('select.field.square', { style: { height: '28px', minWidth: '200px' } },

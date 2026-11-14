@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- LiquidDesktop: Android's own title bar on app windows (Waydroid's separate windows) set to zero height.
+     LiquidDesktop's window frame does that job; Android's bar was drawn over the top of every app.
+     A static overlay: built into Waydroid's system image (see main/android.js), always on. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="org.liquiddesktop.overlay.nocaption" android:versionCode="2" android:versionName="1.1">
+    <overlay android:targetPackage="com.android.systemui" android:isStatic="true" android:priority="900" />
+    <application android:hasCode="false" android:label="LiquidDesktop: no app title bars" />
+</manifest>

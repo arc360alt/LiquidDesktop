@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- WindowManager Shell's freeform window caption (back / minimise / maximise / close): 1px, not 0.
+         At 0 Android gives the (invisible) caption the whole window as its touch area, so it swallows every
+         click on the app; at 1px its touch area is that one row, which LiquidDesktop crops off. -->
+    <dimen name="freeform_decor_caption_height">1px</dimen>
+</resources>

@@ -230,6 +230,8 @@ export function initSessionShell({ windowMenu }) {
   S.on('session:notify', (n) => notify(n));
   // an Android app couldn't open (Android turned off, not installed…)
   api.android?.onError?.((msg) => notify({ app: 'settings', title: 'Android', body: msg, action: () => shell.openSettings('android') }));
+  // Android's own title bars are still on (they cover the top of every app): offer the one-time fix
+  api.android?.onCaptions?.(() => notify({ app: 'settings', title: 'Android', body: 'Android draws its own title bar over the top of every app. Click to remove it (asks for your password once).', action: () => shell.openSettings('android') }));
   S.on('session:windowMenu', (id, x, y, kind) => windowMenu(id, x, y, kind));
   S.on('session:shortcut', (name, arg) => {
     if (shell.locked && name !== 'lock') return;

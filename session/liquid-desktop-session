@@ -30,11 +30,30 @@ if command -v xsettingsd >/dev/null; then
   XSD=$!
 fi
 
+# Your rendering choice (Settings › Developer › Rendering), saved per user, overrides what the system set (e.g.
+# Lumen's /etc/environment when no real GPU driver drives the screen):
+#   hardware  the GPU: the software-rendering variables are dropped, and "--backend xrender" from LIQUID_PICOM_ARGS
+#   software  no GPU: the variables are set
+#   automatic (no file) whatever the system set, plus the llvmpipe check below
+RENDER_CHOICE="$(cat "${XDG_CONFIG_HOME:-$HOME/.config}/LiquidDesktop/rendering" 2>/dev/null | tr -d '[:space:]')"
+case "$RENDER_CHOICE" in
+  hardware)
+    unset LIBGL_ALWAYS_SOFTWARE GALLIUM_DRIVER LIQUID_SOFTWARE_RENDERING
+    LIQUID_PICOM_ARGS="$(printf ' %s ' "$LIQUID_PICOM_ARGS" | sed 's/ --backend[ =]xrender / /g; s/^ *//; s/ *$//')"
+    export LIQUID_PICOM_ARGS
+    LIQUID_RENDERING_FORCED=1 ;;
+  software)
+    export LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe LIQUID_SOFTWARE_RENDERING=1
+    case " $LIQUID_PICOM_ARGS " in *" --backend"*) ;; *) LIQUID_PICOM_ARGS="${LIQUID_PICOM_ARGS:+$LIQUID_PICOM_ARGS }--backend xrender" ;; esac
+    export LIQUID_PICOM_ARGS
+    LIQUID_RENDERING_FORCED=1 ;;
+esac
+
 # Software rendering (no usable GPU): LIQUID_SOFTWARE_RENDERING=1 or LIBGL_ALWAYS_SOFTWARE=1 set by the distro or
 # you, or OpenGL turns out to be llvmpipe (a VM without virgl, a missing driver). LiquidDesktop then draws
 # without the GPU (main/main.js) and picom uses a config without GLX-only features (blur, shaders, GLX vsync).
 if [ -z "$LIQUID_SOFTWARE_RENDERING" ] && [ "$LIBGL_ALWAYS_SOFTWARE" = 1 ]; then LIQUID_SOFTWARE_RENDERING=1; fi
-if [ -z "$LIQUID_SOFTWARE_RENDERING" ] && command -v glxinfo >/dev/null \
+if [ -z "$LIQUID_SOFTWARE_RENDERING" ] && [ -z "$LIQUID_RENDERING_FORCED" ] && command -v glxinfo >/dev/null \
     && glxinfo -B 2>/dev/null | grep -i "renderer string" | grep -qiE "llvmpipe|softpipe|swrast"; then
   LIQUID_SOFTWARE_RENDERING=1
   echo "liquid-desktop: OpenGL is software (llvmpipe): using software rendering" >&2

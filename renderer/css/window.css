@@ -898,3 +898,6 @@ body.mission-open #spaces { z-index: 7550; }
 .and-note { font-size: 12px; margin: 8px 14px 18px; line-height: 1.45; }
 .and-id { font-variant-numeric: tabular-nums; letter-spacing: 0.03em; user-select: text; }
 .android-pane .row .btn + .btn { margin-left: 6px; }
+
+/* Settings › Developer */
+.dev-cmd { font: 12px var(--mono); padding: 3px 8px; border-radius: 6px; background: var(--field); color: var(--text); user-select: text; white-space: nowrap; }

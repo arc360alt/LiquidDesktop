@@ -351,6 +351,32 @@ function rendering() {
   return { software: process.env.LIQUID_SOFTWARE_RENDERING === '1', osId: id.toLowerCase(), live };
 }
 
+// Settings › Developer › Rendering: Automatic / Hardware / Software, saved per user in
+// ~/.config/LiquidDesktop/rendering and applied at the next login by session/liquid-desktop-session.
+const RENDER_CHOICES = ['auto', 'hardware', 'software'];
+const renderingFile = () => path.join(process.env.XDG_CONFIG_HOME || path.join(HOME, '.config'), 'LiquidDesktop', 'rendering');
+async function renderingInfo() {
+  let choice = 'auto';
+  try { const c = fs.readFileSync(renderingFile(), 'utf8').trim(); if (RENDER_CHOICES.includes(c)) choice = c; } catch { /* not chosen */ }
+  // what draws the screen now (this login): glxinfo with this session's settings ("llvmpipe" = software)
+  const glx = (await run('sh', ['-c', 'glxinfo -B 2>/dev/null | grep -i "renderer string"'])).out;
+  const renderer = (glx.match(/renderer string:\s*(.+)/i) || [])[1]?.replace(/\s*\((?:LLVM [^)]*|0x[^)]*)\)/g, '').trim() || null;
+  const env = readFile('/etc/environment') || '';
+  return {
+    choice,
+    software: process.env.LIQUID_SOFTWARE_RENDERING === '1',
+    renderer, rendererSoftware: renderer ? /llvmpipe|softpipe|swrast|software/i.test(renderer) : null,
+    systemSoftware: /^\s*(export\s+)?(LIQUID_SOFTWARE_RENDERING|LIBGL_ALWAYS_SOFTWARE)\s*=\s*"?1"?/m.test(env),
+    lumenGraphics: fs.existsSync('/usr/bin/lumen-graphics'),
+  };
+}
+function setRendering(choice) {
+  if (!RENDER_CHOICES.includes(choice)) throw new Error('Unknown rendering choice');
+  fs.mkdirSync(path.dirname(renderingFile()), { recursive: true });
+  if (choice === 'auto') fs.rmSync(renderingFile(), { force: true }); else fs.writeFileSync(renderingFile(), choice + '\n');
+  return true;
+}
+
 /* ------------------------------------------------------------------ terminals */
 
 const ptys = new Map();
@@ -580,6 +606,8 @@ function register({ getWindow, mode }) {
     return { battery: battery(), volume: vol, brightness: br, wifi: wf, bluetooth: bt };
   });
   h('sys:media', media);
+  h('sys:rendering', () => renderingInfo());
+  h('sys:setRendering', (c) => setRendering(String(c)));
   h('sys:mediaCmd', (cmd) => (require('./media').available() ? require('./media').command(cmd) : which('playerctl') && run('playerctl', [cmd])));
   h('sys:setVolume', async (v) => {
     v = Math.max(0, Math.min(100, Math.round(v)));

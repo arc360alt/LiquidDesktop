@@ -22,6 +22,7 @@ const PANES = [
   ['mouse', 'Mouse & Trackpad', '#8e8e93', '<svg class="sym" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="6" y="3" width="12" height="18" rx="6"/><path d="M12 3v6"/></svg>'], ['keyboard', 'Keyboard', '#8e8e93', sym.keyboard], ['terminal', 'Terminal', '#1c1c1e', sym.terminal], ['apps', 'Apps', '#5e5ce6', sym.grid],
   ['android', 'Android', '#30c06b', '<svg class="sym" viewBox="0 0 24 24" fill="currentColor"><path d="M5.5 11a6.5 6.5 0 0 1 13 0z"/><rect x="5.5" y="12" width="13" height="8" rx="2"/><path d="M8.6 5.6 7.2 3.5M15.4 5.6l1.4-2.1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="9.4" cy="8.6" r="1" fill="#30c06b"/><circle cx="14.6" cy="8.6" r="1" fill="#30c06b"/></svg>'],
   ['account', 'Users & Accounts', '#0a84ff', sym.user],
+  ['developer', 'Developer', '#5e5ce6', sym.terminal],
 ];
 
 const toggle = (key, after) => h('label.toggle', h('input', { type: 'checkbox', checked: !!store.get(key), onchange: (e) => { store.set(key, e.target.checked); after?.(e.target.checked); } }), h('span'));
@@ -377,6 +378,35 @@ const render = {
     const st = await api.android.status().catch(() => null);
     if (!st) return [hero('android', 'Android', 'Android’s status couldn’t be read.')];
     return androidPane(st);
+  },
+  async developer() {
+    const out = [hero('developer', 'Developer', 'Settings for testing and troubleshooting LiquidDesktop.')];
+    if (isNative) out.push(h('div.group', row('Developer tools', h('button.btn', { onclick: () => api.shell.devtools() }, 'Open'), 'Chromium’s inspector for the desktop’s web UI')));
+    let r = null;
+    try { r = await api.sys.rendering?.(); } catch { r = null; }
+    if (!r) return out;
+    const NAMES = { auto: 'Automatic', hardware: 'Hardware', software: 'Software' };
+    const now = r.software ? 'Software' : 'Hardware';
+    const sel = h('select.field.square', { style: { height: '28px', minWidth: '160px' }, onchange: async (e) => {
+      const c = e.target.value;
+      try { await api.sys.setRendering(c); } catch (err) { alertDialog({ title: 'The rendering choice couldn’t be saved', message: err.message }); return; }
+      rerender();
+      if (await confirmDialog('Log out to apply it?', `Rendering is set to ${NAMES[c]}. It takes effect the next time you log in.`, 'Log Out')) api.sys.power('logout');
+    } }, ...['auto', 'hardware', 'software'].map((c) => h('option', { value: c, selected: r.choice === c }, NAMES[c])));
+    const explain = {
+      auto: r.systemSoftware ? 'Uses the system’s setting: software rendering is set system-wide (no GPU driver was found for the screen).' : 'Uses your graphics card, or software rendering when no working GPU driver is found.',
+      hardware: 'Always uses your graphics card, even if the system set software rendering. If the driver doesn’t work, the screen may stay blank: switch back from a text console (Ctrl+Alt+F3) by deleting ~/.config/LiquidDesktop/rendering.',
+      software: 'Always draws without the GPU (llvmpipe). Slower, and blur and glass effects are off.',
+    }[r.choice];
+    const pending = (r.choice === 'hardware' && r.software) || (r.choice === 'software' && !r.software);
+    out.push(h('div.group-title', 'Rendering'),
+      h('div.group',
+        row('Rendering', sel, explain),
+        // the card's name ("AMD Radeon RX 7600"); the driver details are in the tooltip
+        row('Now using', h('span.muted', { style: { textAlign: 'right' }, title: r.renderer || '' }, `${now}${r.renderer ? ' · ' + r.renderer.replace(/\s*\(.*\)\s*$/, '') : ''}`),
+          pending ? `Your choice takes effect at your next login.` : r.rendererSoftware && !r.software ? 'OpenGL is software (llvmpipe), but LiquidDesktop isn’t in software mode.' : null),
+        r.lumenGraphics ? row('System-wide setting', h('code.dev-cmd', 'sudo lumen-graphics auto|hardware|software'), 'Lumen’s setting for every user, in /etc/environment. The choice above overrides it for you.') : null));
+    return out;
   },
   async defaults() {
     let d = null;

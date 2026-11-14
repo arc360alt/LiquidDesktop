@@ -5,7 +5,7 @@ const call = (name) => async (...args) => {
   if (r && typeof r === 'object' && '__error' in r) throw new Error(r.__error);
   return r;
 };
-const names = ['sys:info', 'sys:status', 'sys:media', 'sys:mediaCmd', 'sys:setVolume', 'sys:setMute', 'sys:setBrightness', 'sys:wifiPower',
+const names = ['sys:info', 'sys:status', 'sys:rendering', 'sys:setRendering', 'sys:media', 'sys:mediaCmd', 'sys:setVolume', 'sys:setMute', 'sys:setBrightness', 'sys:wifiPower',
   'sys:wifiList', 'sys:wifiConnect', 'sys:airplane', 'sys:bluetoothPower', 'sys:stats', 'sys:kill', 'sys:checkPassword', 'sys:power', 'sys:screenshot', 'sys:shells', 'sys:monoFonts', 'sys:updateCheck', 'sys:inputDevices', 'sys:inputApply', 'sys:cursorThemes', 'sys:cursorCss', 'sys:cursorApply', 'sys:displays', 'sys:setDisplay', 'dialogs:status', 'dialogs:fix', 'dialogs:test', 'picker:done', 'appchooser:done', 'net:fetch', 'fs:readDataUrl', 'fs:thumb', 'dialog:open', 'dialog:save', 'apptheme:status', 'apptheme:set', 'apptheme:install', 'sddm:status', 'sddm:apply', 'sddm:sudoStatus', 'sddm:sudoCheck', 'tray:list', 'tray:activate', 'tray:contextMenu', 'tray:menu', 'tray:event', 'sys:capture', 'sys:saveScreenshot', 'sys:account', 'sys:setRealName', 'sys:setAvatar', 'sys:changePassword',
   'fs:home', 'fs:list', 'fs:stat', 'fs:read', 'fs:write', 'fs:mkdir', 'fs:newFile', 'fs:rename', 'fs:move', 'fs:copy', 'fs:trash', 'fs:remove', 'fs:emptyTrash',
   'fs:open', 'fs:reveal', 'fs:search', 'fs:exists', 'fs:places', 'apps:list', 'apps:info', 'apps:iconFor', 'apps:byId', 'apps:launch', 'apps:run', 'clip:write', 'clip:read', 'pty:create',

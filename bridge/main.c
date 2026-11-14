@@ -551,15 +551,22 @@ static void place(struct view *v) {
 
 // Android's on-screen keyboard has a window of its own ("InputMethod"), which stays (empty, the size of the
 // whole Android screen) even when the keyboard is turned off: with --crop-to-content it's never shown
+// Android's whole desktop (Waydroid's "full UI": a window called Waydroid with the home screen, status and
+// navigation bars) is only shown when it was asked for (`allow-desktop 1` on stdin: Open Android, or the
+// Waydroid icon). Waydroid also falls back to it for a while when the last app closes: that isn't shown.
+static bool allow_desktop = false;
+static bool is_android_desktop(struct view *v) { return v->toplevel->app_id && strcmp(v->toplevel->app_id, "Waydroid") == 0; }
 static bool hidden_window(struct view *v) {
-	return crop && v->toplevel->title && strcmp(v->toplevel->title, "InputMethod") == 0;
+	if (!crop) return false;
+	if (v->toplevel->title && strcmp(v->toplevel->title, "InputMethod") == 0) return true;
+	return is_android_desktop(v) && !allow_desktop;
 }
 
 static void view_map(struct wl_listener *l, void *data) {
 	struct view *v = wl_container_of(l, v, map);
 	v->mapped = true;
 	v->closing = false;
-	if (hidden_window(v)) return;
+	if (hidden_window(v)) { v->waiting = true; return; }
 	// Android: no window until the app has drawn into it. Windows that open and close straight away (and
 	// Waydroid's own start-up placeholder) never reach the desktop; see tick()
 	if (crop) { shown_box(v); if (!v->has_content) { v->waiting = true; return; } }
@@ -570,6 +577,8 @@ static void view_map(struct wl_listener *l, void *data) {
 
 static void view_unmap(struct wl_listener *l, void *data) {
 	struct view *v = wl_container_of(l, v, unmap);
+	// Android's desktop shown because it was asked for, now closed: from now on it's hidden again
+	if (is_android_desktop(v) && v->output) allow_desktop = false;
 	v->mapped = false;
 	v->waiting = false;
 	if (server.focused == v) focus_view(NULL);
@@ -867,6 +876,7 @@ static void run_command(char *line) {
 	double f;
 	int px;
 	if (sscanf(line, "crop-top %d", &px) == 1) { crop_top = px > 0 && px < 400 ? px : 0; return; }
+	if (sscanf(line, "allow-desktop %d", &px) == 1) { allow_desktop = px != 0; return; }
 	if (sscanf(line, "zoom %127s %lf", app, &f) == 2) {
 		if (f < ZOOM_MIN) f = ZOOM_MIN; if (f > ZOOM_MAX) f = ZOOM_MAX;
 		remember_zoom(app, f);

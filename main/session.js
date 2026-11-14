@@ -85,7 +85,14 @@ async function startSession({ preload }) {
     frames.set(w.id, fb);
     fb.loadFile(FRAME, { query: { id: String(w.id), layer: 'frame', mode: 'session' } });
     if (process.env.LIQUID_DEBUG) fb.webContents.on('console-message', (e) => console.log('[frame]', e.message));
-    fb.webContents.once('did-finish-load', () => { done(xid); sendFrame(w); setTimeout(() => !fb.isDestroyed() && fb.showInactive(), 30); });
+    // the window can be gone by the time its frame has loaded (it opened and closed at once): then the frame
+    // goes too, instead of staying behind as an empty title bar
+    const gone = () => !wm.windows.has(w.id) || frames.get(w.id) !== fb;
+    fb.webContents.once('did-finish-load', () => {
+      if (gone()) { if (frames.get(w.id) === fb) frames.delete(w.id); if (!fb.isDestroyed()) fb.destroy(); done(null); return; }
+      done(xid); sendFrame(w);
+      setTimeout(() => { if (fb.isDestroyed()) return; if (gone()) { fb.destroy(); return; } fb.showInactive(); }, 30);
+    });
   });
   wm.on('frame-gone', (w) => { const fb = frames.get(w.id); frames.delete(w.id); if (fb && !fb.isDestroyed()) fb.destroy(); });
   function sendFrame(w) {

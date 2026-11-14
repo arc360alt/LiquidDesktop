@@ -297,6 +297,7 @@ function openWindow(full = true) {
   return p;
 }
 async function showFullUi() {
+  toBridge('allow-desktop 1');   // asked for: the bridge shows Android's desktop window (otherwise it's hidden)
   if (await (sessionUp || waitForSession(5))) execFile('waydroid', ['show-full-ui'], { env: hostEnv() }, () => {});
 }
 async function openWindowNow(full) {
@@ -328,6 +329,7 @@ wait $S`;
   if (bridge) {
     host = bridge;
     host.mode = 'windows';
+    if (full) toBridge('allow-desktop 1');
     const sess = spawn('sh', ['-c', startup(full)], { env: { ...env, WAYLAND_DISPLAY: BRIDGE_SOCKET }, stdio: 'ignore', detached: true });
     host.session = sess;
   } else {

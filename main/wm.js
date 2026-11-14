@@ -463,9 +463,10 @@ class WindowManager extends EventEmitter {
     this.X.ChangeWindowAttributes(wid, { eventMask: EM.PropertyChange | EM.StructureNotify, borderPixel: 0 });
     this.X.ConfigureWindow(wid, { borderWidth: 0 });
     this.X.ChangeSaveSet(true, wid);
-    // no app identity yet: some windows get theirs right after they appear (the Android bridge's do), possibly
-    // before we started listening for changes, so look again a moment later
-    if (!cls[0] && !cls[1]) {
+    // Some windows get their title and app identity right after they appear (the Android bridge's do), possibly
+    // before we started listening for changes: look again a moment later (otherwise a window can keep a
+    // placeholder title like "liquid-wl-bridge:…")
+    {
       for (const ms of [150, 600, 1500]) setTimeout(async () => {
         if (!this.windows.has(w.id)) return;
         const [c, t] = await Promise.all([this.getClass(wid), this.getTitle(wid)]);
@@ -479,7 +480,8 @@ class WindowManager extends EventEmitter {
       // ask the web UI for a frame (a window whose title bar it draws), then put the app inside it
       let frameXid;
       try { frameXid = await this.requestFrame(w); } catch (e) { console.error('[wm] frame', e); }
-      if (!this.windows.has(w.id)) return; // vanished while we waited
+      // vanished while we waited: its frame (made meanwhile) goes too
+      if (!this.windows.has(w.id)) { this.emit('frame-gone', w); return; }
       if (this.vanished?.has(wid) || !(await this.attrs(wid))) {
         // gone: manageNative unmanages it, which closes the title-bar window that was just made for it
         if (frameXid) w.fb = frameXid;

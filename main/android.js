@@ -286,6 +286,7 @@ wait $S`;
   const me = host;
   sessionUp = waitForSession(180);   // a first start can take a couple of minutes
   if (host.mode === 'windows') sessionUp.then((up) => up && execFile('waydroid', ['prop', 'set', 'persist.waydroid.multi_windows', 'true'], { env: hostEnv() }, () => {}));
+  sessionUp.then((up) => up && desktopTweaks()).catch(() => {});
   me.on('exit', () => {
     if (host !== me) return;
     host = null; sessionUp = null;
@@ -371,6 +372,18 @@ async function playId() {
 }
 
 /* ------------------------------------------------------------------ */
+/* ------------------------------------------------------------------ Android settings for a desktop */
+// Waydroid's Android is set up like a tablet: it shows its on-screen keyboard even though a real keyboard is
+// connected (that keyboard opened as a huge window of its own). Turned off each time Android starts; typing
+// on your keyboard works as before. Needs adb (android-tools); without it, nothing changes.
+async function desktopTweaks() {
+  if (!adbBin()) return;
+  try {
+    await adbConnect();
+    await adb(['shell', 'settings', 'put', 'secure', 'show_ime_with_hard_keyboard', '0']);
+  } catch (e) { console.warn('[android] settings', e.message); }
+}
+
 /* ------------------------------------------------------------------ app window sizes (View menu) */
 // Like iPhone/iPad apps on a Mac: an Android app's window has a few fixed shapes, switched from the menu bar.
 // Android decides an app's size itself, so the change is made inside Android over adb (Android's debugging

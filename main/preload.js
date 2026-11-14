@@ -11,7 +11,7 @@ const names = ['sys:info', 'sys:status', 'sys:media', 'sys:mediaCmd', 'sys:setVo
   'fs:open', 'fs:reveal', 'fs:search', 'fs:exists', 'fs:places', 'apps:list', 'apps:info', 'apps:iconFor', 'apps:byId', 'apps:launch', 'apps:run', 'clip:write', 'clip:read', 'pty:create',
   'shell:toggleFullscreen', 'shell:devtools', 'shell:quit',
   'bt:state', 'bt:scan', 'bt:pair', 'bt:connect', 'bt:forget', 'bt:power', 'audio:devices', 'audio:setDefault', 'audio:setVolume', 'audio:setMute', 'defaults:list', 'defaults:apply', 'defaults:get', 'apps:openWith', 'wall:list', 'wall:add', 'wall:remove',
-  'android:status', 'android:install', 'android:uninstall', 'android:setOn', 'android:open', 'android:stop', 'android:forceQuit', 'android:playId', 'android:setMultiWindow', 'android:resizeApp', 'drives:list', 'drives:mount', 'drives:eject'];
+  'android:status', 'android:install', 'android:uninstall', 'android:setOn', 'android:open', 'android:stop', 'android:forceQuit', 'android:playId', 'android:setMultiWindow', 'android:resizeApp', 'android:setArm', 'drives:list', 'drives:mount', 'drives:eject'];
 const api = {};
 for (const n of names) {
   const [ns, fn] = n.split(':');

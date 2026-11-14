@@ -444,10 +444,17 @@ static void place(struct view *v) {
 	}
 }
 
+// Android's on-screen keyboard has a window of its own ("InputMethod"), which stays (empty, the size of the
+// whole Android screen) even when the keyboard is turned off: with --crop-to-content it's never shown
+static bool hidden_window(struct view *v) {
+	return crop && v->toplevel->title && strcmp(v->toplevel->title, "InputMethod") == 0;
+}
+
 static void view_map(struct wl_listener *l, void *data) {
 	struct view *v = wl_container_of(l, v, map);
 	v->mapped = true;
 	v->closing = false;
+	if (hidden_window(v)) return;
 	place(v);
 	create_window(v);
 	focus_view(v);   // a new window is the active one (the window manager focuses it too)
@@ -502,7 +509,11 @@ static void view_destroy(struct wl_listener *l, void *data) {
 	free(v);
 }
 
-static void view_set_title(struct wl_listener *l, void *data) { struct view *v = wl_container_of(l, v, set_title); set_title(v); }
+static void view_set_title(struct wl_listener *l, void *data) {
+	struct view *v = wl_container_of(l, v, set_title);
+	if (hidden_window(v) && v->output) { v->closing = true; wlr_output_destroy(v->output); return; }
+	set_title(v);
+}
 static void view_set_app_id(struct wl_listener *l, void *data) { struct view *v = wl_container_of(l, v, set_app_id); set_x_identity(v); }
 
 static void new_toplevel(struct wl_listener *l, void *data) {

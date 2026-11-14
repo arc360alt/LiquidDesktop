@@ -49,6 +49,7 @@ async function status() {
     installed, initialized, cage: which('cage'), binder: binderOk(), restartNeeded: restartNeeded(),
     nvidia: exists('/proc/driver/nvidia'),
     gapps: /GAPPS/i.test(c),
+    arm: armStatus(c), cpu: cpuVendor(),
     container: active.out.trim() === 'active', serviceEnabled: enabled.out.trim() === 'enabled',
     session: /Session:\s*RUNNING/i.test(st.out),
     window: !!host,
@@ -91,6 +92,8 @@ function rootJob(kind, script, steps) {
         send({ line: `Downloading Android… ${Math.round(+m[1])} of ${Math.round(total)} MB${file ? ' (part 2)' : ''}`, percent: at(step, frac) });
         continue;
       }
+      // downloads with a progress bar (tqdm: " 45%|████   | …"): progress within the step
+      if ((m = line.match(/(\d{1,3})%\|/)) && +m[1] <= 100) { send({ line: steps[step][2] || line.slice(0, 140), percent: at(step, +m[1] / 100) }); continue; }
       // pacman: "(1/3) installing waydroid" and percentages
       if ((m = line.match(/\((\d+)\/(\d+)\)\s+(installing|checking|loading|downloading|removing)\s+(.*)/i))) { send({ line: `${m[3][0].toUpperCase() + m[3].slice(1)} ${m[4]}`, percent: at(step, +m[1] / +m[2]) }); continue; }
       send({ line: line.slice(0, 140) });
@@ -138,6 +141,43 @@ ${multiWindowScript(true)}
 systemctl enable --now waydroid-container.service
 echo "::step 4 Done"
 `, [[0, 12], [12, 15], [15, 92], [92, 100], [100, 100]]);
+}
+
+/* ------------------------------------------------------------------ ARM apps */
+// Most Android games are built only for phone (ARM) processors, so on a PC (x86) the Play Store hides them.
+// A translation layer runs them anyway: Google's libndk (best on AMD) or Intel's libhoudini (best on Intel).
+// Installed with waydroid_script (github.com/casualsnek/waydroid_script), the community tool everyone uses for
+// this: it adds the layer to Waydroid's system image and tells Android it can run ARM apps.
+const WS_REPO = 'https://github.com/casualsnek/waydroid_script';
+const WS_DIR = '/var/lib/liquid-desktop/waydroid_script';
+function armStatus(c = cfg()) {
+  const m = c.match(/^ro\.dalvik\.vm\.native\.bridge\s*=\s*(\S+)/m);
+  return !m || m[1] === '0' ? null : /houdini/.test(m[1]) ? 'libhoudini' : /ndk/.test(m[1]) ? 'libndk' : m[1];
+}
+function cpuVendor() {
+  try { const t = fs.readFileSync('/proc/cpuinfo', 'utf8'); return /GenuineIntel/.test(t) ? 'intel' : /AuthenticAMD/.test(t) ? 'amd' : 'other'; } catch { return 'other'; }
+}
+async function setArm(kind) {
+  if (kind === 'auto') kind = cpuVendor() === 'intel' ? 'libhoudini' : 'libndk';
+  if (kind && !['libndk', 'libhoudini'].includes(kind)) throw new Error('Unknown translation layer');
+  const current = armStatus();
+  if (kind === current) return { ok: true };
+  await stopWindow();   // Android restarts with the change
+  const ws = (args) => `cd "${WS_DIR}" && venv/bin/python3 main.py ${args}`;
+  return rootJob('arm', `
+set -e
+echo "::step 0 Getting the ARM translation installer…"
+if [ -d "${WS_DIR}/.git" ]; then git -C "${WS_DIR}" pull -q --ff-only || true; else rm -rf "${WS_DIR}"; mkdir -p "$(dirname "${WS_DIR}")"; git clone -q --depth 1 ${WS_REPO} "${WS_DIR}"; fi
+[ -x "${WS_DIR}/venv/bin/python3" ] || python3 -m venv "${WS_DIR}/venv"
+"${WS_DIR}/venv/bin/pip" install -q --disable-pip-version-check -r "${WS_DIR}/requirements.txt"
+${current ? `echo "::step 1 Removing ${current}…"
+${ws(`uninstall ${current}`)}` : ''}
+${kind ? `echo "::step 2 Installing ${kind}…"
+${ws(`install ${kind}`)}` : ''}
+echo "::step 3 Restarting Android…"
+systemctl restart waydroid-container.service
+echo "::step 4 Done"
+`, [[0, 10, 'Getting the ARM translation installer…'], [10, 25, 'Removing the old translation layer…'], [25, 92, `Downloading and installing ${kind || ''}…`], [92, 100, 'Restarting Android…'], [100, 100, 'Done']]);
 }
 
 function uninstall() {
@@ -377,11 +417,17 @@ async function playId() {
 // connected (that keyboard opened as a huge window of its own). Turned off each time Android starts; typing
 // on your keyboard works as before. Needs adb (android-tools); without it, nothing changes.
 async function desktopTweaks() {
-  if (!adbBin()) return;
-  try {
-    await adbConnect();
-    await adb(['shell', 'settings', 'put', 'secure', 'show_ime_with_hard_keyboard', '0']);
-  } catch (e) { console.warn('[android] settings', e.message); }
+  // without adb this can't be done: say so instead of quietly leaving the on-screen keyboard on
+  if (!adbBin()) { broadcast('android:error', 'Android’s on-screen keyboard can’t be turned off without adb. Install it with: sudo pacman -S android-tools, then restart Android.'); return; }
+  // Android can take a little while after starting before it takes commands: a few tries
+  for (let i = 0; i < 3; i++) {
+    try {
+      await adbConnect();
+      const r = await adb(['shell', 'settings', 'put', 'secure', 'show_ime_with_hard_keyboard', '0']);
+      if (r.ok && (await adb(['shell', 'settings', 'get', 'secure', 'show_ime_with_hard_keyboard'])).out.trim() === '0') return;
+    } catch (e) { if (i === 2) broadcast('android:error', `Android’s on-screen keyboard couldn’t be turned off: ${e.message}`); }
+    await new Promise((res) => setTimeout(res, 5000));
+  }
 }
 
 /* ------------------------------------------------------------------ app window sizes (View menu) */
@@ -471,6 +517,7 @@ function register() {
   h('android:playId', () => playId());
   h('android:setMultiWindow', (on) => setMultiWindow(!!on));
   h('android:resizeApp', (pkg, shape) => resizeApp(String(pkg), String(shape)));
+  h('android:setArm', (kind) => setArm(kind ? String(kind) : null));
   app.on('before-quit', () => killHost('SIGTERM'));
 }
 

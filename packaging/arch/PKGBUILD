@@ -35,6 +35,7 @@ depends=(
   'sassc'               # builds MacTahoe's GTK 4 / libadwaita version
   'wlroots0.20'         # liquid-wl-bridge: Android (Waydroid) apps as their own windows
   'udisks2'             # USB drives in Files: opening (mounting) and ejecting
+  'android-tools'       # adb: Android app window sizes and desktop settings (Settings › Android)
 )
 optdepends=(
   'networkmanager: Wi-Fi status, network list and joining (nmcli)'

@@ -911,6 +911,29 @@ function androidPane(first) {
             if (!(await askSudo('Changing how Android shows its apps needs administrator rights (sudo).'))) { e.target.checked = !on; return; }
             act(() => api.android.setMultiWindow(on), 'The setting couldn’t be changed');
           } }), h('span')), st.multiWindow ? 'Every Android app opens in its own window, with its own icon in the Dock.' : 'All of Android is shown in one window, like a phone screen.')));
+      // ARM apps: most mobile games are built only for phone processors; a translation layer runs them on a PC
+      const best = st.cpu === 'intel' ? 'libhoudini' : 'libndk';
+      const armSel = h('select.field.square', { style: { height: '28px', minWidth: '200px' } },
+        h('option', { value: '', selected: !st.arm }, 'Off'),
+        h('option', { value: 'libndk', selected: st.arm === 'libndk' }, `libndk (Google)${best === 'libndk' ? ' · best for your CPU' : ''}`),
+        h('option', { value: 'libhoudini', selected: st.arm === 'libhoudini' }, `libhoudini (Intel)${best === 'libhoudini' ? ' · best for your CPU' : ''}`));
+      const armApply = async () => {
+        const kind = armSel.value || null;
+        if (kind === (st.arm || null)) return;
+        if (!(await askSudo('Changing ARM app support needs administrator rights (sudo).'))) return;
+        prog = { line: 'Starting…', percent: 0 }; draw();
+        const r = await api.android.setArm(kind).catch((e) => ({ ok: false, error: e.message }));
+        prog = null;
+        if (r && r.ok === false) fail('ARM app support couldn’t be changed', r.error);
+        await refresh();
+      };
+      kids.push(h('div.group-title', 'ARM apps'),
+        h('div.group',
+          row('Translation layer', armSel, st.arm
+            ? `On (${st.arm}): apps built only for phone processors install and run, a little slower than on a phone.`
+            : 'Most mobile games are built only for phone (ARM) processors, so the Play Store hides them here. A translation layer lets them install and run.'),
+          h('div.row', h('div.label', h('small', 'Downloads about 100–300 MB with waydroid_script and restarts Android. Some games still refuse to run in Waydroid (anti-cheat).')),
+            h('button.btn.primary', { onclick: armApply }, 'Apply'))));
       if (st.gapps) {
         kids.push(h('div.group-title', 'Google Play certification'),
           h('div.group',

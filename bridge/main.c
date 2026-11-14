@@ -90,6 +90,7 @@ struct view {
 	// --crop-to-content: per layer, where its solid pixels are (Android draws a soft shadow around each app)
 	struct solid { struct wlr_surface *surface; int w, h; struct wlr_box box; int64_t tried; } solid[16];
 	struct wlr_box pending; int64_t pending_since;   // a new size is only taken once it holds still
+	double zoom, applied_zoom;   // --crop-to-content: drawn this much bigger (keeps the shape); 1 = actual size
 	struct wl_listener map, unmap, commit, destroy, set_title, set_app_id;
 	struct wl_listener out_frame, out_request_state, out_destroy;
 };
@@ -124,6 +125,27 @@ static bool verbose_log = false;
 // screen, with the app as sub-surfaces at its place on it. The window shown is just those sub-surfaces;
 // and its size is the app's to change (asking Waydroid to resize would resize the whole Android screen).
 static bool crop = false;
+// Android's own title bar (back, minimise, maximise, close) over the top of each app: cropped off, since the
+// window manager's title bar does that job. Its height is measured by LiquidDesktop (adb) and sent on stdin.
+static int crop_top = 0;
+// zoom per app (from stdin, remembered by LiquidDesktop): applied when an app's window opens
+#define ZOOMS 64
+static struct { char app[128]; double zoom; } zooms[ZOOMS];
+static double zoom_for(const char *app) {
+	for (int i = 0; i < ZOOMS; i++) if (app && zooms[i].app[0] && strcmp(zooms[i].app, app) == 0) return zooms[i].zoom;
+	return 1.0;
+}
+static void remember_zoom(const char *app, double z) {
+	if (!app) return;
+	int slot = -1;
+	for (int i = 0; i < ZOOMS && slot < 0; i++) if (strcmp(zooms[i].app, app) == 0) slot = i;
+	for (int i = 0; i < ZOOMS && slot < 0; i++) if (!zooms[i].app[0]) slot = i;
+	if (slot < 0) slot = 0;
+	snprintf(zooms[slot].app, sizeof zooms[slot].app, "%s", app);
+	zooms[slot].zoom = z;
+}
+#define ZOOM_MIN 0.5
+#define ZOOM_MAX 4.0
 
 /* ------------------------------------------------------------------ X11 side (our own connection) */
 static xcb_atom_t atom(const char *name) {
@@ -181,8 +203,11 @@ static void set_x_identity(struct view *v) {
 static void set_fixed_size_hints(struct view *v, int w, int h) {
 	if (!v->xwin || w <= 0 || h <= 0) return;
 	uint32_t hints[18] = { 0 };
-	hints[0] = 16 | 32;
-	hints[5] = w; hints[6] = h; hints[7] = w; hints[8] = h;
+	// w/h are the app's actual size: it can be made bigger or smaller (zoom), always keeping its shape
+	hints[0] = 16 | 32 | 128;
+	hints[5] = (uint32_t)(w * ZOOM_MIN); hints[6] = (uint32_t)(h * ZOOM_MIN);
+	hints[7] = (uint32_t)(w * ZOOM_MAX); hints[8] = (uint32_t)(h * ZOOM_MAX);
+	hints[9] = w; hints[10] = h; hints[11] = w; hints[12] = h;
 	xcb_change_property(server.xcb, XCB_PROP_MODE_REPLACE, v->xwin, XCB_ATOM_WM_NORMAL_HINTS, XCB_ATOM_WM_SIZE_HINTS, 32, 18, hints);
 	xcb_flush(server.xcb);
 }
@@ -257,11 +282,17 @@ static struct wlr_box shown_box(struct view *v);
 static void place(struct view *v);
 static void set_fixed_size_hints(struct view *v, int w, int h);
 
+static double view_zoom(struct view *v) { return v->zoom > 0 ? v->zoom : 1.0; }
 static void resize_output(struct view *v, int w, int h) {
-	if (!v->output || w <= 0 || h <= 0 || (w == v->w && h == v->h)) return;
+	if (!v->output || w <= 0 || h <= 0) return;
+	// zoomed: the output is drawn at this scale (the app's layout, and Waydroid, don't change)
+	double z = crop ? view_zoom(v) : 1.0;
+	if (w == v->w && h == v->h && z == v->applied_zoom) return;
 	struct wlr_output_state st;
 	wlr_output_state_init(&st);
 	wlr_output_state_set_custom_mode(&st, w, h, 0);
+	wlr_output_state_set_scale(&st, z);
+	v->applied_zoom = z;
 	if (wlr_output_commit_state(v->output, &st)) { v->w = w; v->h = h; }
 	wlr_output_state_finish(&st);
 }
@@ -299,10 +330,22 @@ static void out_request_state(struct wl_listener *l, void *data) {
 	struct view *v = wl_container_of(l, v, out_request_state);
 	const struct wlr_output_event_request_state *ev = data;
 	wlr_output_commit_state(v->output, ev->state);
-	if (crop) {   // the app's size isn't ours to change: back to it
-		int w = v->content.width, h = v->content.height;
+	if (crop) {
+		// the app's size is Android's to decide: resizing the window zooms it instead, keeping its shape
+		int cw = v->content.width, ch = v->content.height;
+		int nw = v->output->width;
 		v->w = v->output->width; v->h = v->output->height;
-		if (w > 0 && h > 0) resize_output(v, w, h);
+		if (cw > 0 && ch > 0) {
+			double z = (double)nw / cw;
+			if (z < ZOOM_MIN) z = ZOOM_MIN; if (z > ZOOM_MAX) z = ZOOM_MAX;
+			if (z > 0.97 && z < 1.03) z = 1.0;   // close to actual size: snap to it
+			v->zoom = z;
+			remember_zoom(v->toplevel->app_id, z);
+			printf("zoom %s %.4f\n", v->toplevel->app_id ? v->toplevel->app_id : "-", z);
+			fflush(stdout);
+			v->applied_zoom = -1;   // re-apply (size and scale) even if the size didn't change
+			resize_output(v, (int)(cw * z + 0.5), (int)(ch * z + 0.5));
+		}
 		return;
 	}
 	if (v->output->width != v->w || v->output->height != v->h) {
@@ -422,7 +465,11 @@ static struct wlr_box shown_box(struct view *v) {
 		else { if (ax < x1) x1 = ax; if (ay < y1) y1 = ay; if (bx > x2) x2 = bx; if (by > y2) y2 = by; }
 	}
 	if (!any) return g;
-	return (struct wlr_box){ .x = x1, .y = y1, .width = x2 - x1, .height = y2 - y1 };
+	struct wlr_box b = { .x = x1, .y = y1, .width = x2 - x1, .height = y2 - y1 };
+	// an Android app's own title bar: off (not on Android's whole desktop, the "Waydroid" window)
+	const char *id = v->toplevel->app_id;
+	if (crop_top > 0 && id && strncmp(id, "waydroid.", 9) == 0 && b.height > crop_top * 3) { b.y += crop_top; b.height -= crop_top; }
+	return b;
 }
 
 static int64_t now_ms(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); return t.tv_sec * 1000LL + t.tv_nsec / 1000000; }
@@ -437,9 +484,10 @@ static void place(struct view *v) {
 		if (!same_box(b, v->content) && now_ms() - v->pending_since < 250) b = v->content;
 	}
 	wlr_scene_node_set_position(&v->tree->node, v->slot * SLOT_SPACING - b.x, -b.y);
-	if (crop && v->mapped && v->output && (b.width != v->content.width || b.height != v->content.height || b.x != v->content.x || b.y != v->content.y)) {
+	double z = view_zoom(v);
+	if (crop && v->mapped && v->output && (b.width != v->content.width || b.height != v->content.height || b.x != v->content.x || b.y != v->content.y || z != v->applied_zoom)) {
 		v->content = b;
-		resize_output(v, b.width, b.height);
+		resize_output(v, (int)(b.width * z + 0.5), (int)(b.height * z + 0.5));
 		set_fixed_size_hints(v, b.width, b.height);
 	}
 }
@@ -514,7 +562,11 @@ static void view_set_title(struct wl_listener *l, void *data) {
 	if (hidden_window(v) && v->output) { v->closing = true; wlr_output_destroy(v->output); return; }
 	set_title(v);
 }
-static void view_set_app_id(struct wl_listener *l, void *data) { struct view *v = wl_container_of(l, v, set_app_id); set_x_identity(v); }
+static void view_set_app_id(struct wl_listener *l, void *data) {
+	struct view *v = wl_container_of(l, v, set_app_id);
+	if (crop) v->zoom = zoom_for(v->toplevel->app_id);
+	set_x_identity(v);
+}
 
 static void new_toplevel(struct wl_listener *l, void *data) {
 	struct wlr_xdg_toplevel *t = data;
@@ -522,6 +574,7 @@ static void new_toplevel(struct wl_listener *l, void *data) {
 	v->server = &server;
 	v->toplevel = t;
 	v->slot = ++server.next_slot;
+	v->zoom = 1.0;
 	v->tree = wlr_scene_xdg_surface_create(&server.scene->tree, t->base);
 	v->tree->node.data = v;
 	t->base->data = v->tree;
@@ -630,7 +683,8 @@ static void ptr_motion(struct wl_listener *l, void *data) {
 	struct view *v = view_for_output_name(ev->pointer->output_name);
 	p->over = v;
 	if (!v || !v->scene_output) { wlr_seat_pointer_notify_clear_focus(server.seat); return; }
-	double lx = v->slot * SLOT_SPACING + ev->x * v->w, ly = ev->y * v->h, sx, sy;
+	double zz = crop ? view_zoom(v) : 1.0;
+	double lx = v->slot * SLOT_SPACING + ev->x * v->w / zz, ly = ev->y * v->h / zz, sx, sy;
 	wlr_cursor_warp(server.cursor, NULL, lx, ly);
 	struct wlr_scene_node *n = wlr_scene_node_at(&server.scene->tree.node, lx, ly, &sx, &sy);
 	struct wlr_surface *surface = NULL;
@@ -719,6 +773,38 @@ static void request_shape(struct wl_listener *l, void *data) {
 static void request_selection(struct wl_listener *l, void *data) {
 	struct wlr_seat_request_set_selection_event *ev = data;
 	wlr_seat_set_selection(server.seat, ev->source, ev->serial);
+}
+
+/* ------------------------------------------------------------------ commands on stdin (from LiquidDesktop) */
+//   crop-top PX          height of Android's own title bar, cropped off every app window
+//   zoom APP_ID FACTOR   draw that app's windows this much bigger (1 = actual size); also sets it for later
+static char cmd_buf[1024];
+static size_t cmd_len = 0;
+static void run_command(char *line) {
+	char app[128];
+	double f;
+	int px;
+	if (sscanf(line, "crop-top %d", &px) == 1) { crop_top = px > 0 && px < 400 ? px : 0; return; }
+	if (sscanf(line, "zoom %127s %lf", app, &f) == 2) {
+		if (f < ZOOM_MIN) f = ZOOM_MIN; if (f > ZOOM_MAX) f = ZOOM_MAX;
+		remember_zoom(app, f);
+		struct view *v;
+		wl_list_for_each(v, &server.views, link) if (v->toplevel->app_id && strcmp(v->toplevel->app_id, app) == 0) { v->zoom = f; v->applied_zoom = -1; }
+	}
+}
+static struct wl_event_source *stdin_source;
+static int on_stdin(int fd, uint32_t mask, void *data) {
+	ssize_t n = (mask & WL_EVENT_READABLE) ? read(fd, cmd_buf + cmd_len, sizeof cmd_buf - 1 - cmd_len) : 0;
+	// closed (LiquidDesktop went away): stop listening, or this would be called over and over
+	if (n <= 0) { if (stdin_source) { wl_event_source_remove(stdin_source); stdin_source = NULL; } return 0; }
+	cmd_len += n;
+	cmd_buf[cmd_len] = 0;
+	char *start = cmd_buf, *nl;
+	while ((nl = strchr(start, '\n'))) { *nl = 0; run_command(start); start = nl + 1; }
+	cmd_len = strlen(start);
+	memmove(cmd_buf, start, cmd_len + 1);
+	if (cmd_len >= sizeof cmd_buf - 1) cmd_len = 0;   // a line that long isn't a command
+	return 0;
 }
 
 /* ------------------------------------------------------------------ the monitor apps see */
@@ -814,6 +900,7 @@ int main(int argc, char **argv) {
 	else sock = wl_display_add_socket_auto(server.display);
 	if (!sock) { fprintf(stderr, "liquid-wl-bridge: couldn't create the Wayland socket\n"); return 1; }
 	tick_timer = wl_event_loop_add_timer(server.loop, tick, NULL);
+	if (!isatty(0)) stdin_source = wl_event_loop_add_fd(server.loop, 0, WL_EVENT_READABLE, on_stdin, NULL);
 	wl_event_source_timer_update(tick_timer, 16);
 	if (!wlr_backend_start(server.backend)) { fprintf(stderr, "liquid-wl-bridge: couldn't start\n"); return 1; }
 

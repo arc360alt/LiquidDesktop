@@ -71,7 +71,12 @@ function appMenus() {
   const droid = (win?.wmClass || []).find((c) => /^waydroid\./.test(c));
   if (droid && api.android?.resizeApp) {
     const size = (shape) => () => api.android.resizeApp(droid, shape).catch((e) => shell.notify({ app: 'settings', title: 'Android', body: e.message }));
+    const zoom = (how) => () => api.android.zoomApp(droid, how).catch((e) => shell.notify({ app: 'settings', title: 'Android', body: e.message }));
     menus.push({ title: 'View', items: [
+      { label: 'Back', action: () => api.android.back().catch((e) => shell.notify({ app: 'settings', title: 'Android', body: e.message })) }, '-',
+      { label: 'Zoom In', action: zoom('in') },
+      { label: 'Zoom Out', action: zoom('out') },
+      { label: 'Actual Size', action: zoom('reset') }, '-',
       { label: 'Rotate', action: size('rotate') }, '-',
       { label: 'Phone (Portrait)', action: size('phone') },
       { label: 'Phone (Landscape)', action: size('phone-landscape') }, '-',

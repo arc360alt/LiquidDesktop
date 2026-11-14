@@ -53,6 +53,8 @@ function sizeHints(h) {
   if (h[0] & 16) { r.minW = h[5]; r.minH = h[6]; } else if ((h[0] & 256) && h.length > 16) { r.minW = h[15]; r.minH = h[16]; }
   if (h[0] & 32) { r.maxW = h[7] > 0 && h[7] < 32768 ? h[7] : 0; r.maxH = h[8] > 0 && h[8] < 32768 ? h[8] : 0; }
   r.fixed = !!(r.maxW && r.maxH && r.minW === r.maxW && r.minH === r.maxH);
+  // a fixed aspect ratio (flag 128, min aspect = max aspect): resizing keeps its shape (zoomed Android apps)
+  if ((h[0] & 128) && h.length > 12 && h[10] && h[12] && h[9] * h[12] === h[11] * h[10]) r.aspect = h[9] / h[10];
   return r;
 }
 function clampToHints(w, cw, ch) {
@@ -893,6 +895,17 @@ class WindowManager extends EventEmitter {
       if (dir.includes('s')) hh = Math.max(minH, f.h + dy);
       if (dir.includes('w')) { ww = Math.max(minW, f.w - dx); x = f.x + f.w - ww; }
       if (dir.includes('n')) { hh = Math.max(minH, f.h - dy); y = f.y + f.h - hh; if (y < this.workarea.top) { hh -= this.workarea.top - y; y = this.workarea.top; } }
+      const s = w.hints || {};
+      if (s.aspect) {
+        // keep the app's shape: the width decides (or the height, when only the top/bottom edge is dragged)
+        let cw = ww - extraW, ch = hh - extraH;
+        if (dir.includes('e') || dir.includes('w')) ch = cw / s.aspect; else cw = ch * s.aspect;
+        const k = Math.min(1, s.maxW ? s.maxW / cw : 1, s.maxH ? s.maxH / ch : 1), kk = Math.max(k, s.minW ? s.minW / cw : 0, s.minH ? s.minH / ch : 0);
+        cw = Math.round(cw * kk); ch = Math.round(ch * kk);
+        ww = cw + extraW; hh = ch + extraH;
+        if (dir.includes('w')) x = f.x + f.w - ww;
+        if (dir.includes('n')) y = f.y + f.h - hh;
+      }
       Object.assign(w, { x, y, w: ww, h: hh });
       this.applyGeometry(w);
     }, 16);

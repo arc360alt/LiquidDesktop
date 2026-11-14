@@ -250,7 +250,11 @@ async function startBridge() {
     // a stale socket from a bridge that didn't exit cleanly would block the name
     const rt = process.env.XDG_RUNTIME_DIR || `/run/user/${process.getuid()}`;
     for (const f of [BRIDGE_SOCKET, BRIDGE_SOCKET + '.lock']) { try { fs.rmSync(path.join(rt, f), { force: true }); } catch { /* none */ } }
-    const p = spawn(bin, ['--socket', BRIDGE_SOCKET, '--no-activate', '--crop-to-content', '--verbose'], { env: userEnv(), stdio: ['ignore', 'pipe', 'pipe'], detached: true });
+    const p = spawn(bin, ['--socket', BRIDGE_SOCKET, '--no-activate', '--crop-to-content', '--verbose'], { env: userEnv(), stdio: ['pipe', 'pipe', 'pipe'], detached: true });
+    p.stdin.on('error', () => {});
+    // tell it each app's remembered zoom, and the title-bar height if it's known already
+    for (const [app, z] of Object.entries(loadZooms())) p.stdin.write(`zoom ${app} ${z}\n`);
+    if (captionPx) p.stdin.write(`crop-top ${captionPx}\n`);
     // what Android's windows send (sizes…), for working out window-size problems: ~/.local/state/liquid-desktop/android-bridge.log
     let log = null;
     try {
@@ -260,7 +264,12 @@ async function startBridge() {
     } catch { /* no log */ }
     let done = false;
     const finish = (ok) => { if (!done) { done = true; resolve(ok ? p : null); } };
-    p.stdout.on('data', (d) => { if (/WAYLAND_DISPLAY=/.test(String(d))) finish(true); });
+    p.stdout.on('data', (d) => {
+      const t = String(d);
+      if (/WAYLAND_DISPLAY=/.test(t)) finish(true);
+      // the window was resized: that app's new zoom, remembered for next time
+      for (const m of t.matchAll(/^zoom (\S+) ([\d.]+)$/gm)) saveZoom(m[1], Number(m[2]));
+    });
     p.stderr.on('data', (d) => {
       log?.write(d);
       const err = String(d).split('\n').filter((l) => l.startsWith('liquid-wl-bridge:')).pop();
@@ -394,8 +403,46 @@ async function launchApp(pkg) {
   // an app: just that app (its own window); the Waydroid icon itself: Android's whole desktop
   await openWindow(!pkg);
   if (!(await (sessionUp || waitForSession(180)))) return false;
-  if (pkg) execFile('waydroid', ['app', 'launch', pkg], { env: hostEnv() }, () => {});
+  if (pkg) {
+    execFile('waydroid', ['app', 'launch', pkg], { env: hostEnv() }, () => {});
+    // once its window is up; adb can need a moment to (re)connect after Android starts, so a few tries
+    if (!captionPx) for (const ms of [4000, 12000, 25000]) setTimeout(() => { if (!captionPx) measureCaption().catch(() => {}); }, ms);
+  }
   return true;
+}
+
+/* ------------------------------------------------------------------ Android's own title bar, and zoom */
+// Every Android app window has Android's own title bar (back, minimise, maximise, close) under ours. The
+// bridge crops it off; its height (it depends on Android's screen density) is read from Android over adb.
+let captionPx = 0;
+const toBridge = (line) => { try { if (host?.mode === 'windows' && host.stdin?.writable) host.stdin.write(line + '\n'); } catch { /* gone */ } };
+async function measureCaption() {
+  if (captionPx || !adbBin()) return;
+  await adbConnect();
+  const out = (await adb(['shell', 'dumpsys', 'input'])).out;
+  const m = out.match(/Caption of Task=\d+\}[^\n]*?frame=\[(\d+),(\d+)\]\[(\d+),(\d+)\]/);
+  if (!m) return;
+  const px = Number(m[4]) - Number(m[2]);
+  if (px > 0 && px < 300) { captionPx = px; toBridge(`crop-top ${px}`); }
+}
+// zoom per app: the window drawn bigger (or smaller), same shape, same layout inside
+const zoomsFile = () => path.join(app.getPath('userData'), 'android-zoom.json');
+function loadZooms() { try { return JSON.parse(fs.readFileSync(zoomsFile(), 'utf8')) || {}; } catch { return {}; } }
+function saveZoom(appId, z) {
+  if (!/^[\w.]+$/.test(appId) || !(z > 0)) return;
+  const all = loadZooms();
+  if (Math.abs(z - 1) < 0.01) delete all[appId]; else all[appId] = Math.round(z * 100) / 100;
+  try { fs.mkdirSync(path.dirname(zoomsFile()), { recursive: true }); fs.writeFileSync(zoomsFile(), JSON.stringify(all)); } catch { /* not saved */ }
+}
+const ZOOM_STEPS = [0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3];
+function zoomApp(appId, how) {
+  appId = String(appId);
+  if (!/^[\w.]+$/.test(appId)) throw new Error('Unknown app');
+  const cur = loadZooms()[appId] || 1;
+  let z = how === 'in' ? ZOOM_STEPS.find((x) => x > cur + 0.01) || cur : how === 'out' ? [...ZOOM_STEPS].reverse().find((x) => x < cur - 0.01) || cur : 1;
+  saveZoom(appId, z);
+  toBridge(`zoom ${appId} ${z}`);
+  return z;
 }
 
 /* ------------------------------------------------------------------ Google Play certification */
@@ -518,6 +565,9 @@ function register() {
   h('android:setMultiWindow', (on) => setMultiWindow(!!on));
   h('android:resizeApp', (pkg, shape) => resizeApp(String(pkg), String(shape)));
   h('android:setArm', (kind) => setArm(kind ? String(kind) : null));
+  h('android:zoomApp', (appId, how) => zoomApp(appId, String(how)));
+  // Android's Back (its title bar, with the back arrow, is hidden): to the app that has the keyboard
+  h('android:back', async () => { await adbConnect(); await adb(['shell', 'input', 'keyevent', 'KEYCODE_BACK']); return true; });
   app.on('before-quit', () => killHost('SIGTERM'));
 }
 

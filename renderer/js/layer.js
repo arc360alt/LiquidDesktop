@@ -10,3 +10,5 @@ export const params = q;
 export const isSession = q.get('mode') === 'session';
 export const session = window.sys?.session || null;
 document.documentElement.dataset.layer = layer;
+// drawn without a GPU: solid glass instead of blurred glass (renderer/css/base.css)
+if (window.sys?.softwareRendering) document.documentElement.dataset.render = 'software';

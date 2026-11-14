@@ -37,7 +37,15 @@ async function startSession({ preload }) {
     transparent: true, backgroundColor: '#00000000', hasShadow: false, type: 'dock', webPreferences: prefs });
   fixedTitle(shell, 'LiquidDesktop Shell');
   wm.registerOwn(xidOf(shell), { role: 'shell' });
-  shell.loadFile(INDEX, { query: { mode: 'session', layer: 'shell', login: process.env.LIQUID_SKIP_LOGIN ? '0' : '1' } });
+  // The start-up screen (inside the shell page) is shown once per session. Whether it's done is kept here, in
+  // the main process: a reload of the shell (after a crash) asks for it not to be shown at all, and if start-up
+  // never reports back, it's taken down anyway, so it can't come back or stay up for good.
+  let bootDone = false;
+  const loadShell = () => shell.loadFile(INDEX, { query: { mode: 'session', layer: 'shell',
+    login: bootDone || process.env.LIQUID_SKIP_LOGIN ? '0' : '1', boot: bootDone ? '0' : '1' } });
+  ipcMain.on('shell:bootDone', (e) => { if (e.sender === shell.webContents) bootDone = true; });
+  setTimeout(() => { if (!bootDone && !shell.isDestroyed()) { console.warn('[session] start-up screen still up after 25s: taking it down'); bootDone = true; shell.webContents.send('session:hideBoot'); } }, 25000);
+  loadShell();
   if (process.env.LIQUID_DEBUG) for (const bw of [shell, desktop]) bw.webContents.on('console-message', (e) => console.log('[' + bw.getTitle() + ']', e.message));
   // links open in the default browser (Settings › Default Apps): LiquidDesktop's own unless another was picked
   const openLink = (url) => { if (!require('./defaultapps').openUrlExternally(url)) openApp('browser', { url }); };
@@ -45,6 +53,26 @@ async function startSession({ preload }) {
 
   desktop.once('ready-to-show', () => desktop.showInactive());
   shell.once('ready-to-show', () => { shell.showInactive(); setTimeout(() => wm.setShellInput([], false), 50); });
+
+  // A page of ours crashed (common without a GPU): log it and reload, the shell without its start-up screen.
+  // A few times only: a page that keeps crashing isn't reloaded forever.
+  const crashes = new Map();
+  const recover = (name, bw, reload) => {
+    bw.webContents.on('render-process-gone', (_e, d) => {
+      console.error(`[session] ${name} crashed: ${d.reason} (exit ${d.exitCode})`);
+      if (bw.isDestroyed() || d.reason === 'clean-exit') return;
+      const now = Date.now(), recent = (crashes.get(name) || []).filter((t) => now - t < 120000);
+      recent.push(now); crashes.set(name, recent);
+      if (recent.length > 3) { console.error(`[session] ${name} keeps crashing: not reloading it again`); return; }
+      setTimeout(() => { if (!bw.isDestroyed()) reload(); }, 500 * recent.length);
+    });
+  };
+  recover('shell', shell, loadShell);
+  recover('desktop', desktop, () => desktop.loadFile(INDEX, { query: { mode: 'session', layer: 'desktop' } }));
+  app.on('child-process-gone', (_e, d) => {
+    if (d.reason === 'clean-exit') return;
+    console.error(`[session] ${d.type}${d.name ? ' (' + d.name + ')' : ''} process gone: ${d.reason} (exit ${d.exitCode})`);
+  });
 
   const toShell = (ch, ...a) => { if (!shell.isDestroyed()) shell.webContents.send(ch, ...a); };
   const toLayers = (ch, ...a) => { for (const bw of [shell, desktop, ...appWindows.values()]) if (!bw.isDestroyed()) bw.webContents.send(ch, ...a); };
@@ -69,6 +97,7 @@ async function startSession({ preload }) {
     bw.once('ready-to-show', () => bw.show());
     bw.on('page-title-updated', (e, t) => { const mw = wm.windows.get(id); if (mw) { mw.title = t; wm.changed(mw); } });
     bw.on('closed', () => appWindows.delete(id));
+    recover(`app ${appId}#${id}`, bw, () => bw.webContents.reload());
     bw.webContents.setWindowOpenHandler(({ url }) => { openLink(url); return { action: 'deny' }; });
     bw.webContents.on('did-attach-webview', (_e, wc) => wc.setWindowOpenHandler(({ url }) => { bw.webContents.send('browser:newTab', url); return { action: 'deny' }; }));
     return id;

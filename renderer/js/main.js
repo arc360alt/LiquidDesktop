@@ -37,7 +37,11 @@ import './apps/about.js';
 import './apps/appstore.js';
 
 const progress = (p) => { const b = $('#boot .bar i'); if (b) b.style.width = p + '%'; };
-const hideBoot = () => { const b = $('#boot'); if (!b) return; b.classList.add('out'); setTimeout(() => b.remove(), 700); };
+const hideBoot = () => {
+  // the session's main process remembers it's done, so a reload never shows it again (main/session.js)
+  if (isSession && layer === 'shell') S.send('shell:bootDone');
+  const b = $('#boot'); if (!b) return; b.classList.add('out'); setTimeout(() => b.remove(), 700);
+};
 
 async function common() {
   initTheme();
@@ -48,7 +52,7 @@ async function common() {
 
 /* ---------------------------------------------------------------- the whole desktop in one window */
 async function bootFull() {
-  $('#boot-logo').innerHTML = logoBadge();
+  const bootLogo = $('#boot-logo'); if (bootLogo) bootLogo.innerHTML = logoBadge();
   progress(10);
   await common();
   api.sys.onUpdated?.(() => shell.updatedPrompt());
@@ -76,7 +80,17 @@ async function bootFull() {
 
 /* ---------------------------------------------------------------- session layers */
 async function bootShell() {
-  $('#boot-logo').innerHTML = logoBadge();
+  // reloaded after the start-up screen was already done (a crash): don't show it again
+  if (params.get('boot') === '0') $('#boot')?.remove();
+  S.on('session:hideBoot', hideBoot);
+  try { await bootShellSteps(); } catch (e) {
+    // a start-up step failed: the desktop may be missing a piece, but the start-up screen must not stay up
+    console.error('[LiquidDesktop] start-up:', e);
+    hideBoot();
+  }
+}
+async function bootShellSteps() {
+  const bootLogo = $('#boot-logo'); if (bootLogo) bootLogo.innerHTML = logoBadge();
   progress(15);
   await common();
   api.sys.onUpdated?.(() => shell.updatedPrompt());
@@ -103,6 +117,7 @@ async function bootShell() {
   hideBoot();
   if (askLogin) shell.lock(true);
   welcome();
+  softwareRenderingNotice();
   autoUpdateCheck();
 }
 
@@ -194,6 +209,24 @@ function browserWarning() {
     });
     if (r.button === 'never') store.set('geckoWarningOff', true);
   }, 900);
+}
+
+// No GPU (software rendering): blur and glass effects are off. Says why, and what brings them back: on a
+// Lumen live session that's installing Lumen, otherwise installing the graphics drivers.
+function softwareRenderingNotice() {
+  const r = shell.info?.rendering;
+  if (!r?.software || store.get('softwareNoticeOff')) return;
+  setTimeout(async () => {
+    const { alertDialog } = await import('./menus.js');
+    const lumenLive = r.live && /lumen/.test(r.osId || '');
+    const res = await alertDialog({
+      icon: logoBadge(), title: 'Software rendering',
+      message: 'LiquidDesktop is running without graphics acceleration, so blur and glass effects are turned off.'
+        + (lumenLive ? ' They’ll work once Lumen is installed.' : ' They’ll work once the graphics drivers for your computer are installed.'),
+      buttons: [{ label: 'Don’t Show Again', value: 'never' }, { label: 'OK', value: 'ok', primary: true }],
+    });
+    if (res.button === 'never') store.set('softwareNoticeOff', true);
+  }, 1200);
 }
 
 function welcome() {

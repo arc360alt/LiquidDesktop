@@ -341,6 +341,16 @@ function osName() {
   return m ? m[1] : 'Linux';
 }
 
+// How the screen is drawn, for the software-rendering notice: no GPU (main/main.js), which distribution, and
+// whether this is a live session from the installer image (archiso) rather than an installed system
+function rendering() {
+  const osRel = readFile('/etc/os-release') || '';
+  const id = (osRel.match(/^ID="?([^"\n]+)"?/m) || [])[1] || '';
+  const cmdline = readFile('/proc/cmdline') || '';
+  const live = fs.existsSync('/run/archiso') || /\b(archisobasedir|archisolabel|boot=live)\b/.test(cmdline);
+  return { software: process.env.LIQUID_SOFTWARE_RENDERING === '1', osId: id.toLowerCase(), live };
+}
+
 /* ------------------------------------------------------------------ terminals */
 
 const ptys = new Map();
@@ -562,7 +572,7 @@ function register({ getWindow, mode }) {
     mode, version: require('../package.json').version, user: os.userInfo().username, fullName: (await run('getent', ['passwd', os.userInfo().username])).out.split(':')[4]?.split(',')[0] || os.userInfo().username,
     host: os.hostname(), home: HOME, os: osName(), kernel: os.release(), arch: os.arch(),
     cpu: os.cpus()[0]?.model || 'CPU', cores: os.cpus().length, memory: os.totalmem(), uptime: os.uptime(),
-    electron: process.versions.electron, chrome: process.versions.chrome,
+    electron: process.versions.electron, chrome: process.versions.chrome, rendering: rendering(),
     gpu: await gpuName(),
   }));
   h('sys:status', async () => {

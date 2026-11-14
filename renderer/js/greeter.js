@@ -64,7 +64,7 @@ function openSessions() {
   m.className = 'g-menu glass';
   for (const s of info.sessions) {
     const it = document.createElement('button');
-    it.textContent = s.name + (s.type === 'wayland' ? '  (Wayland)' : '');
+    it.textContent = s.name + (s.type === 'wayland' && !/wayland/i.test(s.name) ? '  (Wayland)' : '');
     if (s === session) it.className = 'on';
     it.onclick = () => { session = s; drawSession(); closeSessions(); $('.g-pass').focus(); };
     m.append(it);

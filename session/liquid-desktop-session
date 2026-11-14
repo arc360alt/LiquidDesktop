@@ -30,9 +30,28 @@ if command -v xsettingsd >/dev/null; then
   XSD=$!
 fi
 
-# the compositor: real blur behind the glass, rounded corners, shadows
+# Software rendering (no usable GPU): LIQUID_SOFTWARE_RENDERING=1 or LIBGL_ALWAYS_SOFTWARE=1 set by the distro or
+# you, or OpenGL turns out to be llvmpipe (a VM without virgl, a missing driver). LiquidDesktop then draws
+# without the GPU (main/main.js) and picom uses a config without GLX-only features (blur, shaders, GLX vsync).
+if [ -z "$LIQUID_SOFTWARE_RENDERING" ] && [ "$LIBGL_ALWAYS_SOFTWARE" = 1 ]; then LIQUID_SOFTWARE_RENDERING=1; fi
+if [ -z "$LIQUID_SOFTWARE_RENDERING" ] && command -v glxinfo >/dev/null \
+    && glxinfo -B 2>/dev/null | grep -i "renderer string" | grep -qiE "llvmpipe|softpipe|swrast"; then
+  LIQUID_SOFTWARE_RENDERING=1
+  echo "liquid-desktop: OpenGL is software (llvmpipe): using software rendering" >&2
+fi
+[ "$LIQUID_SOFTWARE_RENDERING" = 1 ] && export LIQUID_SOFTWARE_RENDERING || unset LIQUID_SOFTWARE_RENDERING
+
+# the compositor: real blur behind the glass, rounded corners, shadows. Software rendering, or a picom backend
+# other than glx/egl asked for in LIQUID_PICOM_ARGS (Lumen sets "--backend xrender"): the software config.
+# LIQUID_PICOM_ARGS is always added on top.
+PICOM_CONF="$HERE/session/picom.conf"
+case " $LIQUID_PICOM_ARGS " in
+  *" --backend glx "*|*" --backend=glx "*|*" --backend egl "*|*" --backend=egl "*) ;;
+  *" --backend "*|*" --backend="*) PICOM_CONF="$HERE/session/picom-software.conf" ;;
+esac
+[ "$LIQUID_SOFTWARE_RENDERING" = 1 ] && PICOM_CONF="$HERE/session/picom-software.conf"
 if command -v picom >/dev/null; then
-  picom --config "$HERE/session/picom.conf" $LIQUID_PICOM_ARGS &
+  picom --config "$PICOM_CONF" $LIQUID_PICOM_ARGS &
   PICOM=$!
   sleep 0.5
 else

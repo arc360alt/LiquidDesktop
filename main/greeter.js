@@ -163,6 +163,8 @@ async function login(username, password, sessionId) {
 function run() {
   app.setName('LiquidDesktop Login');
   if (process.env.WAYLAND_DISPLAY) app.commandLine.appendSwitch('ozone-platform', 'wayland');
+  // no usable GPU (see main/main.js): Chromium's software compositor
+  if (process.env.LIQUID_SOFTWARE_RENDERING === '1' || process.env.LIBGL_ALWAYS_SOFTWARE === '1') app.disableHardwareAcceleration();
   // a writable place for Chromium's data and the remembered person/session
   const dataDir = [process.env.LIQUID_GREETER_DATA, '/var/cache/liquid-desktop-greeter', path.join(os.tmpdir(), `liquid-desktop-greeter-${process.getuid?.() ?? 0}`)]
     .filter(Boolean).find((d) => { try { fs.mkdirSync(d, { recursive: true }); fs.accessSync(d, fs.constants.W_OK); return true; } catch { return false; } });

@@ -13,8 +13,20 @@ const mode = argv.includes('--session') ? 'session' : 'windowed';
 const sizeArg = (argv.find((a) => a.startsWith('--size=')) || '').slice(7);
 const preload = path.join(__dirname, 'preload.js');
 
-app.commandLine.appendSwitch('enable-gpu-rasterization');
-app.commandLine.appendSwitch('ignore-gpu-blocklist');
+// Software rendering (no usable GPU: llvmpipe, VMs without virgl, distros that set it up that way): Chromium's
+// GPU path on llvmpipe can leave transparent windows empty, so everything is drawn by Chromium's software
+// compositor instead. Set by LIQUID_SOFTWARE_RENDERING=1 or LIBGL_ALWAYS_SOFTWARE=1 (the session script also
+// sets it when OpenGL turns out to be llvmpipe). Must happen before the app is ready; covers every window,
+// the shell and all of LiquidDesktop's own apps, since they share this process.
+const softwareRendering = process.env.LIQUID_SOFTWARE_RENDERING === '1' || process.env.LIBGL_ALWAYS_SOFTWARE === '1';
+if (softwareRendering) {
+  app.disableHardwareAcceleration();
+  console.log('[LiquidDesktop] software rendering (LIQUID_SOFTWARE_RENDERING / LIBGL_ALWAYS_SOFTWARE)');
+} else {
+  app.commandLine.appendSwitch('enable-gpu-rasterization');
+  app.commandLine.appendSwitch('ignore-gpu-blocklist');
+}
+process.env.LIQUID_SOFTWARE_RENDERING = softwareRendering ? '1' : '';
 if (mode === 'session') {
   // the session is an X11 window manager, so Chromium must talk X11 even if a Wayland socket is around
   app.commandLine.appendSwitch('ozone-platform', 'x11');

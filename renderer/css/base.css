@@ -101,6 +101,11 @@
 :root[data-glass='tinted'] { --glass-a: 0.55; --panel-a: 0.75; --glass-blur: 34px; }
 :root[data-theme='dark'][data-glass='tinted'] { --glass-a: 0.55; --panel-a: 0.75; }
 :root[data-reduce-transparency='true'] { --glass-a: 0.92; --panel-a: 0.95; --sidebar-a: 0.95; --win-alpha: 1; }
+/* No GPU (software rendering, main/main.js): there's no real blur (picom's xrender backend can't, and CSS blur on the
+   CPU is very slow), so glass is drawn mostly solid instead of see-through: same colours and shapes, no blur. */
+:root[data-render='software'] { --glass-a: 0.9; --panel-a: 0.94; --sidebar-a: 0.94; --win-alpha: 1; --glass-blur: 0px; }
+:root[data-render='software'] *, :root[data-render='software'] *::before, :root[data-render='software'] *::after { -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }
+:root[data-render='software'][data-layer='shell'] #menubar { background: rgba(var(--glass-rgb), 0.86); }
 
 * { box-sizing: border-box; }
 html, body {

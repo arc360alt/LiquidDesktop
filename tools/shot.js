@@ -2,6 +2,9 @@
 //   electron tools/shot.js <outdir> [steps.json]
 // steps: [{ "js": "...", "wait": 800, "shot": "name" }, ...]
 const { app, BrowserWindow } = require('electron');
+// SHOT_SIZE=2560x1600 (the window, in pixels) and SHOT_SCALE=1.5 (fractional scaling: CSS pixels = size / scale)
+const [shotW, shotH] = (process.env.SHOT_SIZE || '1440x900').split('x').map(Number);
+if (process.env.SHOT_SCALE) app.commandLine.appendSwitch('force-device-scale-factor', process.env.SHOT_SCALE);
 const path = require('path');
 const fs = require('fs');
 const system = require('../main/system');
@@ -14,7 +17,8 @@ app.on('web-contents-created', (_e, wc) => wc.on('will-attach-webview', (_ev, pr
 }));
 app.whenReady().then(async () => {
   fs.mkdirSync(out, { recursive: true });
-  const win = new BrowserWindow({ width: 1440, height: 900, show: false, webPreferences: {
+  const sc = Number(process.env.SHOT_SCALE) || 1;
+  const win = new BrowserWindow({ width: Math.round(shotW / sc), height: Math.round(shotH / sc), show: false, webPreferences: {
     offscreen: true, preload: path.join(__dirname, '../main/preload.js'), contextIsolation: true, webviewTag: true, sandbox: false } });
   win.webContents.setFrameRate(30);
   system.register({ getWindow: () => win, mode: 'windowed' });

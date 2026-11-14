@@ -57,4 +57,6 @@ api.browser = {
   on: (ch, fn) => { if (/^browser:/.test(ch)) ipcRenderer.on(ch, (_e, ...a) => fn(...a)); },
 };
 api.native = true;
+// drawn without a GPU (main/main.js): the web UI uses solid glass instead of blurred see-through glass
+api.softwareRendering = process.env.LIQUID_SOFTWARE_RENDERING === '1';
 contextBridge.exposeInMainWorld('sys', api);

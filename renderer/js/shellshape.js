@@ -60,7 +60,8 @@ function measure() {
   const input = [];
   for (const sel of INTERACTIVE) for (const el of $$(sel)) { const v = visible(el); if (v) input.push(px(v.b)); }
   const blur = [];
-  const all = new Set($$(glassSel));
+  // no GPU: picom can't blur (xrender), so no blur windows; glass is drawn solid instead (base.css)
+  const all = window.sys?.softwareRendering ? new Set() : new Set($$(glassSel));
   for (const el of all) {
     {
       if (el.closest('#lock, #boot')) continue;

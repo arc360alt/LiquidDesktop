@@ -102,13 +102,13 @@ const ICON_ROOTS = [path.join(HOME, '.local/share/icons'), '/usr/share/icons', '
   path.join(HOME, '.local/share/flatpak/exports/share/icons')];
 const iconCache = new Map();
 
-function resolveIcon(name) {
+function resolveIcon(name, extraRoots = []) {
   if (!name) return null;
   if (iconCache.has(name)) return iconCache.get(name);
   let found = null;
   if (name.startsWith('/')) found = fs.existsSync(name) ? name : null;
   else {
-    outer: for (const root of ICON_ROOTS) {
+    outer: for (const root of [...extraRoots, ...ICON_ROOTS]) {
       for (const theme of ICON_THEMES) {
         for (const size of ICON_SIZES) {
           for (const sub of ['apps', '']) {
@@ -151,10 +151,25 @@ const DATA_HOME = process.env.XDG_DATA_HOME || path.join(HOME, '.local/share');
 const APP_DIRS = [...new Set([path.join(DATA_HOME, 'applications'), path.join(HOME, '.local/share/applications'), '/usr/share/applications', '/usr/local/share/applications',
   '/var/lib/flatpak/exports/share/applications', path.join(DATA_HOME, 'flatpak/exports/share/applications')])];
 
+// Flatpak apps keep what they create inside their sandbox (~/.var/app/<id>/…). Flathub's Steam puts its game
+// shortcuts ("Exec=steam steam://rungameid/N") and their icons there, where no desktop looks. Those are listed
+// too, launched through the Flatpak (which hands the steam:// link to the running Steam).
+const SANDBOX_ROOT = path.join(HOME, '.var/app');
+function sandboxDataDirs() {
+  let ids = [];
+  try { ids = fs.readdirSync(SANDBOX_ROOT); } catch { return []; }
+  const out = [];
+  for (const id of ids) for (const sub of ['.local/share', 'data']) {
+    const data = path.join(SANDBOX_ROOT, id, sub);
+    if (fs.existsSync(path.join(data, 'applications'))) out.push({ id, data, apps: path.join(data, 'applications') });
+  }
+  return out;
+}
+
 // Installing or removing an app (App Store, pacman, flatpak in a terminal…) changes one of these folders:
 // tell every LiquidDesktop window so the launcher, Spotlight and Dock pick it up.
 function watchApps() {
-  const sig = () => APP_DIRS.map((d) => { try { const st = fs.statSync(d); return st.mtimeMs + ':' + fs.readdirSync(d).length; } catch { return '-'; } }).join('|');
+  const sig = () => [...APP_DIRS, ...sandboxDataDirs().map((x) => x.apps)].map((d) => { try { const st = fs.statSync(d); return st.mtimeMs + ':' + fs.readdirSync(d).length; } catch { return '-'; } }).join('|');
   let last = sig();
   setInterval(() => {
     const now = sig();
@@ -200,6 +215,23 @@ async function listApps(force) {
           exec: e.Exec, terminal: e.Terminal === 'true', icon: resolveIcon(e.Icon), iconName: e.Icon || '',
           categories: (e.Categories || '').split(';').filter(Boolean), wmClass: e.StartupWMClass || '', keywords: (e.Keywords || '').split(';').filter(Boolean),
           mimes: (e.MimeType || '').split(';').filter(Boolean),
+        });
+      } catch { /* unreadable entry */ }
+    }
+  }
+  for (const sb of sandboxDataDirs()) {
+    let files = [];
+    try { files = fs.readdirSync(sb.apps).filter((f) => f.endsWith('.desktop')); } catch { continue; }
+    for (const f of files) {
+      if (seen.has(f)) continue;
+      try {
+        const e = parseDesktopFile(path.join(sb.apps, f));
+        const url = (e.Exec || '').match(/\bsteam:\/\/[^\s"']+/);
+        if (e.Type !== 'Application' || e.NoDisplay === 'true' || e.Hidden === 'true' || !url) continue;
+        seen.set(f, {
+          id: 'desktop:' + f, file: path.join(sb.apps, f), name: e.Name || f, comment: e.Comment || '',
+          exec: `flatpak run ${sb.id} ${url[0]}`, terminal: false, icon: resolveIcon(e.Icon, [path.join(sb.data, 'icons')]), iconName: e.Icon || '',
+          categories: (e.Categories || 'Game').split(';').filter(Boolean), wmClass: e.StartupWMClass || '', keywords: (e.Keywords || '').split(';').filter(Boolean), mimes: [],
         });
       } catch { /* unreadable entry */ }
     }
@@ -796,7 +828,10 @@ function register({ getWindow, mode }) {
     const e = parseDesktopFile(file);
     return { id: 'desktop:' + path.basename(file), file, name: e.Name || id, exec: e.Exec, terminal: e.Terminal === 'true', icon: resolveIcon(e.Icon), categories: [], keywords: [] };
   });
-  h('apps:info', (file) => { const e = parseDesktopFile(file); return { id: 'desktop:' + path.basename(file), file, name: e.Name || path.basename(file), exec: e.Exec, terminal: e.Terminal === 'true', icon: resolveIcon(e.Icon), categories: [], keywords: [] }; });
+  h('apps:info', async (file) => {
+    // a Steam game from Flatpak's Steam: the launcher's entry (launched through the Flatpak)
+    if (String(file).startsWith(SANDBOX_ROOT + '/')) { const hit = (await listApps()).find((a) => a.file === file); if (hit) return hit; }
+    const e = parseDesktopFile(file); return { id: 'desktop:' + path.basename(file), file, name: e.Name || path.basename(file), exec: e.Exec, terminal: e.Terminal === 'true', icon: resolveIcon(e.Icon), categories: [], keywords: [] }; });
   h('apps:launch', (exec, terminal) => launchExec(exec, terminal));
   h('apps:run', (cmd) => launchExec(cmd, false));
 

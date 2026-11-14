@@ -53,12 +53,31 @@ esac
 # you, or OpenGL turns out to be llvmpipe (a VM without virgl, a missing driver). LiquidDesktop then draws
 # without the GPU (main/main.js) and picom uses a config without GLX-only features (blur, shaders, GLX vsync).
 if [ -z "$LIQUID_SOFTWARE_RENDERING" ] && [ "$LIBGL_ALWAYS_SOFTWARE" = 1 ]; then LIQUID_SOFTWARE_RENDERING=1; fi
-if [ -z "$LIQUID_SOFTWARE_RENDERING" ] && [ -z "$LIQUID_RENDERING_FORCED" ] && command -v glxinfo >/dev/null \
-    && glxinfo -B 2>/dev/null | grep -i "renderer string" | grep -qiE "llvmpipe|softpipe|swrast"; then
+# what OpenGL / GLX is here (asked once; used for the llvmpipe check and the NVIDIA settings below)
+GLXINFO=""
+[ -z "$LIQUID_SOFTWARE_RENDERING" ] && command -v glxinfo >/dev/null && GLXINFO="$(glxinfo -B 2>/dev/null)"
+if [ -z "$LIQUID_SOFTWARE_RENDERING" ] && [ -z "$LIQUID_RENDERING_FORCED" ] \
+    && printf '%s\n' "$GLXINFO" | grep -i "renderer string" | grep -qiE "llvmpipe|softpipe|swrast"; then
   LIQUID_SOFTWARE_RENDERING=1
   echo "liquid-desktop: OpenGL is software (llvmpipe): using software rendering" >&2
 fi
 [ "$LIQUID_SOFTWARE_RENDERING" = 1 ] && export LIQUID_SOFTWARE_RENDERING || unset LIQUID_SOFTWARE_RENDERING
+
+# NVIDIA's own driver drives the screen (its GLX, not just the driver being loaded: on hybrid laptops the
+# screen is usually driven by the Intel/AMD chip). picom's GLX backend then needs:
+#   --xrender-sync-fence  wait for apps' drawing to finish before using it (otherwise windows show black or
+#                         stale until something else changes them: a black wallpaper, app windows that never appear)
+#   --no-use-damage       redraw whole frames: with NVIDIA's driver, redrawing only changed parts leaves areas
+#                         unrefreshed (the same symptoms); a whole frame costs a discrete GPU next to nothing
+# (glx-no-stencil is gone in picom 11+, and vsync works with NVIDIA's GLX, so those stay as they are.) Both are
+# added to LIQUID_PICOM_ARGS unless it already says otherwise, so a distro's own flags win and nothing doubles up.
+if [ "$LIQUID_SOFTWARE_RENDERING" != 1 ] && { [ "$__GLX_VENDOR_LIBRARY_NAME" = nvidia ] \
+    || printf '%s\n' "$GLXINFO" | grep -qiE "(server glx vendor string|client glx vendor string|OpenGL vendor string):[[:space:]]*NVIDIA"; }; then
+  case " $LIQUID_PICOM_ARGS " in *" --xrender-sync-fence "*) ;; *) LIQUID_PICOM_ARGS="${LIQUID_PICOM_ARGS:+$LIQUID_PICOM_ARGS }--xrender-sync-fence" ;; esac
+  case " $LIQUID_PICOM_ARGS " in *" --use-damage "*|*" --no-use-damage "*) ;; *) LIQUID_PICOM_ARGS="$LIQUID_PICOM_ARGS --no-use-damage" ;; esac
+  export LIQUID_PICOM_ARGS
+  echo "liquid-desktop: NVIDIA driver: picom $LIQUID_PICOM_ARGS" >&2
+fi
 
 # the compositor: real blur behind the glass, rounded corners, shadows. Software rendering, or a picom backend
 # other than glx/egl asked for in LIQUID_PICOM_ARGS (Lumen sets "--backend xrender"): the software config.

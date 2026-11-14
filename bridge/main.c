@@ -23,6 +23,7 @@
 #include <wlr/backend/x11.h>
 #include <wlr/render/allocator.h>
 #include <wlr/render/wlr_renderer.h>
+#include <wlr/render/wlr_texture.h>
 #include <wlr/types/wlr_compositor.h>
 #include <wlr/types/wlr_cursor.h>
 #include <wlr/types/wlr_cursor_shape_v1.h>
@@ -86,6 +87,9 @@ struct view {
 	bool mapped, closing;
 	char *last_log;
 	struct wlr_box content;   // --crop-to-content: the part of the window that's shown
+	// --crop-to-content: per layer, where its solid pixels are (Android draws a soft shadow around each app)
+	struct solid { struct wlr_surface *surface; int w, h; struct wlr_box box; int64_t tried; } solid[16];
+	struct wlr_box pending; int64_t pending_since;   // a new size is only taken once it holds still
 	struct wl_listener map, unmap, commit, destroy, set_title, set_app_id;
 	struct wl_listener out_frame, out_request_state, out_destroy;
 };
@@ -272,6 +276,24 @@ static void out_frame(struct wl_listener *l, void *data) {
 	wlr_scene_output_send_frame_done(v->scene_output, &now);
 }
 
+// "draw your next frame" for every surface of every window, visible or not, about 60 times a second.
+// The scene only answers surfaces it shows, and only when the window redraws; Android's layers can sit
+// outside the (cropped, or still 1x1) window while it starts, and it waits for these before going on.
+static struct wl_event_source *tick_timer;
+static void send_done(struct wlr_surface *surface, int sx, int sy, void *data) { wlr_surface_send_frame_done(surface, data); }
+static int tick(void *data) {
+	struct timespec now;
+	clock_gettime(CLOCK_MONOTONIC, &now);
+	struct view *v;
+	wl_list_for_each(v, &server.views, link) {
+		if (!v->toplevel->base->surface->mapped) continue;
+		if (crop && v->mapped) place(v);
+		wlr_xdg_surface_for_each_surface(v->toplevel->base, send_done, &now);
+	}
+	wl_event_source_timer_update(tick_timer, 16);
+	return 0;
+}
+
 // the X11 window was resized (by the window manager / the person): tell the app its new size
 static void out_request_state(struct wl_listener *l, void *data) {
 	struct view *v = wl_container_of(l, v, out_request_state);
@@ -324,6 +346,7 @@ static void create_window(struct view *v) {
 	v->scene_output = wlr_scene_output_create(s->scene, v->output);
 	wlr_scene_output_set_position(v->scene_output, v->slot * SLOT_SPACING, 0);
 	wlr_output_layout_add(s->layout, v->output, v->slot * SLOT_SPACING, 0);   // where the cursor can be
+
 	v->out_frame.notify = out_frame;
 	wl_signal_add(&v->output->events.frame, &v->out_frame);
 	v->out_request_state.notify = out_request_state;
@@ -341,6 +364,44 @@ static void create_window(struct view *v) {
 }
 
 /* ------------------------------------------------------------------ Wayland windows */
+// The box of a layer's solid pixels (alpha ≥ 200), in its own coordinates: measured when its size changes.
+// Android's soft window shadow is see-through, and the X11 window can't be, so it would show as black.
+#define FMT_ARGB8888 0x34325241   /* DRM_FORMAT_ARGB8888 */
+static struct wlr_box solid_box(struct view *v, struct wlr_surface *ss) {
+	struct wlr_box whole = { 0, 0, ss->current.width, ss->current.height };
+	struct solid *slot = NULL, *free_slot = NULL;
+	for (int i = 0; i < 16; i++) {
+		if (v->solid[i].surface == ss) { slot = &v->solid[i]; break; }
+		if (!v->solid[i].surface && !free_slot) free_slot = &v->solid[i];
+	}
+	struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts);
+	int64_t now = ts.tv_sec * 1000LL + ts.tv_nsec / 1000000;
+	if (slot && slot->w == whole.width && slot->h == whole.height) {
+		if (slot->box.width > 0) return slot->box;
+		if (now - slot->tried < 500) return whole;   // nothing solid last time: look again in a moment, not every frame
+	}
+	if (!slot) slot = free_slot ? free_slot : &v->solid[0];
+	struct wlr_texture *tex = wlr_surface_get_texture(ss);
+	if (!tex || !tex->width || !tex->height) return whole;
+	int tw = tex->width, th = tex->height;
+	uint32_t *px = malloc((size_t)tw * th * 4);
+	if (!px) return whole;
+	bool ok = wlr_texture_read_pixels(tex, &(struct wlr_texture_read_pixels_options){ .data = px, .format = FMT_ARGB8888, .stride = tw * 4 });
+	int x1 = tw, y1 = th, x2 = -1, y2 = -1;
+	if (ok) for (int y = 0; y < th; y++) for (int x = 0; x < tw; x++) {
+		if ((px[y * tw + x] >> 24) < 200) continue;
+		if (x < x1) x1 = x; if (x > x2) x2 = x; if (y < y1) y1 = y; if (y > y2) y2 = y;
+	}
+	free(px);
+	*slot = (struct solid){ .surface = ss, .w = whole.width, .h = whole.height, .tried = now };
+	if (!ok || x2 < x1) return whole;   // nothing solid yet (still loading): measure again next time
+	// texture pixels → surface size (they differ when the layer is scaled)
+	double kx = (double)whole.width / tw, ky = (double)whole.height / th;
+	slot->box = (struct wlr_box){ (int)(x1 * kx), (int)(y1 * ky), (int)((x2 - x1 + 1) * kx), (int)((y2 - y1 + 1) * ky) };
+	if (verbose_log) fprintf(stderr, "%s: layer %dx%d, solid part %d,%d %dx%d\n", v->toplevel->app_id ? v->toplevel->app_id : "?", whole.width, whole.height, slot->box.x, slot->box.y, slot->box.width, slot->box.height);
+	return slot->box;
+}
+
 // the part of the window to show, in the toplevel surface's coordinates
 static struct wlr_box shown_box(struct view *v) {
 	struct wlr_box g = v->toplevel->base->geometry;
@@ -353,9 +414,10 @@ static struct wlr_box shown_box(struct view *v) {
 	for (int i = 0; i < 2; i++) wl_list_for_each(sub, lists[i], current.link) {
 		struct wlr_surface *ss = sub->surface;
 		if (!ss->mapped || ss->current.width < 2 || ss->current.height < 2) continue;
-		int ax = sub->current.x, ay = sub->current.y, bx = ax + ss->current.width, by = ay + ss->current.height;
 		// a layer covering the whole Android screen is a background, not the app
 		if (ss->current.width >= g.width && ss->current.height >= g.height) continue;
+		struct wlr_box sb = solid_box(v, ss);
+		int ax = sub->current.x + sb.x, ay = sub->current.y + sb.y, bx = ax + sb.width, by = ay + sb.height;
 		if (!any) { x1 = ax; y1 = ay; x2 = bx; y2 = by; any = true; }
 		else { if (ax < x1) x1 = ax; if (ay < y1) y1 = ay; if (bx > x2) x2 = bx; if (by > y2) y2 = by; }
 	}
@@ -363,8 +425,17 @@ static struct wlr_box shown_box(struct view *v) {
 	return (struct wlr_box){ .x = x1, .y = y1, .width = x2 - x1, .height = y2 - y1 };
 }
 
+static int64_t now_ms(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); return t.tv_sec * 1000LL + t.tv_nsec / 1000000; }
+static bool same_box(struct wlr_box a, struct wlr_box b) { return a.x == b.x && a.y == b.y && a.width == b.width && a.height == b.height; }
+
 static void place(struct view *v) {
 	struct wlr_box b = shown_box(v);
+	if (crop && v->content.width > 0) {
+		// Android redraws its shadow while the pointer moves and windows change focus, passing through
+		// in-between sizes: follow a new size only once it has held for a quarter of a second
+		if (!same_box(b, v->pending)) { v->pending = b; v->pending_since = now_ms(); }
+		if (!same_box(b, v->content) && now_ms() - v->pending_since < 250) b = v->content;
+	}
 	wlr_scene_node_set_position(&v->tree->node, v->slot * SLOT_SPACING - b.x, -b.y);
 	if (crop && v->mapped && v->output && (b.width != v->content.width || b.height != v->content.height || b.x != v->content.x || b.y != v->content.y)) {
 		v->content = b;
@@ -709,7 +780,9 @@ int main(int argc, char **argv) {
 	struct wlr_cursor_shape_manager_v1 *shapes = wlr_cursor_shape_manager_v1_create(server.display, 1);
 	server.request_shape.notify = request_shape;
 	wl_signal_add(&shapes->events.request_set_shape, &server.request_shape);
-	server.layout = wlr_output_layout_create(server.display);
+	// the cursor's layout of windows lives on a private display: wlroots announces every output in a layout as a
+	// monitor, and apps (Waydroid) must only see the one screen
+	server.layout = wlr_output_layout_create(wl_display_create());
 	server.cursor = wlr_cursor_create();
 	wlr_cursor_attach_output_layout(server.cursor, server.layout);
 	// the session's cursor theme and size (Settings › Mouse sets them for everything started in the session)
@@ -729,6 +802,8 @@ int main(int argc, char **argv) {
 	if (socket_name) { if (wl_display_add_socket(server.display, socket_name) == 0) sock = socket_name; }
 	else sock = wl_display_add_socket_auto(server.display);
 	if (!sock) { fprintf(stderr, "liquid-wl-bridge: couldn't create the Wayland socket\n"); return 1; }
+	tick_timer = wl_event_loop_add_timer(server.loop, tick, NULL);
+	wl_event_source_timer_update(tick_timer, 16);
 	if (!wlr_backend_start(server.backend)) { fprintf(stderr, "liquid-wl-bridge: couldn't start\n"); return 1; }
 
 	wl_event_loop_add_signal(server.loop, SIGTERM, on_signal_quit, NULL);

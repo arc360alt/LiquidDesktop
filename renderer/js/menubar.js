@@ -67,7 +67,20 @@ function appMenus() {
     '-', { label: 'Close Window', shortcut: '⌘W', disabled: !win, action: () => win.close() }] });
   if (!has('Edit')) menus.push({ title: 'Edit', items: editItems() });
   menus.push(...custom.filter((m) => m.title !== 'Window' && m.title !== 'Help'));
-  if (!custom.some((m) => m.title === 'View')) menus.push({ title: 'View', items: [
+  // Android apps (separate windows): a few fixed shapes, like iPhone and iPad apps on a Mac
+  const droid = (win?.wmClass || []).find((c) => /^waydroid\./.test(c));
+  if (droid && api.android?.resizeApp) {
+    const size = (shape) => () => api.android.resizeApp(droid, shape).catch((e) => shell.notify({ app: 'settings', title: 'Android', body: e.message }));
+    menus.push({ title: 'View', items: [
+      { label: 'Rotate', action: size('rotate') }, '-',
+      { label: 'Phone (Portrait)', action: size('phone') },
+      { label: 'Phone (Landscape)', action: size('phone-landscape') }, '-',
+      { label: 'Tablet (Portrait)', action: size('tablet') },
+      { label: 'Tablet (Landscape)', action: size('tablet-landscape') }, '-',
+      { label: 'Large', action: size('large') },
+      '-', { label: 'Mission Control', shortcut: 'F3', action: () => wm.mission() }] });
+  }
+  if (!custom.some((m) => m.title === 'View') && !droid) menus.push({ title: 'View', items: [
     { label: 'Show Desktop', shortcut: 'F11', action: () => wm.toggleDesktop() },
     { label: 'Mission Control', shortcut: 'F3', action: () => wm.mission() },
     { label: 'Apps', shortcut: 'F4', action: () => shell.launchpad() },

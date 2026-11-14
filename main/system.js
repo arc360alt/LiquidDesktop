@@ -146,8 +146,10 @@ function parseDesktopFile(file) {
 }
 
 let appsCache = null;
-const APP_DIRS = [path.join(HOME, '.local/share/applications'), '/usr/share/applications', '/usr/local/share/applications',
-  '/var/lib/flatpak/exports/share/applications', path.join(HOME, '.local/share/flatpak/exports/share/applications')];
+// your own apps (XDG_DATA_HOME: Waydroid puts Android's apps there too), then the system's
+const DATA_HOME = process.env.XDG_DATA_HOME || path.join(HOME, '.local/share');
+const APP_DIRS = [...new Set([path.join(DATA_HOME, 'applications'), path.join(HOME, '.local/share/applications'), '/usr/share/applications', '/usr/local/share/applications',
+  '/var/lib/flatpak/exports/share/applications', path.join(DATA_HOME, 'flatpak/exports/share/applications')])];
 
 // Installing or removing an app (App Store, pacman, flatpak in a terminal…) changes one of these folders:
 // tell every LiquidDesktop window so the launcher, Spotlight and Dock pick it up.
@@ -745,6 +747,14 @@ function register({ getWindow, mode }) {
   watchApps();
   watchUpdates();
   h('apps:iconFor', (name) => resolveIcon(name) || resolveIcon(String(name).toLowerCase()));
+  // a launcher entry by its id, even a hidden one (Waydroid hides Android's built-in apps, e.g. Clock, but their
+  // windows still need a name and an icon)
+  h('apps:byId', (id) => {
+    const file = APP_DIRS.map((d) => path.join(d, String(id).replace(/[/\\]/g, '') + '.desktop')).find((f) => fs.existsSync(f));
+    if (!file) return null;
+    const e = parseDesktopFile(file);
+    return { id: 'desktop:' + path.basename(file), file, name: e.Name || id, exec: e.Exec, terminal: e.Terminal === 'true', icon: resolveIcon(e.Icon), categories: [], keywords: [] };
+  });
   h('apps:info', (file) => { const e = parseDesktopFile(file); return { id: 'desktop:' + path.basename(file), file, name: e.Name || path.basename(file), exec: e.Exec, terminal: e.Terminal === 'true', icon: resolveIcon(e.Icon), categories: [], keywords: [] }; });
   h('apps:launch', (exec, terminal) => launchExec(exec, terminal));
   h('apps:run', (cmd) => launchExec(cmd, false));

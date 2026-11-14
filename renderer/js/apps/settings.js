@@ -885,12 +885,12 @@ function androidPane(first) {
         h('div.group',
           h('div.row', mark(st.binder), h('div.label', 'Android support in the Linux kernel', h('small', st.binder ? 'Available' : 'Missing: the installer tries to load it. If that fails, use the linux-zen kernel.'))),
           h('div.row', mark(!st.nvidia, true), h('div.label', 'Graphics', h('small', st.nvidia ? 'NVIDIA graphics aren’t supported by Waydroid. Android may be very slow or not start.' : 'Supported'))),
-          h('div.row', mark(true), h('div.label', 'Download', h('small', 'About 1 GB, plus a few small packages. Needs your password.')))),
+          h('div.row', mark(true), h('div.label', 'Download', h('small', 'About 1 GB. Needs your password. Your system should be up to date first.')))),
         h('div.group',
           row('Include Google Play', h('label.toggle', h('input', { type: 'checkbox', checked: gapps, onchange: (e) => { gapps = e.target.checked; } }), h('span')), 'The Play Store and Google services. You can get Play certified afterwards.'),
           h('div.row', h('div.label'), h('button.btn.primary', { onclick: install }, st.installed ? 'Finish Setting Up Android' : 'Install Android'))));
     } else {
-      const state = !st.on ? 'Off' : st.session ? 'Running' : st.window ? 'Starting…' : st.container ? 'Ready' : 'Stopped';
+      const state = st.restartNeeded ? 'Restart your computer to finish updating Linux: Android can’t start until then.' : !st.on ? 'Off' : st.session ? 'Running' : st.window ? 'Starting…' : st.container ? 'Ready' : 'Stopped';
       kids.push(
         h('div.group',
           row('Android', h('label.toggle', h('input', { type: 'checkbox', checked: st.on, onchange: async (e) => {

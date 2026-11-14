@@ -28,7 +28,12 @@ function nativeApp(info) {
     const app = { id, name, builtin: false, icon: null, exec: null, categories: [], keywords: [] };
     synth.set(id, app);
     catalog.extra.set(id, app);
-    api.apps.iconFor(inst || cls).then((icon) => { if (icon) { app.icon = icon; bus.emit('catalog'); } }).catch(() => {});
+    // a launcher entry named after the window's class that isn't in the app list (hidden ones, like Android's
+    // Clock): its real name and icon; otherwise an icon from the theme
+    (api.apps.byId ? api.apps.byId(cls || inst) : Promise.resolve(null)).then((e) => {
+      if (e) { Object.assign(app, { name: e.name, icon: e.icon, exec: e.exec, terminal: e.terminal }); bus.emit('catalog'); return; }
+      return api.apps.iconFor(inst || cls).then((icon) => { if (icon) { app.icon = icon; bus.emit('catalog'); } });
+    }).catch(() => {});
   }
   return synth.get(id);
 }

@@ -8,10 +8,10 @@ const call = (name) => async (...args) => {
 const names = ['sys:info', 'sys:status', 'sys:media', 'sys:mediaCmd', 'sys:setVolume', 'sys:setMute', 'sys:setBrightness', 'sys:wifiPower',
   'sys:wifiList', 'sys:wifiConnect', 'sys:airplane', 'sys:bluetoothPower', 'sys:stats', 'sys:kill', 'sys:checkPassword', 'sys:power', 'sys:screenshot', 'sys:shells', 'sys:monoFonts', 'sys:updateCheck', 'sys:inputDevices', 'sys:inputApply', 'sys:cursorThemes', 'sys:cursorCss', 'sys:cursorApply', 'sys:displays', 'sys:setDisplay', 'dialogs:status', 'dialogs:fix', 'dialogs:test', 'picker:done', 'appchooser:done', 'net:fetch', 'fs:readDataUrl', 'fs:thumb', 'dialog:open', 'dialog:save', 'apptheme:status', 'apptheme:set', 'apptheme:install', 'sddm:status', 'sddm:apply', 'sddm:sudoStatus', 'sddm:sudoCheck', 'tray:list', 'tray:activate', 'tray:contextMenu', 'tray:menu', 'tray:event', 'sys:capture', 'sys:saveScreenshot', 'sys:account', 'sys:setRealName', 'sys:setAvatar', 'sys:changePassword',
   'fs:home', 'fs:list', 'fs:stat', 'fs:read', 'fs:write', 'fs:mkdir', 'fs:newFile', 'fs:rename', 'fs:move', 'fs:copy', 'fs:trash', 'fs:remove', 'fs:emptyTrash',
-  'fs:open', 'fs:reveal', 'fs:search', 'fs:exists', 'fs:places', 'apps:list', 'apps:info', 'apps:iconFor', 'apps:launch', 'apps:run', 'clip:write', 'clip:read', 'pty:create',
+  'fs:open', 'fs:reveal', 'fs:search', 'fs:exists', 'fs:places', 'apps:list', 'apps:info', 'apps:iconFor', 'apps:byId', 'apps:launch', 'apps:run', 'clip:write', 'clip:read', 'pty:create',
   'shell:toggleFullscreen', 'shell:devtools', 'shell:quit',
   'bt:state', 'bt:scan', 'bt:pair', 'bt:connect', 'bt:forget', 'bt:power', 'audio:devices', 'audio:setDefault', 'audio:setVolume', 'audio:setMute', 'defaults:list', 'defaults:apply', 'defaults:get', 'apps:openWith', 'wall:list', 'wall:add', 'wall:remove',
-  'android:status', 'android:install', 'android:uninstall', 'android:setOn', 'android:open', 'android:stop', 'android:forceQuit', 'android:playId', 'android:setMultiWindow', 'drives:list', 'drives:mount', 'drives:eject'];
+  'android:status', 'android:install', 'android:uninstall', 'android:setOn', 'android:open', 'android:stop', 'android:forceQuit', 'android:playId', 'android:setMultiWindow', 'android:resizeApp', 'drives:list', 'drives:mount', 'drives:eject'];
 const api = {};
 for (const n of names) {
   const [ns, fn] = n.split(':');

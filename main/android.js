@@ -34,6 +34,9 @@ function binderOk() {
   try { if (/\bbinder\b/.test(fs.readFileSync('/proc/filesystems', 'utf8'))) return true; } catch { /* no procfs */ }
   return exists('/dev/binder') || exists('/dev/binderfs');
 }
+// the kernel was updated but the computer not restarted: the running kernel's modules are gone (Arch removes
+// them on update), so Android's container can't mount its system image ("mount … system.img" fails)
+const restartNeeded = () => { try { return !fs.existsSync(path.join('/usr/lib/modules', os.release())); } catch { return false; } };
 function cfg() { try { return fs.readFileSync('/var/lib/waydroid/waydroid.cfg', 'utf8'); } catch { return ''; } }
 async function status() {
   const installed = which('waydroid');
@@ -43,7 +46,7 @@ async function status() {
     run('systemctl', ['is-active', 'waydroid-container.service']), run('systemctl', ['is-enabled', 'waydroid-container.service']), run('waydroid', ['status'], 8000),
   ]) : [{ out: '' }, { out: '' }, { out: '' }];
   return {
-    installed, initialized, cage: which('cage'), binder: binderOk(),
+    installed, initialized, cage: which('cage'), binder: binderOk(), restartNeeded: restartNeeded(),
     nvidia: exists('/proc/driver/nvidia'),
     gapps: /GAPPS/i.test(c),
     container: active.out.trim() === 'active', serviceEnabled: enabled.out.trim() === 'enabled',
@@ -65,7 +68,7 @@ function rootJob(kind, script, steps) {
   const { sudoSpawn } = require('./appstore');
   const c = sudoSpawn(script);
   job = { kind, child: c };
-  let step = 0, tail = '', errorText = '', file = 0, lastTotal = 0;
+  let step = 0, tail = '', errorText = '', file = 0, lastTotal = 0, lastErrorLine = '';
   const send = (m) => broadcast('android:progress', { kind, ...m });
   const at = (s, frac = 0) => Math.round(steps[s][0] + (steps[s][1] - steps[s][0]) * Math.max(0, Math.min(1, frac)));
   send({ line: 'Starting…', percent: 0 });
@@ -78,6 +81,7 @@ function rootJob(kind, script, steps) {
       let m;
       if ((m = line.match(/^::step (\d+) (.*)$/))) { step = +m[1]; file = 0; lastTotal = 0; send({ line: m[2], percent: at(step) }); continue; }
       if ((m = line.match(/^::error (.*)$/))) { errorText = m[1]; continue; }
+      if (/\b(ERROR|Error|error)\b[:\]]|Traceback|Exception|cannot open shared object/.test(line) && !/details-to-stdout/.test(line)) lastErrorLine = line.replace(/^\(\d+\)\s*\[[\d:]+\]\s*/, '').slice(0, 300);
       // waydroid init: "[Downloading] 512.34 MB/839.82 MB   4.71 MB/s(avg)" for the system image, then the vendor one
       if ((m = line.match(/([\d.]+)\s*MB\s*\/\s*([\d.]+)\s*MB/))) {
         const total = +m[2];
@@ -99,7 +103,8 @@ function rootJob(kind, script, steps) {
     c.on('exit', (code) => {
       job = null;
       const ok = code === 0;
-      const error = ok ? null : errorText || (/incorrect password|a password is required|no password/i.test(tail) ? 'Your password wasn’t accepted.' : tail.split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith('::')).slice(-3).join('\n') || 'Something went wrong.');
+      const error = ok ? null : errorText || (/incorrect password|a password is required|no password/i.test(tail) ? 'Your password wasn’t accepted.' : lastErrorLine
+        || tail.split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith('::') && !/\[Downloading\]|MB\/s|details-to-stdout|See also/.test(l)).slice(-3).join('\n') || 'Something went wrong.');
       send({ done: true, ok, error, percent: ok ? 100 : undefined });
       broadcast('android:changed');
       require('./system').listApps(true).catch(() => {});
@@ -113,7 +118,13 @@ function install({ gapps = true } = {}) {
   return rootJob('install', `
 set -e
 echo "::step 0 Installing Waydroid…"
-pacman -S --needed --noconfirm waydroid cage
+# (no system update here: that's yours to run when you choose. But Arch only supports installing new packages
+# onto an up-to-date system, so if the new LXC can't start, that's the reason, and we say so.)
+pacman -S --needed --noconfirm waydroid cage android-tools
+if ! lxc-info --version >/dev/null 2>&1; then
+  echo "::error LXC (the container Android runs in) can't start: $(lxc-info --version 2>&1 | tail -1). Your system has updates it needs first: install them (sudo pacman -Syu) when it suits you, restart, then try again."
+  exit 4
+fi
 echo "::step 1 Checking that your system can run Android…"
 if ! grep -qw binder /proc/filesystems && [ ! -e /dev/binder ]; then modprobe binder_linux devices=binder,hwbinder,vndbinder 2>/dev/null || true; fi
 if ! grep -qw binder /proc/filesystems && [ ! -e /dev/binder ]; then
@@ -121,7 +132,7 @@ if ! grep -qw binder /proc/filesystems && [ ! -e /dev/binder ]; then
   exit 3
 fi
 echo "::step 2 Downloading Android (about 1 GB)…"
-waydroid init -f -s ${type}
+waydroid --details-to-stdout init -f -s ${type}
 echo "::step 3 Starting Android's container…"
 ${multiWindowScript(true)}
 systemctl enable --now waydroid-container.service
@@ -223,20 +234,26 @@ async function startBridge() {
 
 // several opens at once (two app icons clicked quickly) share one start
 let starting = null;
-function openWindow() {
-  if (!host && starting) return starting;
-  const p = openWindowNow();
+// full: show Android's whole desktop too. With separate windows, apps opened from the launcher appear as
+// their own windows and nothing else is shown; Android's whole desktop (a window with every app inside it)
+// only when asked for.
+function openWindow(full = true) {
+  if (!host && starting) return starting.then(() => { if (full) showFullUi(); return true; });
+  const p = openWindowNow(full);
   if (!host) { starting = p; p.finally(() => { if (starting === p) starting = null; }).catch(() => {}); }
   return p;
 }
-async function openWindowNow() {
+async function showFullUi() {
+  if (await (sessionUp || waitForSession(5))) execFile('waydroid', ['show-full-ui'], { env: hostEnv() }, () => {});
+}
+async function openWindowNow(full) {
   if (host) {
-    // already running: bring Android's home screen (its launcher) up
-    if (await (sessionUp || waitForSession(5))) execFile('waydroid', ['show-full-ui'], { env: hostEnv() }, () => {});
+    if (full) showFullUi();   // already running: bring Android's home screen (its launcher) up
     return true;
   }
   if (!which('waydroid')) throw new Error('Android isn’t installed yet. Install it in Settings › Android.');
   if (exists(offFile())) throw new Error('Android is turned off. Turn it on in Settings › Android.');
+  if (restartNeeded()) throw new Error('Restart your computer first: Linux was updated, and Android can’t start until the new version is running.');
   const env = userEnv();
   // An Android session still running from before (LiquidDesktop restarted, logged out…) draws to a display that
   // no longer exists: it plays sounds and sends notifications but can't show a single window. Start it afresh.
@@ -244,10 +261,10 @@ async function openWindowNow() {
     await run('waydroid', ['session', 'stop'], 20000);
     for (let i = 0; i < 20 && /Session:\s*RUNNING/i.test((await run('waydroid', ['status'], 5000)).out); i++) await new Promise((r) => setTimeout(r, 500));
   }
-  const startup = `
+  const startup = (showDesktop) => `
 waydroid session start & S=$!
 i=0; until waydroid status 2>/dev/null | grep -q 'Session:.*RUNNING'; do sleep 1; i=$((i+1)); [ $i -ge 90 ] && break; done
-waydroid show-full-ui
+${showDesktop ? 'waydroid show-full-ui' : ''}
 wait $S`;
   let bridge = null;
   if (multiWindow()) {
@@ -258,16 +275,16 @@ wait $S`;
   if (bridge) {
     host = bridge;
     host.mode = 'windows';
-    const sess = spawn('sh', ['-c', startup], { env: { ...env, WAYLAND_DISPLAY: BRIDGE_SOCKET }, stdio: 'ignore', detached: true });
+    const sess = spawn('sh', ['-c', startup(full)], { env: { ...env, WAYLAND_DISPLAY: BRIDGE_SOCKET }, stdio: 'ignore', detached: true });
     host.session = sess;
   } else {
     if (!which('cage')) throw new Error('Android’s window can’t open: cage is missing. Reinstall Android in Settings › Android.');
     // cage draws into one X11 window; no client-side decorations (LiquidDesktop frames the window)
-    host = spawn('cage', ['-d', '--', 'sh', '-c', startup], { env, stdio: 'ignore', detached: true });
+    host = spawn('cage', ['-d', '--', 'sh', '-c', startup(true)], { env, stdio: 'ignore', detached: true });
     host.mode = 'window';
   }
   const me = host;
-  sessionUp = waitForSession(120);
+  sessionUp = waitForSession(180);   // a first start can take a couple of minutes
   if (host.mode === 'windows') sessionUp.then((up) => up && execFile('waydroid', ['prop', 'set', 'persist.waydroid.multi_windows', 'true'], { env: hostEnv() }, () => {}));
   me.on('exit', () => {
     if (host !== me) return;
@@ -280,9 +297,12 @@ wait $S`;
   return true;
 }
 const hostEnv = () => (host?.mode === 'windows' ? { ...userEnv(), WAYLAND_DISPLAY: BRIDGE_SOCKET } : userEnv());
+// Android is up: the session runs AND Android has finished starting (apps asked to open before that are ignored)
 async function waitForSession(secs) {
-  for (let i = 0; i < secs; i++) {
-    if (/Session:\s*RUNNING/i.test((await run('waydroid', ['status'], 5000)).out)) return true;
+  const until = Date.now() + secs * 1000;
+  while (Date.now() < until) {
+    if (/Session:\s*RUNNING/i.test((await run('waydroid', ['status'], 5000)).out)
+      && (await run('waydroid', ['prop', 'get', 'sys.boot_completed'], 8000)).out.trim().endsWith('1')) return true;
     await new Promise((r) => setTimeout(r, 1000));
   }
   return false;
@@ -330,11 +350,10 @@ systemctl is-enabled -q waydroid-container.service 2>/dev/null && systemctl rest
 }
 // an Android app from the launcher (Exec=waydroid app launch PKG): start Android first if needed
 async function launchApp(pkg) {
-  const wasRunning = !!host;
-  await openWindow();
-  if (!(await (sessionUp || waitForSession(120)))) return false;
+  // an app: just that app (its own window); the Waydroid icon itself: Android's whole desktop
+  await openWindow(!pkg);
+  if (!(await (sessionUp || waitForSession(180)))) return false;
   if (pkg) execFile('waydroid', ['app', 'launch', pkg], { env: hostEnv() }, () => {});
-  else if (wasRunning) execFile('waydroid', ['show-full-ui'], { env: hostEnv() }, () => {});
   return true;
 }
 
@@ -352,6 +371,81 @@ async function playId() {
 }
 
 /* ------------------------------------------------------------------ */
+/* ------------------------------------------------------------------ app window sizes (View menu) */
+// Like iPhone/iPad apps on a Mac: an Android app's window has a few fixed shapes, switched from the menu bar.
+// Android decides an app's size itself, so the change is made inside Android over adb (Android's debugging
+// connection to the container). LiquidDesktop approves its own adb key by putting it in Android's data
+// folder, which belongs to you, so no password or on-screen prompt is needed.
+const adbBin = () => ['adb', '/opt/android-sdk/platform-tools/adb'].find((b) => (b.includes('/') ? exists(b) : which(b))) || null;
+let adbSerial = null;
+async function adb(args, timeout = 10000) {
+  const bin = adbBin();
+  if (!bin) throw new Error('Changing an Android app’s size needs adb: install android-tools (sudo pacman -S android-tools).');
+  return run(bin, adbSerial ? ['-s', adbSerial, ...args] : args, timeout);
+}
+async function adbConnect() {
+  if (adbSerial && /device$/m.test((await adb(['get-state'], 5000)).out.trim())) return adbSerial;
+  const bin = adbBin();
+  if (!bin) throw new Error('Changing an Android app’s size needs adb: install android-tools (sudo pacman -S android-tools).');
+  // our key (adb makes one the first time it runs), approved in Android's data folder
+  const keyPub = path.join(HOME, '.android', 'adbkey.pub');
+  if (!exists(keyPub)) await run(bin, ['start-server'], 15000);
+  const keysFile = path.join(DATA, 'waydroid', 'data', 'misc', 'adb', 'adb_keys');
+  try {
+    const key = fs.readFileSync(keyPub, 'utf8').trim();
+    const have = exists(keysFile) ? fs.readFileSync(keysFile, 'utf8') : '';
+    if (key && !have.includes(key.split(' ')[0])) { fs.appendFileSync(keysFile, (have && !have.endsWith('\n') ? '\n' : '') + key + '\n'); fs.chmodSync(keysFile, 0o640); }
+  } catch { /* Android's data folder not there yet: adb will ask on screen instead */ }
+  // a fresh connection can be refused while Android is still settling: try twice, waiting a while each time
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (adbSerial) await run(bin, ['disconnect', adbSerial], 5000);
+    const r = await run('waydroid', ['adb', 'connect'], 20000);
+    const ip = (r.out + r.err).match(/(\d+\.\d+\.\d+\.\d+)/)?.[1];
+    if (!ip) throw new Error('Couldn’t connect to Android. Is it running?');
+    adbSerial = `${ip}:5555`;
+    for (let i = 0; i < 20; i++) {
+      const st = (await run(bin, ['-s', adbSerial, 'get-state'], 5000)).out.trim();
+      if (st === 'device') return adbSerial;
+      await new Promise((res) => setTimeout(res, 500));
+    }
+  }
+  throw new Error('Android didn’t accept the connection. Open Android, allow USB debugging if it asks, and try again.');
+}
+// the app's task, where it is, and the screen it's on
+async function taskOf(pkg) {
+  await adbConnect();
+  const out = (await adb(['shell', 'am', 'stack', 'list'])).out;
+  let max = null;
+  for (const block of out.split(/\n(?=RootTask )/)) {
+    const mb = block.match(/mMaxBounds=Rect\((\d+), (\d+) - (\d+), (\d+)\)/);
+    if (mb) max = mb.slice(1).map(Number);
+    const t = block.match(new RegExp(`taskId=(\\d+): ${pkg.replace(/\./g, '\\.')}/\\S+ bounds=\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]`));
+    if (t) {
+      const dpi = Number(block.match(/ (\d+)dpi /)?.[1]) || 160;
+      return { id: t[1], bounds: t.slice(2).map(Number), max: max || [0, 0, 1920, 1080], dpi };
+    }
+  }
+  throw new Error('That app isn’t open in Android.');
+}
+// shapes, in dp (Android's size unit): turned into pixels for this screen, kept on the Android screen
+const SIZES = { phone: [412, 732], 'phone-landscape': [732, 412], tablet: [800, 1100], 'tablet-landscape': [1100, 800], large: [1100, 700] };
+async function resizeApp(pkg, shape) {
+  const t = await taskOf(pkg.replace(/^waydroid\./, ''));
+  const [mx1, my1, mx2, my2] = t.max;
+  const k = t.dpi / 160, margin = Math.round(24 * k);
+  let [w, h] = SIZES[shape] ? SIZES[shape].map((x) => Math.round(x * k)) : [0, 0];
+  if (shape === 'rotate') { w = t.bounds[3] - t.bounds[1]; h = t.bounds[2] - t.bounds[0]; }
+  if (!w || !h) throw new Error('Unknown size');
+  // too big for the Android screen: shrink, keeping the shape
+  const fit = Math.min(1, (mx2 - mx1 - 2 * margin) / w, (my2 - my1 - 2 * margin) / h);
+  w = Math.round(w * fit); h = Math.round(h * fit);
+  const left = Math.max(mx1 + margin, Math.min(t.bounds[0], mx2 - margin - w));
+  const top = Math.max(my1 + margin, Math.min(t.bounds[1], my2 - margin - h));
+  const r = await adb(['shell', 'am', 'task', 'resize', t.id, String(left), String(top), String(left + w), String(top + h)]);
+  if (!r.ok) throw new Error((r.err || r.out).trim().split('\n').pop() || 'Android didn’t resize the app.');
+  return true;
+}
+
 function register() {
   const h = (n, fn) => ipcMain.handle(n, async (_e, ...a) => { try { return await fn(...a); } catch (e) { return { __error: e.message }; } });
   h('android:status', () => status());
@@ -363,6 +457,7 @@ function register() {
   h('android:forceQuit', () => forceQuit());
   h('android:playId', () => playId());
   h('android:setMultiWindow', (on) => setMultiWindow(!!on));
+  h('android:resizeApp', (pkg, shape) => resizeApp(String(pkg), String(shape)));
   app.on('before-quit', () => killHost('SIGTERM'));
 }
 

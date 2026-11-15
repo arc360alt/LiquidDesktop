@@ -46,7 +46,8 @@ const SHORTCUTS = [
 ];
 
 // WM_NORMAL_HINTS → client size limits. Layout: flags, x, y, w, h, min w/h (flag 16), max w/h (flag 32),
-// …, base w/h (flag 256). min == max means the window can't be resized (a fixed-size dialog).
+// resize steps w/h, min aspect num/den, max aspect num/den (flag 128), base w/h (flag 256), gravity.
+// min == max means the window can't be resized (a fixed-size dialog).
 function sizeHints(h) {
   const r = { minW: 0, minH: 0, maxW: 0, maxH: 0, fixed: false };
   if (!h || h.length < 9) return r;
@@ -54,7 +55,7 @@ function sizeHints(h) {
   if (h[0] & 32) { r.maxW = h[7] > 0 && h[7] < 32768 ? h[7] : 0; r.maxH = h[8] > 0 && h[8] < 32768 ? h[8] : 0; }
   r.fixed = !!(r.maxW && r.maxH && r.minW === r.maxW && r.minH === r.maxH);
   // a fixed aspect ratio (flag 128, min aspect = max aspect): resizing keeps its shape (zoomed Android apps)
-  if ((h[0] & 128) && h.length > 12 && h[10] && h[12] && h[9] * h[12] === h[11] * h[10]) r.aspect = h[9] / h[10];
+  if ((h[0] & 128) && h.length > 14 && h[12] && h[14] && h[11] * h[14] === h[13] * h[12]) r.aspect = h[11] / h[12];
   return r;
 }
 function clampToHints(w, cw, ch) {
@@ -293,6 +294,13 @@ class WindowManager extends EventEmitter {
     const nx = M & 1 && !w.fb ? ev.x : c.x, ny = M & 2 && !w.fb ? ev.y : c.y;
     const [nw, nh] = clampToHints(w, M & 4 ? ev.width : c.w, M & 8 ? ev.height : c.h);
     this.setClientRect(w, nx, ny, nw, nh);
+    // an app that grew itself (an Android app reopening at its zoomed size) slides back onto the screen
+    if (w.kind === 'native' && (M & 12)) {
+      const top = this.workarea.top, bottom = this.sh - this.workarea.bottom;
+      if (w.y + w.h > bottom) w.y = Math.max(top, bottom - w.h);
+      if (w.x + w.w > this.sw) w.x = Math.max(0, this.sw - w.w);
+      this.applyGeometry(w);
+    }
     this.emit('changed');
     if (w.kind === 'native' && !(M & 12)) this.sendConfigureNotify(w);
   }
@@ -932,7 +940,11 @@ class WindowManager extends EventEmitter {
         // keep the app's shape: the width decides (or the height, when only the top/bottom edge is dragged)
         let cw = ww - extraW, ch = hh - extraH;
         if (dir.includes('e') || dir.includes('w')) ch = cw / s.aspect; else cw = ch * s.aspect;
-        const k = Math.min(1, s.maxW ? s.maxW / cw : 1, s.maxH ? s.maxH / ch : 1), kk = Math.max(k, s.minW ? s.minW / cw : 0, s.minH ? s.minH / ch : 0);
+        // …and it stops at the edges of the usable screen (the side being dragged grows; the other stays put)
+        const roomW = (dir.includes('w') ? f.x + f.w : this.sw - f.x) - extraW;
+        const roomH = (dir.includes('n') ? f.y + f.h - this.workarea.top : this.sh - this.workarea.bottom - f.y) - extraH;
+        const k = Math.min(1, s.maxW ? s.maxW / cw : 1, s.maxH ? s.maxH / ch : 1, roomW > 0 ? roomW / cw : 1, roomH > 0 ? roomH / ch : 1);
+        const kk = Math.max(k, s.minW ? s.minW / cw : 0, s.minH ? s.minH / ch : 0);
         cw = Math.round(cw * kk); ch = Math.round(ch * kk);
         ww = cw + extraW; hh = ch + extraH;
         if (dir.includes('w')) x = f.x + f.w - ww;

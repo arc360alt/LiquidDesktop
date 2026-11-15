@@ -206,15 +206,20 @@ static void set_x_identity(struct view *v) {
 	xcb_flush(server.xcb);
 }
 
+static double room_for(int w, int h);
 // min = max size: the window manager doesn't offer resizing (WM_NORMAL_HINTS, flags PMinSize|PMaxSize)
 static void set_fixed_size_hints(struct view *v, int w, int h) {
 	if (!v->xwin || w <= 0 || h <= 0) return;
 	uint32_t hints[18] = { 0 };
 	// w/h are the app's actual size: it can be made bigger or smaller (zoom), always keeping its shape
+	// layout: flags, x, y, w, h, min w/h, max w/h, resize steps w/h, min aspect, max aspect, base w/h, gravity
+	double most = room_for(w, h);
+	if (most > ZOOM_MAX) most = ZOOM_MAX;
+	if (most < 1.0) most = 1.0;
 	hints[0] = 16 | 32 | 128;
 	hints[5] = (uint32_t)(w * ZOOM_MIN); hints[6] = (uint32_t)(h * ZOOM_MIN);
-	hints[7] = (uint32_t)(w * ZOOM_MAX); hints[8] = (uint32_t)(h * ZOOM_MAX);
-	hints[9] = w; hints[10] = h; hints[11] = w; hints[12] = h;
+	hints[7] = (uint32_t)(w * most); hints[8] = (uint32_t)(h * most);
+	hints[11] = w; hints[12] = h; hints[13] = w; hints[14] = h;
 	xcb_change_property(server.xcb, XCB_PROP_MODE_REPLACE, v->xwin, XCB_ATOM_WM_NORMAL_HINTS, XCB_ATOM_WM_SIZE_HINTS, 32, 18, hints);
 	xcb_flush(server.xcb);
 }
@@ -316,10 +321,19 @@ static double fit_for(int w, int h) {
 	if (g < f) f = g;
 	return f < 1.0 ? (f > 0.2 ? f : 0.2) : 1.0;
 }
+// how much a w×h window can be scaled and still fit on the usable screen: more than 1 when there's room to
+// grow (zooming in on a big screen), less when it's already too big
+static double room_for(int w, int h) {
+	int aw = work_w > 0 ? work_w : screen_w, ah = work_h > 0 ? work_h : screen_h;
+	if (w <= 0 || h <= 0 || aw <= 0 || ah <= 0) return 1.0;
+	double f = (double)(aw - 2 * FIT_MARGIN) / w, g = (double)(ah - FRAME_TITLE - 2 * FIT_MARGIN) / h;
+	if (g < f) f = g;
+	return f > 0.2 ? f : 0.2;
+}
 // the zoom a window is drawn at: the app's (or yours), but never bigger than the screen has room for
 static double view_zoom(struct view *v) {
 	double z = v->zoom > 0 ? v->zoom : 1.0;
-	if (crop && v->content.width > 0) { double f = fit_for(v->content.width, v->content.height); if (z > f) z = f; }
+	if (crop && v->content.width > 0) { double f = room_for(v->content.width, v->content.height); if (z > f) z = f; }
 	return z;
 }
 static void resize_output(struct view *v, int w, int h) {
@@ -389,7 +403,7 @@ static void out_request_state(struct wl_listener *l, void *data) {
 			double z = (double)nw / cw;
 			if (z < ZOOM_MIN) z = ZOOM_MIN; if (z > ZOOM_MAX) z = ZOOM_MAX;
 			if (z > 0.97 && z < 1.03) z = 1.0;   // close to actual size: snap to it
-			{ double f = fit_for(cw, ch); if (z > f) z = f; }   // no bigger than the screen has room for
+			{ double f = room_for(cw, ch); if (z > f) z = f; }   // no bigger than the screen has room for
 			v->zoom = z;
 			remember_zoom(v->toplevel->app_id, z);
 			printf("zoom %s %.4f\n", v->toplevel->app_id ? v->toplevel->app_id : "-", z);

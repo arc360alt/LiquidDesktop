@@ -22,10 +22,19 @@ command -v xsetroot >/dev/null && xsetroot -cursor_name left_ptr || true
 
 # Tell every app about the cursor theme the standard X11 ways. X resources are read by libXcursor
 # (Qt, Chromium, xterm…); XSETTINGS are read by GTK apps and take priority over gtk-3.0/settings.ini.
-if command -v xrdb >/dev/null; then printf 'Xcursor.theme: %s\nXcursor.size: %s\n' "$XCURSOR_THEME" "$XCURSOR_SIZE" | xrdb -merge; fi
+# Settings › Displays › Interface size (ui-scale, in percent): LiquidDesktop scales itself with it (main/main.js);
+# other apps get it as the screen's DPI (96 = 100%), which GTK, Qt, Chromium and Electron apps size their text by.
+UI_SCALE="$(tr -dc '0-9' < "${XDG_CONFIG_HOME:-$HOME/.config}/LiquidDesktop/ui-scale" 2>/dev/null)"
+UI_DPI=""
+[ -n "$UI_SCALE" ] && [ "$UI_SCALE" -ge 75 ] && [ "$UI_SCALE" -le 300 ] && [ "$UI_SCALE" -ne 100 ] && UI_DPI=$((96 * UI_SCALE / 100))
+if command -v xrdb >/dev/null; then
+  printf 'Xcursor.theme: %s\nXcursor.size: %s\n' "$XCURSOR_THEME" "$XCURSOR_SIZE" | xrdb -merge
+  [ -n "$UI_DPI" ] && printf 'Xft.dpi: %s\n' "$UI_DPI" | xrdb -merge
+fi
 if command -v xsettingsd >/dev/null; then
   XSD_CONF="${XDG_RUNTIME_DIR:-/tmp}/liquid-desktop-xsettingsd.conf"
   printf 'Gtk/CursorThemeName "%s"\nGtk/CursorThemeSize %s\n' "$XCURSOR_THEME" "$XCURSOR_SIZE" > "$XSD_CONF"
+  [ -n "$UI_DPI" ] && printf 'Xft/DPI %s\n' "$((UI_DPI * 1024))" >> "$XSD_CONF"
   xsettingsd -c "$XSD_CONF" >/dev/null 2>&1 &
   XSD=$!
 fi

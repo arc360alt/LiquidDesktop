@@ -31,6 +31,13 @@ if (mode === 'session') {
   // the session is an X11 window manager, so Chromium must talk X11 even if a Wayland socket is around
   app.commandLine.appendSwitch('ozone-platform', 'x11');
   delete process.env.WAYLAND_DISPLAY;
+  // Settings › Displays › Interface size (main/system.js): everything LiquidDesktop draws, scaled crisply.
+  // The window manager works in screen pixels and converts with the display's scaleFactor.
+  try {
+    const cfg = path.join(process.env.XDG_CONFIG_HOME || path.join(require('os').homedir(), '.config'), 'LiquidDesktop', 'ui-scale');
+    const pct = parseInt(require('fs').readFileSync(cfg, 'utf8'), 10);
+    if (pct >= 75 && pct <= 300 && pct !== 100) app.commandLine.appendSwitch('force-device-scale-factor', String(pct / 100));
+  } catch { /* 100%: not set */ }
 }
 app.setName('LiquidDesktop');
 

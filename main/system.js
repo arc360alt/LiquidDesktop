@@ -449,6 +449,24 @@ function setRendering(choice) {
   return true;
 }
 
+// Settings › Displays › Interface size: how big LiquidDesktop (and app text) is drawn, in percent. Saved in
+// ~/.config/LiquidDesktop/ui-scale and applied at the next login: main/main.js scales LiquidDesktop with it,
+// session/liquid-desktop-session sets the X DPI from it for other apps.
+const uiScaleFile = () => path.join(process.env.XDG_CONFIG_HOME || path.join(HOME, '.config'), 'LiquidDesktop', 'ui-scale');
+function uiScale() {
+  let saved = 100;
+  try { const v = parseInt(fs.readFileSync(uiScaleFile(), 'utf8'), 10); if (v >= 75 && v <= 300) saved = v; } catch { /* not set */ }
+  const { screen } = require('electron');
+  return { saved, current: Math.round((screen.getPrimaryDisplay().scaleFactor || 1) * 100) };
+}
+function setUiScale(pct) {
+  const v = Math.round(Number(pct));
+  if (!(v >= 75 && v <= 300)) throw new Error('Interface size must be between 75% and 300%');
+  fs.mkdirSync(path.dirname(uiScaleFile()), { recursive: true });
+  if (v === 100) fs.rmSync(uiScaleFile(), { force: true }); else fs.writeFileSync(uiScaleFile(), v + '\n');
+  return uiScale();
+}
+
 /* ------------------------------------------------------------------ terminals */
 
 const ptys = new Map();
@@ -680,6 +698,8 @@ function register({ getWindow, mode }) {
   h('sys:media', media);
   h('sys:rendering', () => renderingInfo());
   h('sys:setRendering', (c) => setRendering(String(c)));
+  h('sys:uiScale', () => uiScale());
+  h('sys:setUiScale', (v) => setUiScale(v));
   h('sys:mediaCmd', (cmd) => (require('./media').available() ? require('./media').command(cmd) : which('playerctl') && run('playerctl', [cmd])));
   h('sys:setVolume', async (v) => {
     v = Math.max(0, Math.min(100, Math.round(v)));

@@ -307,6 +307,32 @@ const render = {
             h('button.btn', { disabled: !changed, onclick: () => { displayState.draft = null; rerender(); } }, 'Revert'),
             h('button.btn.primary', { disabled: !changed || info.backend !== 'x11', onclick: () => applyDisplay(sel, draft) }, 'Apply'))));
     }
+    // Interface size: LiquidDesktop drawn bigger (crisp, not stretched), and the DPI other apps size their text by
+    const ui = isSession ? await api.sys.uiScale?.().catch(() => null) : null;
+    if (ui) {
+      const MIN = 100, MAX = 200;
+      const label = h('b', { style: { minWidth: '44px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' } });
+      const slider = h('input.slider', { type: 'range', min: MIN, max: MAX, step: 5, value: Math.min(MAX, Math.max(MIN, ui.saved)) });
+      const apply = h('div.row', { hidden: true }, h('div.label', h('small', 'Takes effect the next time you log in.')),
+        h('button.btn', { onclick: () => { slider.value = ui.saved; paint(); } }, 'Revert'),
+        h('button.btn.primary', { onclick: async () => {
+          try { await api.sys.setUiScale(+slider.value); } catch (err) { alertDialog({ title: 'The interface size couldn’t be saved', message: err.message }); return; }
+          ui.saved = +slider.value; paint();
+          if (await confirmDialog('Log out to apply it?', `The interface size is set to ${slider.value}%. It takes effect the next time you log in.`, 'Log Out')) api.sys.power('logout');
+        } }, 'Apply…'));
+      const paint = () => {
+        slider.style.setProperty('--v', ((slider.value - MIN) / (MAX - MIN)) * 100 + '%');
+        label.textContent = slider.value + '%';
+        apply.hidden = +slider.value === ui.saved;
+      };
+      slider.addEventListener('input', paint);
+      paint();
+      out.push(h('div.group-title', 'Interface size'),
+        h('div.group',
+          row('Scale', h('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', width: '290px' } }, h('small.muted', 'A'), slider, h('span', { style: { fontSize: '17px' } }, 'A'), label),
+            `How big the menu bar, Dock, windows and text are drawn.${ui.current !== ui.saved ? ` Now ${ui.current}%.` : ''}`),
+          apply));
+    }
     out.push(h('div.group-title', 'Brightness & color'),
       h('div.group',
         row('Brightness', b != null ? liveSlider(b, (v) => api.sys.setBrightness(v)) : liveSlider(store.get('softBrightness') ?? 100, (v) => { store.set('softBrightness', v); document.getElementById('desktop') && (document.getElementById('desktop').style.filter = v >= 100 ? '' : `brightness(${0.35 + 0.65 * v / 100})`); }),

@@ -9,6 +9,7 @@ import { shell } from './shell.js';
 import { catalog } from './catalog.js';
 import { api } from './sys.js';
 import { isSession, session as S } from './layer.js';
+import { recordingIndicator } from './recording.js';
 
 let bar, appArea, statusArea, clockEl, battEl, wifiEl, openTitle = null;
 
@@ -188,7 +189,7 @@ export function initMenubar() {
   const cc = h('div.mb-item', { html: sym.controls, title: 'Control Center', onclick: (e) => { e.stopPropagation(); shell.toggleControlCenter(); } });
   clockEl = h('div.mb-item', { onclick: () => shell.toggleNotificationCenter() });
   const trayArea = h('div#mb-tray');
-  statusArea = h('div#mb-status', trayArea, battEl, wifiEl, search, cc, clockEl);
+  statusArea = h('div#mb-status', recordingIndicator(), trayArea, battEl, wifiEl, search, cc, clockEl);
   initTray(trayArea);
   bar.append(logoItem, appArea, statusArea);
 

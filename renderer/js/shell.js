@@ -60,7 +60,9 @@ export const shell = {
   },
 
   async screenshot() { (await import('./screenshot.js')).screenshotNow(); },
-  async screenshotTool() { (await import('./screenshot.js')).screenshotTool(); },
+  async screenshotTool(o) { (await import('./screenshot.js')).screenshotTool(o); },
+  /** Super+Shift+R: pick what to record, or stop the recording that's running. */
+  async screenRecord() { (await import('./screenshot.js')).screenshotTool({ kind: 'record' }); },
 
   async power(action) {
     const session = shell.info?.mode === 'session';
@@ -162,6 +164,7 @@ function onKey(e) {
   if (k === 'F11') { take(); wm.toggleDesktop(); return; }
   if (k === 'PrintScreen' || (cmd && e.shiftKey && (k === '#' || k === '3' || e.code === 'Digit3'))) { take(); shell.screenshot(); return; }
   if (e.metaKey && e.shiftKey && e.code === 'KeyS') { take(); shell.screenshotTool(); return; }
+  if (e.metaKey && e.shiftKey && e.code === 'KeyR') { take(); shell.screenRecord(); return; }
   if (e.ctrlKey && cmd && (k === 'q' || k === 'Q')) { take(); shell.lock(); return; }
   if (e.ctrlKey && e.shiftKey && (k === 'F' || k === 'f') && !e.altKey) { take(); api.shell.toggleFullscreen(); return; }
   if (e.ctrlKey && cmd && !e.shiftKey && (k === 'f' || k === 'F') && wm.focused) { take(); wm.focused.toggleFullscreen(); return; }
@@ -242,6 +245,7 @@ export function initSessionShell({ windowMenu }) {
       case 'lock': return shell.lock();
       case 'screenshot': return shell.screenshot();
       case 'screenshot-tool': return shell.screenshotTool();
+      case 'screen-record': return shell.screenRecord();
       case 'switcher-next': return switcherStep(1);
       case 'switcher-prev': return switcherStep(-1);
       case 'switcher-commit': return switcherCommit();

@@ -582,3 +582,22 @@
 .notif-acts { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
 .notif-acts button { flex: 1; min-width: 70px; border: 0; border-radius: 8px; padding: 5px 10px; font: inherit; font-size: 12px; font-weight: 600; color: inherit; background: rgba(128, 128, 128, 0.2); }
 .notif-acts button:hover { background: rgba(128, 128, 128, 0.32); }
+
+/* screen recording: the screenshot tool's Record mode, and the timer in the menu bar */
+.shot-bar button.shot-kind.on { background: rgba(255, 59, 48, 0.9); }
+.shot-bar button.shot-kind[data-k="capture"].on { background: rgba(var(--accent-rgb), 0.9); }
+.shot-opts { position: absolute; left: 50%; bottom: 168px; transform: translateX(-50%); display: flex; align-items: center; gap: 4px; padding: 5px 8px; border-radius: 14px; cursor: var(--cur-default, default); color: var(--on-glass); font-size: 12px; white-space: nowrap; }
+.shot-opts .shot-sep { width: 1px; align-self: stretch; margin: 4px 4px; background: rgba(128, 128, 128, 0.35); }
+.shot-opt { display: flex; align-items: center; gap: 6px; border: 0; background: none; color: inherit; font: inherit; padding: 6px 10px; border-radius: 9px; opacity: 0.6; }
+.shot-opt svg { width: 17px; height: 17px; }
+.shot-opt:hover { background: rgba(128, 128, 128, 0.18); }
+.shot-opt.on { opacity: 1; background: rgba(var(--accent-rgb), 0.22); }
+.shot-select { display: flex; align-items: center; gap: 6px; font: inherit; color: inherit; background: rgba(128, 128, 128, 0.16); border: 0; border-radius: 8px; padding: 5px 9px; margin: 0 2px; }
+.shot-select i { font-style: normal; opacity: 0.6; margin-top: -4px; }
+.shot-select:hover { background: rgba(128, 128, 128, 0.26); }
+.menu.shot-menu { z-index: 100001; }
+.shot-check { display: flex; align-items: center; gap: 6px; padding: 0 8px; }
+.mb-rec { gap: 6px; font-variant-numeric: tabular-nums; font-size: 12.5px; }
+.mb-rec-dot { width: 9px; height: 9px; border-radius: 50%; background: #ff3b30; box-shadow: 0 0 6px rgba(255, 59, 48, 0.7); animation: recPulse 1.4s ease-in-out infinite alternate; }
+.mb-rec.stopping .mb-rec-dot { animation: none; opacity: 0.5; }
+@keyframes recPulse { from { opacity: 1; } to { opacity: 0.45; } }

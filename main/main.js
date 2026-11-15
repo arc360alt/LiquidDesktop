@@ -76,6 +76,7 @@ app.whenReady().then(async () => {
   require('./drives').register();
   require('./power').register();
   require('./openrgb').register();
+  require('./recorder').register({ mode });
   require('./appthemes').register({ mode });   // before any app starts: Qt apps need QT_STYLE_OVERRIDE
   if (mode === 'session') {
     try {

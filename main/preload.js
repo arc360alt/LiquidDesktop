@@ -11,7 +11,7 @@ const names = ['sys:info', 'sys:status', 'sys:rendering', 'sys:setRendering', 'p
   'fs:open', 'fs:reveal', 'fs:search', 'fs:exists', 'fs:places', 'apps:list', 'apps:info', 'apps:folders', 'apps:setFolders', 'apps:iconFor', 'apps:byId', 'apps:launch', 'apps:run', 'clip:write', 'clip:read', 'pty:create',
   'shell:toggleFullscreen', 'shell:devtools', 'shell:quit',
   'bt:state', 'bt:scan', 'bt:pair', 'bt:connect', 'bt:forget', 'bt:power', 'audio:devices', 'audio:setDefault', 'audio:setVolume', 'audio:setMute', 'defaults:list', 'defaults:apply', 'defaults:get', 'apps:openWith', 'wall:list', 'wall:add', 'wall:remove',
-  'android:status', 'android:install', 'android:uninstall', 'android:setOn', 'android:open', 'android:stop', 'android:forceQuit', 'android:playId', 'android:setMultiWindow', 'android:resizeApp', 'android:setArm', 'android:zoomApp', 'android:captions', 'android:hideCaptions', 'android:back', 'drives:list', 'drives:mount', 'drives:eject'];
+  'android:status', 'android:install', 'android:uninstall', 'android:setOn', 'android:open', 'android:stop', 'android:forceQuit', 'android:playId', 'android:setMultiWindow', 'android:resizeApp', 'android:setArm', 'android:zoomApp', 'android:captions', 'android:hideCaptions', 'android:back', 'drives:list', 'drives:mount', 'drives:eject', 'rec:start', 'rec:stop', 'rec:status', 'rec:folder'];
 const api = {};
 for (const n of names) {
   const [ns, fn] = n.split(':');
@@ -32,6 +32,7 @@ api.notif = {
 api.tray.onItems = (fn) => ipcRenderer.on('tray:items', (_e, list) => fn(list));
 api.sys.onUpdated = (fn) => ipcRenderer.on('sys:updated', () => fn());
 api.apps.onChanged = (fn) => ipcRenderer.on('apps:changed', () => fn());
+api.rec.onChanged = (fn) => ipcRenderer.on('rec:changed', (_e, s) => fn(s));
 api.rgb.onChanged = (fn) => ipcRenderer.on('rgb:changed', () => fn());
 api.bt.onChanged = (fn) => ipcRenderer.on('bt:changed', () => fn());
 api.bt.onCode = (fn) => ipcRenderer.on('bt:code', (_e, c) => fn(c));

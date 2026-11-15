@@ -23,6 +23,7 @@ const ACTIONS = [
   { title: 'Lock Screen', icon: sym.lock, run: () => shell.lock(), k: 'lock' },
   { title: 'Toggle Dark Mode', icon: sym.contrast, run: () => store.set('theme', document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark'), k: 'dark light theme appearance' },
   { title: 'Take Screenshot', icon: sym.camera, run: () => setTimeout(() => shell.screenshot(), 300), k: 'screenshot capture' },
+  { title: 'Record Screen', icon: sym.camera, run: () => setTimeout(() => shell.screenRecord(), 300), k: 'record screen recording video capture' },
   { title: 'Mission Control', icon: sym.layers, run: () => wm.mission(), k: 'mission spaces desktops windows' },
   { title: 'Show Desktop', icon: sym.desktop, run: () => wm.toggleDesktop(), k: 'desktop' },
   { title: 'Toggle Night Shift', icon: sym.nightshift, run: () => store.set('nightShift', !store.get('nightShift')), k: 'night shift warm' },

@@ -181,6 +181,27 @@ Object.assign(WIDGETS, {
         h('span', { html: b.charging ? sym.bolt : '' })), h('b', { style: { fontSize: '20px' } }, b.percent + '%'), h('small', { style: { opacity: 0.7 } }, b.charging ? 'Charging' : 'On battery'));
     });
   } },
+  // Battery, Medium: this computer and every device that reports a battery (mice, keyboards, controllers, headsets)
+  batteries: { name: 'Batteries', cat: 'system', size: 'm', build(el) {
+    const pad = h('div.w-pad.w-batts');
+    el.append(pad);
+    const ICON = { computer: sym.battery, mouse: sym.hand, keyboard: sym.keyboard, headset: sym.speaker, headphones: sym.speaker, 'gaming-input': sym.controls, phone: sym.mirror };
+    every(el, 30_000, async () => {
+      const list = await api.sys.batteries?.().catch(() => []) || [];
+      pad.innerHTML = '';
+      pad.append(label('Batteries'));
+      if (!list.length) { pad.append(h('div', { style: { fontSize: '12px', opacity: 0.7, marginTop: '30px' } }, 'No batteries found')); return; }
+      const row = h('div.w-batts-row');
+      for (const b of list.slice(0, 4)) {
+        const col = b.charging ? '#30d158' : b.percent <= 20 ? '#ff453a' : '#30d158';
+        row.append(h('div.w-batts-item', { title: `${b.name} — ${b.percent}%${b.charging ? ' (charging)' : ''}` },
+          h('div.w-batt', { html: `<svg viewBox="0 0 36 36"><circle cx="18" cy="18" r="15" fill="none" stroke="rgba(128,128,128,.25)" stroke-width="3.5"/><circle cx="18" cy="18" r="15" fill="none" stroke="${col}" stroke-width="3.5" stroke-linecap="round" stroke-dasharray="94.25" stroke-dashoffset="${(94.25 * (1 - b.percent / 100)).toFixed(1)}" transform="rotate(-90 18 18)"/></svg>` },
+            h('span', { html: b.charging ? sym.bolt : ICON[b.kind] || sym.battery })),
+          h('b', b.percent + '%'), h('small', b.name)));
+      }
+      pad.append(row);
+    });
+  } },
   activity: { name: 'Activity', cat: 'system', size: 'm', build(el) {
     const cv = h('canvas.w-graph');
     const vals = h('div.w-act-vals');
@@ -263,7 +284,7 @@ Object.assign(WIDGETS, {
 export const CATEGORIES = [['all', 'All Widgets'], ['clock', 'Clock & Calendar'], ['weather', 'Weather'], ['system', 'System'], ['productivity', 'Productivity'], ['media', 'Media'], ['mine', 'My Widgets']];
 export const SIZE_PX = { s: [164, 164], m: [340, 164], l: [340, 340] };
 // Widgets that are one widget at two sizes: the gallery shows the small one; right-click › Size switches
-export const SIZE_GROUPS = [{ s: 'weather', m: 'forecast' }, { s: 'clock', m: 'worldclock' }, { s: 'calendar', m: 'upcoming' }, { s: 'system', m: 'activity' }];
+export const SIZE_GROUPS = [{ s: 'battery', m: 'batteries' }, { s: 'weather', m: 'forecast' }, { s: 'clock', m: 'worldclock' }, { s: 'calendar', m: 'upcoming' }, { s: 'system', m: 'activity' }];
 export const sizeGroup = (type) => SIZE_GROUPS.find((g) => g.s === type || g.m === type);
 /** Right-click › Size items for a widget of this type (none when it comes in one size). setType(newType) switches. */
 export function sizeItems(type, setType) {

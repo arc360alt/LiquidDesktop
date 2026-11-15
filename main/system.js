@@ -318,6 +318,37 @@ function battery() {
   return null;
 }
 
+// every battery: the computer's and its devices' (wireless mice and keyboards, controllers, Bluetooth headsets…).
+// UPower knows all of them (Bluetooth ones too); without it, the kernel's list (USB / 2.4 GHz devices).
+async function batteries() {
+  const out = [];
+  if (which('upower')) {
+    const paths = (await run('upower', ['-e'])).out.split('\n').map((l) => l.trim()).filter((l) => l && !/DisplayDevice|line_power/.test(l));
+    for (const p of paths) {
+      const t = (await run('upower', ['-i', p])).out;
+      const get = (k) => (t.match(new RegExp('^\\s*' + k + ':\\s*(.+)$', 'm')) || [])[1]?.trim();
+      const pct = parseFloat(get('percentage'));
+      if (!Number.isFinite(pct) || get('present') === 'no') continue;
+      const kind = (t.match(/^ {2}([a-z-]+)\s*$/m) || [])[1] || 'device';
+      const computer = get('power supply') === 'yes' && kind === 'battery';
+      out.push({ name: computer ? 'This Computer' : get('model') || kind, kind: computer ? 'computer' : kind, percent: Math.round(pct), charging: /^(charging|fully-charged)$/.test(get('state') || '') });
+    }
+    if (out.length) return out.sort((a, b) => (b.kind === 'computer') - (a.kind === 'computer'));
+  }
+  const base = '/sys/class/power_supply';
+  let list = [];
+  try { list = fs.readdirSync(base); } catch { return out; }
+  for (const d of list) {
+    if (readFile(path.join(base, d, 'type')) !== 'Battery') continue;
+    const cap = Number(readFile(path.join(base, d, 'capacity')));
+    if (!Number.isFinite(cap)) continue;
+    const device = readFile(path.join(base, d, 'scope')) === 'Device';
+    const st = readFile(path.join(base, d, 'status')) || '';
+    out.push({ name: device ? readFile(path.join(base, d, 'model_name')) || d : 'This Computer', kind: device ? 'device' : 'computer', percent: cap, charging: /^(charging|full)$/i.test(st) });
+  }
+  return out.sort((a, b) => (b.kind === 'computer') - (a.kind === 'computer'));
+}
+
 async function volume() {
   if (which('wpctl')) {
     const r = await run('wpctl', ['get-volume', '@DEFAULT_AUDIO_SINK@']);
@@ -701,6 +732,7 @@ function register({ getWindow, mode }) {
   h('sys:rendering', () => renderingInfo());
   h('sys:setRendering', (c) => setRendering(String(c)));
   h('sys:uiScale', () => uiScale());
+  h('sys:batteries', () => batteries());
   h('sys:setUiScale', (v) => setUiScale(v));
   h('sys:mediaCmd', (cmd) => (require('./media').available() ? require('./media').command(cmd) : which('playerctl') && run('playerctl', [cmd])));
   h('sys:setVolume', async (v) => {

@@ -94,7 +94,8 @@ function measure() {
   if (kb !== lastKb) { lastKb = kb; S.send('shell:focus', kb); }
   const edges = JSON.stringify({ bottom: dockHidden(), top: menubarHidden() });
   if (edges !== lastEdges) { lastEdges = edges; S.send('shell:edges', JSON.parse(edges)); }
-  const work = JSON.stringify([30, dockReserve()]);
+  // in screen pixels, like everything the window manager is told
+  const work = JSON.stringify([Math.round(30 * dpr), Math.round(dockReserve() * dpr)]);
   if (work !== lastWork) { lastWork = work; S.send('shell:workarea', ...JSON.parse(work)); }
 }
 
@@ -131,7 +132,8 @@ export function initShellShape() {
     let el = $('.snap-preview');
     if (!r) { el?.remove(); return; }
     if (!el) { el = document.createElement('div'); el.className = 'snap-preview'; el.style.position = 'fixed'; document.body.append(el); }
-    Object.assign(el.style, { left: r[0] + 'px', top: r[1] + 'px', width: r[2] + 'px', height: r[3] + 'px', zIndex: 7000 });
+    const k = devicePixelRatio || 1;   // the window manager's rectangles are in screen pixels
+    Object.assign(el.style, { left: r[0] / k + 'px', top: r[1] / k + 'px', width: r[2] / k + 'px', height: r[3] / k + 'px', zIndex: 7000 });
   });
   bus.on('lock', (on) => S.send('shell:locked', on));
   S.on('session:edge', (side) => (side === 'bottom' ? revealDock() : revealMenubar()));

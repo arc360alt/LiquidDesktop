@@ -155,13 +155,44 @@ const APP_DIRS = [...new Set([path.join(DATA_HOME, 'applications'), path.join(HO
 // shortcuts ("Exec=steam steam://rungameid/N") and their icons there, where no desktop looks. Those are listed
 // too, launched through the Flatpak (which hands the steam:// link to the running Steam).
 const SANDBOX_ROOT = path.join(HOME, '.var/app');
+// Every folder of shortcuts inside a sandbox: its applications folder, and its Desktop (Steam's "Add desktop
+// shortcut" writes to ~/Desktop, which for the Flatpak is ~/.var/app/com.valvesoftware.Steam/Desktop).
 function sandboxDataDirs() {
   let ids = [];
   try { ids = fs.readdirSync(SANDBOX_ROOT); } catch { return []; }
   const out = [];
-  for (const id of ids) for (const sub of ['.local/share', 'data']) {
-    const data = path.join(SANDBOX_ROOT, id, sub);
-    if (fs.existsSync(path.join(data, 'applications'))) out.push({ id, data, apps: path.join(data, 'applications') });
+  for (const id of ids) {
+    const icons = ['.local/share', 'data'].map((sub) => path.join(SANDBOX_ROOT, id, sub, 'icons'));
+    for (const sub of ['.local/share', 'data']) {
+      const apps = path.join(SANDBOX_ROOT, id, sub, 'applications');
+      if (fs.existsSync(apps)) out.push({ id, apps, icons });
+    }
+    const desk = path.join(SANDBOX_ROOT, id, 'Desktop');
+    if (fs.existsSync(desk)) out.push({ id, apps: desk, icons });
+  }
+  return out;
+}
+
+// More folders of .desktop files the launcher reads (Settings › Apps › Launcher Folders), kept in
+// ~/.config/LiquidDesktop/app-folders.json
+const appFoldersFile = () => path.join(process.env.XDG_CONFIG_HOME || path.join(HOME, '.config'), 'LiquidDesktop', 'app-folders.json');
+function userAppFolders() {
+  try { const v = JSON.parse(fs.readFileSync(appFoldersFile(), 'utf8')); return Array.isArray(v) ? v.filter((x) => typeof x === 'string') : []; } catch { return []; }
+}
+function setUserAppFolders(list) {
+  const clean = [...new Set((Array.isArray(list) ? list : []).map((x) => String(x).trim().replace(/^~(?=\/|$)/, HOME)).filter((x) => x.startsWith('/')))];
+  fs.mkdirSync(path.dirname(appFoldersFile()), { recursive: true });
+  fs.writeFileSync(appFoldersFile(), JSON.stringify(clean, null, 2));
+  appsCache = null;
+  return clean;
+}
+// the extra folders, with how their entries are launched: inside a Flatpak only its steam:// links (run through
+// the Flatpak); a folder you added runs its shortcuts as they are, or through the Flatpak it's inside of
+function extraAppDirs() {
+  const out = sandboxDataDirs().map((d) => ({ ...d, onlySteam: true }));
+  for (const dir of userAppFolders()) {
+    const m = dir.startsWith(SANDBOX_ROOT + '/') ? dir.slice(SANDBOX_ROOT.length + 1).split('/')[0] : null;
+    out.push({ id: m, apps: dir, icons: m ? ['.local/share', 'data'].map((sub) => path.join(SANDBOX_ROOT, m, sub, 'icons')) : [], onlySteam: false });
   }
   return out;
 }
@@ -169,7 +200,7 @@ function sandboxDataDirs() {
 // Installing or removing an app (App Store, pacman, flatpak in a terminal…) changes one of these folders:
 // tell every LiquidDesktop window so the launcher, Spotlight and Dock pick it up.
 function watchApps() {
-  const sig = () => [...APP_DIRS, ...sandboxDataDirs().map((x) => x.apps)].map((d) => { try { const st = fs.statSync(d); return st.mtimeMs + ':' + fs.readdirSync(d).length; } catch { return '-'; } }).join('|');
+  const sig = () => [...APP_DIRS, ...extraAppDirs().map((x) => x.apps)].map((d) => { try { const st = fs.statSync(d); return st.mtimeMs + ':' + fs.readdirSync(d).length; } catch { return '-'; } }).join('|');
   let last = sig();
   setInterval(() => {
     const now = sig();
@@ -219,19 +250,25 @@ async function listApps(force) {
       } catch { /* unreadable entry */ }
     }
   }
-  for (const sb of sandboxDataDirs()) {
+  // the same game can have a shortcut in two places (Steam's menu entry and its Desktop): listed once, by name
+  const names = new Set([...seen.values()].filter(Boolean).map((a) => a.name.toLowerCase()));
+  for (const sb of extraAppDirs()) {
     let files = [];
     try { files = fs.readdirSync(sb.apps).filter((f) => f.endsWith('.desktop')); } catch { continue; }
     for (const f of files) {
       if (seen.has(f)) continue;
       try {
         const e = parseDesktopFile(path.join(sb.apps, f));
-        const url = (e.Exec || '').match(/\bsteam:\/\/[^\s"']+/);
-        if (e.Type !== 'Application' || e.NoDisplay === 'true' || e.Hidden === 'true' || !url) continue;
+        if (e.Type !== 'Application' || e.NoDisplay === 'true' || e.Hidden === 'true' || !e.Exec) continue;
+        const url = e.Exec.match(/\bsteam:\/\/[^\s"']+/);
+        if (sb.onlySteam && !url) continue;
+        if (names.has((e.Name || f).toLowerCase())) continue;
+        names.add((e.Name || f).toLowerCase());
         seen.set(f, {
           id: 'desktop:' + f, file: path.join(sb.apps, f), name: e.Name || f, comment: e.Comment || '',
-          exec: `flatpak run ${sb.id} ${url[0]}`, terminal: false, icon: resolveIcon(e.Icon, [path.join(sb.data, 'icons')]), iconName: e.Icon || '',
-          categories: (e.Categories || 'Game').split(';').filter(Boolean), wmClass: e.StartupWMClass || '', keywords: (e.Keywords || '').split(';').filter(Boolean), mimes: [],
+          exec: url && sb.id ? `flatpak run ${sb.id} ${url[0]}` : e.Exec, terminal: e.Terminal === 'true',
+          icon: resolveIcon(e.Icon, sb.icons), iconName: e.Icon || '',
+          categories: (e.Categories || (url ? 'Game' : '')).split(';').filter(Boolean), wmClass: e.StartupWMClass || '', keywords: (e.Keywords || '').split(';').filter(Boolean), mimes: [],
         });
       } catch { /* unreadable entry */ }
     }
@@ -830,9 +867,13 @@ function register({ getWindow, mode }) {
   });
   h('apps:info', async (file) => {
     // a Steam game from Flatpak's Steam: the launcher's entry (launched through the Flatpak)
-    if (String(file).startsWith(SANDBOX_ROOT + '/')) { const hit = (await listApps()).find((a) => a.file === file); if (hit) return hit; }
+    if (!APP_DIRS.includes(path.dirname(String(file)))) { const hit = (await listApps()).find((a) => a.file === file); if (hit) return hit; }
     const e = parseDesktopFile(file); return { id: 'desktop:' + path.basename(file), file, name: e.Name || path.basename(file), exec: e.Exec, terminal: e.Terminal === 'true', icon: resolveIcon(e.Icon), categories: [], keywords: [] }; });
   h('apps:launch', (exec, terminal) => launchExec(exec, terminal));
+  // the sandbox folders that actually have Steam game shortcuts in them (the others are never listed)
+  const hasSteamGames = (dir) => { try { return fs.readdirSync(dir).some((f) => f.endsWith('.desktop') && /steam:\/\//.test(fs.readFileSync(path.join(dir, f), 'utf8'))); } catch { return false; } };
+  h('apps:folders', () => ({ folders: userAppFolders(), found: sandboxDataDirs().map((d) => d.apps).filter(hasSteamGames) }));
+  h('apps:setFolders', (list) => setUserAppFolders(list));
   h('apps:run', (cmd) => launchExec(cmd, false));
 
   h('clip:write', (t) => { clipboard.writeText(String(t)); return true; });

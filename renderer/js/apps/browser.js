@@ -17,6 +17,21 @@ const ENGINES = {
   bing: ['Bing', 'https://www.bing.com/search?q='], brave: ['Brave Search', 'https://search.brave.com/search?q='],
   startpage: ['Startpage', 'https://www.startpage.com/do/search?q='], ecosia: ['Ecosia', 'https://www.ecosia.org/search?q='],
 };
+// search suggestions while typing in the address bar: where they come from (Settings › Search suggestions)
+const SUGGEST = {
+  google: ['Google', (q) => `https://suggestqueries.google.com/complete/search?client=firefox&q=${q}`],
+  duckduckgo: ['DuckDuckGo', (q) => `https://duckduckgo.com/ac/?type=list&q=${q}`],
+  bing: ['Bing', (q) => `https://api.bing.com/osjson.aspx?query=${q}`],
+  brave: ['Brave Search', (q) => `https://search.brave.com/api/suggest?q=${q}`],
+};
+// "same as the search engine": engines without a suggestion service of their own use DuckDuckGo's
+const suggestSource = () => {
+  const s = opt('browserSuggest', 'engine');
+  if (s === 'off') return null;
+  if (s !== 'engine') return SUGGEST[s] ? s : null;
+  const e = opt('browserSearch', 'duckduckgo');
+  return SUGGEST[e] ? e : 'duckduckgo';
+};
 const DEFAULT_FAVS = [['DuckDuckGo', 'https://duckduckgo.com'], ['Wikipedia', 'https://wikipedia.org'], ['GitHub', 'https://github.com'],
   ['YouTube', 'https://youtube.com'], ['Reddit', 'https://reddit.com'], ['Hacker News', 'https://news.ycombinator.com'], ['Arch Wiki', 'https://wiki.archlinux.org'], ['MDN', 'https://developer.mozilla.org']]
   .map(([title, url]) => ({ title, url }));
@@ -100,10 +115,24 @@ class BrowserView {
   buildChrome() {
     const w = this.win;
     this.url = h('input.br-url', { placeholder: `Search ${ENGINES[opt('browserSearch', 'duckduckgo')][0]} or enter website`, spellcheck: false });
-    this.url.addEventListener('keydown', (e) => { if (e.key === 'Enter') { this.typing = false; this.load(this.url.value); this.url.blur(); } if (e.key === 'Escape') { this.typing = false; this.syncUrl(); this.url.blur(); } });
-    this.url.addEventListener('input', () => (this.typing = true));
+    this.url.addEventListener('keydown', (e) => {
+      const sg = this.suggest;
+      if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && sg?.items.length) {
+        e.preventDefault();
+        sg.cur = e.key === 'ArrowDown' ? (sg.cur + 1) % sg.items.length : sg.cur <= 0 ? sg.items.length - 1 : sg.cur - 1;
+        this.url.value = sg.items[sg.cur].fill;
+        this.drawSuggest();
+        return;
+      }
+      if (e.key === 'Enter') {
+        const pick = sg && sg.cur >= 0 ? sg.items[sg.cur] : null;
+        this.typing = false; this.hideSuggest(); this.load(pick ? pick.go : this.url.value); this.url.blur();
+      }
+      if (e.key === 'Escape') { if (sg?.items.length) { this.hideSuggest(); return; } this.typing = false; this.syncUrl(); this.url.blur(); }
+    });
+    this.url.addEventListener('input', () => { this.typing = true; this.updateSuggest(); });
     this.url.addEventListener('focus', () => setTimeout(() => this.url.select()));
-    this.url.addEventListener('blur', () => { this.typing = false; this.syncUrl(); });
+    this.url.addEventListener('blur', () => { this.typing = false; this.syncUrl(); setTimeout(() => this.hideSuggest(), 120); });
     this.lock = h('span.br-lock');
     this.star = h('button.br-icon-btn', { title: 'Add to Favorites (Ctrl+D)', onclick: () => this.toggleFavorite() });
     this.key = h('button.br-icon-btn', { title: 'Saved passwords for this site', html: sym.lock, hidden: true, onclick: (e) => this.passwordMenu(e.currentTarget) });
@@ -155,6 +184,61 @@ class BrowserView {
     else { this.progress.style.opacity = 0; this.progress.style.width = '0'; }
   }
   focusUrl() { this.url.focus(); }
+
+  /* ---------------------------------------------- suggestions below the address bar */
+  // your favorites and history that match first, then the search engine's suggestions
+  updateSuggest() {
+    const q = this.url.value.trim();
+    const seq = (this.suggestSeq = (this.suggestSeq || 0) + 1);
+    clearTimeout(this.suggestTimer);
+    if (!q) { this.hideSuggest(); return; }
+    const ql = q.toLowerCase();
+    const seen = new Set();
+    const local = [...favs(), ...appData.get('browserHistory', [])]
+      .filter((x) => x.url && !seen.has(x.url) && seen.add(x.url) && ((x.title || '').toLowerCase().includes(ql) || x.url.toLowerCase().replace(/^https?:\/\/(www\.)?/, '').startsWith(ql)))
+      .slice(0, 3)
+      .map((x) => ({ kind: 'site', label: x.title || hostOf(x.url), sub: x.url.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, ''), go: x.url, fill: x.url }));
+    const show = (remote) => {
+      if (seq !== this.suggestSeq || document.activeElement !== this.url) return;
+      const items = [...local, ...remote.filter((r) => r.toLowerCase() !== ql).slice(0, 8 - local.length)
+        .map((r) => ({ kind: 'search', label: r, go: r, fill: r }))];
+      this.suggest = { items, cur: -1, q };
+      this.drawSuggest();
+    };
+    show([]);
+    const src = suggestSource();
+    // addresses and very short input don't go to the search engine
+    if (!src || /^[a-z]+:\/\//i.test(q) || q.length < 2) return;
+    this.suggestTimer = setTimeout(async () => {
+      try {
+        const text = await api.net.fetch(SUGGEST[src][1](encodeURIComponent(q)));
+        const data = JSON.parse(text);
+        const list = Array.isArray(data) && Array.isArray(data[1]) ? data[1] : Array.isArray(data) ? data.map((x) => x?.phrase).filter(Boolean) : [];
+        show(list.filter((x) => typeof x === 'string'));
+      } catch { /* offline, or the service said no: just the local matches */ }
+    }, 110);
+  }
+  drawSuggest() {
+    const sg = this.suggest;
+    if (!sg || !sg.items.length) { this.hideSuggest(true); return; }
+    if (!this.suggestEl) {
+      this.suggestEl = h('div.br-suggest.glass.panel');
+      this.suggestEl.addEventListener('mousedown', (e) => e.preventDefault());   // keep the address bar focused
+      this.win.el.append(this.suggestEl);
+    }
+    const wr = this.win.el.getBoundingClientRect(), ur = this.urlbar.getBoundingClientRect();
+    Object.assign(this.suggestEl.style, { left: ur.left - wr.left + 'px', top: ur.bottom - wr.top + 6 + 'px', width: ur.width + 'px' });
+    const ic = (k) => (k === 'site' ? sym.globe || sym.link || '' : sym.search);
+    this.suggestEl.replaceChildren(...sg.items.map((it, i) => h('div.br-sg' + (i === sg.cur ? '.on' : ''), {
+      onclick: () => { this.typing = false; this.hideSuggest(); this.load(it.go); this.url.blur(); },
+      onmouseenter: () => { sg.cur = i; $$('.br-sg', this.suggestEl).forEach((x, j) => x.classList.toggle('on', j === i)); },
+    }, h('span.br-sg-ic', { html: ic(it.kind) }), h('span.br-sg-t', it.label), it.sub ? h('span.br-sg-sub', it.sub) : null)));
+    this.suggestEl.hidden = false;
+  }
+  hideSuggest(keepState) {
+    if (!keepState) { this.suggest = null; this.suggestSeq = (this.suggestSeq || 0) + 1; clearTimeout(this.suggestTimer); }
+    if (this.suggestEl) this.suggestEl.hidden = true;
+  }
 
   /* ---------------------------------------------- tabs */
   newTab(input) {
@@ -361,6 +445,8 @@ class BrowserView {
       h('div.group-title', 'General'),
       h('div.group',
         row('Search engine', sel('browserSearch', 'duckduckgo', Object.entries(ENGINES).map(([k, [n]]) => [k, n]), () => (this.url.placeholder = `Search ${ENGINES[opt('browserSearch', 'duckduckgo')][0]} or enter website`))),
+        row('Search suggestions', sel('browserSuggest', 'engine', [['engine', 'From the search engine'], ...Object.entries(SUGGEST).map(([k, [n]]) => [k, n]), ['off', 'Off']]),
+          'Shown below the address bar as you type. What you type is sent to that service.'),
         row('New tabs open with', homeInput, 'Leave empty for the Start Page'),
         row('Show favorites on the Start Page', tog('browserShowFavs', true)),
         row('Default page zoom', sel('browserZoom', '0', [['-2', '67%'], ['-1', '80%'], ['0', '100%'], ['1', '120%'], ['2', '144%']].map(([v, l]) => [v, l]), () => store.set('browserZoom', Number(opt('browserZoom', 0)))))),

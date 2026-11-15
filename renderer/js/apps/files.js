@@ -112,7 +112,9 @@ class FilesView {
     this.pathbar = h('div.pathbar');
     this.main = h('div.main-pane', this.view_, this.pathbar);
     w.body.append(this.sidebar, this.main);
-    this.view_.addEventListener('mousedown', (e) => { if (e.target === this.view_ || e.target.classList.contains('files-grid')) { this.sel.clear(); this.paintSel(); } });
+    this.view_.addEventListener('mousedown', (e) => this.rubberBand(e));
+    // the path bar: a click anywhere but a folder's name turns it into a field to type a path in
+    this.pathbar.addEventListener('click', (e) => { if (!e.target.closest('.crumb') && !this.pathbar.querySelector('input')) this.editPath(); });
     this.view_.addEventListener('contextmenu', (e) => { if (!e.target.closest('.f-item, tr')) this.bgMenu(e); });
     this.view_.addEventListener('keydown', (e) => this.onKey(e));
     this.view_.addEventListener('dragover', (e) => { if (e.dataTransfer.types.includes('text/liquid-paths')) e.preventDefault(); });
@@ -163,7 +165,7 @@ class FilesView {
     parts.forEach((p, i) => crumbs.push(['/' + parts.slice(0, i + 1).join('/'), p]));
     crumbs.forEach(([p, n], i) => {
       if (i) this.pathbar.append(h('span.chev', '›'));
-      const c = h('span', { html: (i === crumbs.length - 1 ? '' : '') + `<span style="width:14px;height:14px;display:inline-flex">${p === '/' ? sym.drive : folderIcon(n)}</span>` }, n);
+      const c = h('span.crumb', { html: (i === crumbs.length - 1 ? '' : '') + `<span style="width:14px;height:14px;display:inline-flex">${p === '/' ? sym.drive : folderIcon(n)}</span>` }, n);
       c.addEventListener('click', () => this.go(p));
       c.addEventListener('dragover', (e) => e.preventDefault());
       c.addEventListener('drop', (e) => this.dropOn(e, p));
@@ -173,6 +175,101 @@ class FilesView {
     this.pathbar.append(this.status);
     this.updateStatus();
   }
+  /* ---------------------------------------------- typing a path */
+  editPath() {
+    const home = this.places?.home || '';
+    const tilde = (p) => (home && (p === home || p.startsWith(home + '/')) ? '~' + p.slice(home.length) : p);
+    const expand = (p) => (home ? p.replace(/^~(?=\/|$)/, home) : p);
+    const input = h('input.field.path-input', { value: tilde(this.path) + (this.path === '/' ? '' : '/'), spellcheck: false, autocomplete: 'off' });
+    const pop = h('div.path-suggest.glass.panel');
+    pop.hidden = true;
+    this.pathbar.replaceChildren(input);
+    this.main.append(pop);
+    const listing = new Map();   // folder → its subfolders (asked once per folder while typing)
+    let items = [], cur = -1, seq = 0, closed = false;
+    const close = () => { if (closed) return; closed = true; pop.remove(); this.renderChrome(); };
+    const draw = () => {
+      pop.replaceChildren(...items.map((p, i) => h('div.ps-item' + (i === cur ? '.on' : ''), { onmousedown: (e) => { e.preventDefault(); pick(p, true); } },
+        h('span', { html: `<span style="width:14px;height:14px;display:inline-flex">${folderIcon(basename(p))}</span>` }), h('span.ps-name', tilde(p)))));
+      pop.hidden = !items.length;
+    };
+    const suggest = async () => {
+      const my = ++seq, text = expand(input.value);
+      const i = text.lastIndexOf('/');
+      if (i < 0) { items = []; draw(); return; }
+      const dir = text.slice(0, i) || '/', part = text.slice(i + 1).toLowerCase();
+      if (!listing.has(dir)) {
+        try { listing.set(dir, (await api.fs.list(dir)).filter((f) => f.isDir).map((f) => f.path)); } catch { listing.set(dir, []); }
+      }
+      if (my !== seq) return;   // typed on meanwhile
+      items = listing.get(dir).filter((p) => { const n = basename(p).toLowerCase(); return n.startsWith(part) && (part.startsWith('.') || !n.startsWith('.')); })
+        .sort((a, b) => a.localeCompare(b)).slice(0, 8);
+      if (items.length === 1 && items[0] === text.replace(/\/+$/, '')) items = [];
+      cur = -1; draw();
+    };
+    const pick = (p, open) => { input.value = tilde(p) + '/'; if (open) go(); else { input.focus(); suggest(); } };
+    const go = async () => {
+      const target = expand(input.value.trim()).replace(/(.)\/+$/, '$1') || '/';
+      close();
+      let st = null;
+      try { st = await api.fs.stat(target); } catch { st = null; }
+      if (!st) { shell.notify({ app: 'files', title: 'Can’t open', body: `“${target}” doesn’t exist.` }); return; }
+      if (st.isDir) this.go(target); else this.go(dirname(target), { select: target });
+    };
+    input.addEventListener('input', suggest);
+    input.addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      if (e.key === 'Escape') { e.preventDefault(); close(); this.view_.focus(); }
+      else if (e.key === 'Enter') { e.preventDefault(); if (cur >= 0 && items[cur]) pick(items[cur], true); else go(); }
+      else if (e.key === 'ArrowUp' && items.length) { e.preventDefault(); cur = cur <= 0 ? items.length - 1 : cur - 1; draw(); }
+      else if (e.key === 'ArrowDown' && items.length) { e.preventDefault(); cur = (cur + 1) % items.length; draw(); }
+      else if (e.key === 'Tab' && items.length) { e.preventDefault(); pick(items[cur >= 0 ? cur : 0], false); }
+    });
+    input.addEventListener('blur', () => setTimeout(close, 150));
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+    suggest();
+  }
+
+  /* ---------------------------------------------- selecting by dragging a box over empty space */
+  rubberBand(e) {
+    if (e.button !== 0 || e.target.closest('.f-item, tbody tr, thead, button, input')) return;
+    const toggle = e.ctrlKey || e.metaKey, add = toggle || e.shiftKey;
+    const before = add ? new Set(this.sel) : new Set();
+    if (!add) { this.sel.clear(); this.paintSel(); }
+    const view = this.view_, vr0 = view.getBoundingClientRect();
+    // measured in the view's scrolled content, so the box stays put while the view scrolls
+    const sx = e.clientX - vr0.left + view.scrollLeft, sy = e.clientY - vr0.top + view.scrollTop;
+    let band = null, last = null;
+    const update = () => {
+      if (!last) return;
+      const vr = view.getBoundingClientRect();
+      const cx = Math.max(0, Math.min(last.clientX - vr.left, vr.width)) + view.scrollLeft, cy = Math.max(0, Math.min(last.clientY - vr.top, vr.height)) + view.scrollTop;
+      const x = Math.min(sx, cx), y = Math.min(sy, cy), w = Math.abs(cx - sx), hh = Math.abs(cy - sy);
+      if (!band) { if (w + hh < 4) return; band = h('div.f-band'); view.append(band); }
+      Object.assign(band.style, { left: x + 'px', top: y + 'px', width: w + 'px', height: hh + 'px' });
+      const L = x - view.scrollLeft + vr.left, T = y - view.scrollTop + vr.top;
+      this.sel = new Set(before);
+      for (const el of $$('[data-path]', view)) {
+        const r = (el.querySelector('.cell') || el).getBoundingClientRect();
+        if (r.right > L && r.left < L + w && r.bottom > T && r.top < T + hh) {
+          if (toggle && before.has(el.dataset.path)) this.sel.delete(el.dataset.path); else this.sel.add(el.dataset.path);
+        }
+      }
+      this.paintSel();
+    };
+    const mv = (ev) => { last = ev; update(); };
+    // near the top or bottom edge: scroll, and keep growing the box
+    const scroller = setInterval(() => {
+      if (!last || !band) return;
+      const vr = view.getBoundingClientRect();
+      const d = last.clientY < vr.top + 30 ? -12 : last.clientY > vr.bottom - 30 ? 12 : 0;
+      if (d) { view.scrollTop += d; update(); }
+    }, 30);
+    const up = () => { clearInterval(scroller); if (band) band.remove(); removeEventListener('mousemove', mv); removeEventListener('mouseup', up); };
+    addEventListener('mousemove', mv); addEventListener('mouseup', up);
+  }
+
   updateStatus() {
     if (!this.status) return;
     const n = this.visible().length;

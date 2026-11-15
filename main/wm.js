@@ -941,7 +941,9 @@ class WindowManager extends EventEmitter {
       if (x === w.x && y === w.y && ww === w.w && hh === w.h) return;   // the pointer didn't move: nothing to redo
       Object.assign(w, { x, y, w: ww, h: hh });
       this.applyGeometry(w);
-    }, this.frameMs());
+      // at most 60 resizes a second: each one makes Chromium and the compositor rebuild the window's buffers,
+      // and faster than that (a 240 Hz screen) stalled NVIDIA's driver until Chromium restarted its GPU process
+    }, Math.max(16, this.frameMs()));
   }
 
   /* ================================================================ shell layer */

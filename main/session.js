@@ -8,6 +8,7 @@
 // All of it is the same web app (renderer/index.html) loaded with a different ?layer=.
 const { BrowserWindow, ipcMain, screen, desktopCapturer, app } = require('electron');
 const path = require('path');
+const fs = require('fs');
 const { WindowManager, TB, EDGE } = require('./wm');
 
 const INDEX = path.join(__dirname, '..', 'renderer', 'index.html');
@@ -57,9 +58,19 @@ async function startSession({ preload }) {
   // A page of ours crashed (common without a GPU): log it and reload, the shell without its start-up screen.
   // A few times only: a page that keeps crashing isn't reloaded forever.
   const crashes = new Map();
+  // crashes also go to ~/.config/LiquidDesktop/crashes.log (the session's own output ends up wherever the login
+  // screen puts it), so they can be looked up and reported
+  const crashLog = (line) => {
+    console.error(line);
+    try {
+      const f = path.join(app.getPath('userData'), 'crashes.log');
+      try { if (fs.statSync(f).size > 256 * 1024) fs.renameSync(f, f + '.old'); } catch { /* no log yet */ }
+      fs.appendFileSync(f, `${new Date().toISOString()} ${line}\n`);
+    } catch { /* not writable */ }
+  };
   const recover = (name, bw, reload) => {
     bw.webContents.on('render-process-gone', (_e, d) => {
-      console.error(`[session] ${name} crashed: ${d.reason} (exit ${d.exitCode})`);
+      crashLog(`[session] ${name} crashed: ${d.reason} (exit ${d.exitCode})`);
       if (bw.isDestroyed() || d.reason === 'clean-exit') return;
       const now = Date.now(), recent = (crashes.get(name) || []).filter((t) => now - t < 120000);
       recent.push(now); crashes.set(name, recent);
@@ -71,7 +82,7 @@ async function startSession({ preload }) {
   recover('desktop', desktop, () => desktop.loadFile(INDEX, { query: { mode: 'session', layer: 'desktop' } }));
   app.on('child-process-gone', (_e, d) => {
     if (d.reason === 'clean-exit') return;
-    console.error(`[session] ${d.type}${d.name ? ' (' + d.name + ')' : ''} process gone: ${d.reason} (exit ${d.exitCode})`);
+    crashLog(`[session] ${d.type}${d.name ? ' (' + d.name + ')' : ''} process gone: ${d.reason} (exit ${d.exitCode})`);
   });
 
   const toShell = (ch, ...a) => { if (!shell.isDestroyed()) shell.webContents.send(ch, ...a); };
@@ -79,7 +90,11 @@ async function startSession({ preload }) {
 
   /* ------------------------------------------------------------ built-in app windows */
   let appSeq = 100000;
+  const starting = new Map();   // appId → a window that was created but isn't on screen yet
   function openApp(appId, args = {}, opts = {}) {
+    // clicked again while it's still starting: show that window rather than starting another hidden one
+    const waiting = starting.get(appId);
+    if (waiting && !waiting.bw.isDestroyed() && Date.now() - waiting.at < 15000 && !Object.keys(args || {}).length) { waiting.show(); waiting.bw.focus(); return waiting.id; }
     const id = ++appSeq;
     const [w0, h0] = opts.size || [820, 540];
     const a = wm.area();
@@ -94,9 +109,22 @@ async function startSession({ preload }) {
     const xid = xidOf(bw);
     wm.registerOwn(xid, { role: 'app', id, appId, title: opts.name || appId, minW: opts.minSize?.[0], minH: opts.minSize?.[1], resizable: opts.resizable, webContents: bw.webContents });
     bw.loadFile(INDEX, { query: { mode: 'session', layer: 'app', app: appId, wid: String(id), args: JSON.stringify(args || {}) } });
-    bw.once('ready-to-show', () => bw.show());
+    // shown at its first paint (ready-to-show). With some drivers (NVIDIA) that event comes late or not at all
+    // for a hidden window, which left the app invisible until it was clicked again: so it's also shown once
+    // the page has loaded, and after a few seconds at the latest.
+    let shown = false;
+    // (still counted as starting for a moment after it appears: the clicks that were waiting on it don't open more)
+    const show = () => {
+      if (shown || bw.isDestroyed()) return;
+      shown = true; clearTimeout(late); bw.show();
+      setTimeout(() => { if (starting.get(appId)?.id === id) starting.delete(appId); }, 1500);
+    };
+    const late = setTimeout(show, 3000);
+    starting.set(appId, { id, bw, show, at: Date.now() });
+    bw.once('ready-to-show', show);
+    bw.webContents.once('did-finish-load', () => setTimeout(show, 120));
     bw.on('page-title-updated', (e, t) => { const mw = wm.windows.get(id); if (mw) { mw.title = t; wm.changed(mw); } });
-    bw.on('closed', () => appWindows.delete(id));
+    bw.on('closed', () => { appWindows.delete(id); clearTimeout(late); if (starting.get(appId)?.id === id) starting.delete(appId); });
     recover(`app ${appId}#${id}`, bw, () => bw.webContents.reload());
     bw.webContents.setWindowOpenHandler(({ url }) => { openLink(url); return { action: 'deny' }; });
     bw.webContents.on('did-attach-webview', (_e, wc) => wc.setWindowOpenHandler(({ url }) => { bw.webContents.send('browser:newTab', url); return { action: 'deny' }; }));
@@ -232,12 +260,14 @@ async function startSession({ preload }) {
 
   // resolution / monitor changes: the desktop and shell layers follow the primary display
   const relayout = () => {
-    const b = screen.getPrimaryDisplay().bounds;
+    const d = screen.getPrimaryDisplay(), b = d.bounds;
     for (const bw of [desktop, shell]) if (!bw.isDestroyed()) bw.setBounds(b);
-    wm.sw = b.width; wm.sh = b.height;
-    wm.setCardinal(wm.root, '_NET_DESKTOP_GEOMETRY', [b.width, b.height]);
+    // the window manager works in screen pixels; Electron's bounds are scaled (1706×1066 for 2560×1600 at 150%)
+    const k = d.scaleFactor || 1, pw = Math.round(b.width * k), ph = Math.round(b.height * k);
+    wm.sw = pw; wm.sh = ph;
+    wm.setCardinal(wm.root, '_NET_DESKTOP_GEOMETRY', [pw, ph]);
     wm.updateWorkarea();
-    for (const w of wm.windows.values()) if (w.maximized || w.tile || w.fullscreen) { if (w.fullscreen) Object.assign(w, { x: 0, y: 0, w: b.width, h: b.height }); else wm.tile(w.id, w.tile || 'fill'); wm.applyGeometry(w); }
+    for (const w of wm.windows.values()) if (w.maximized || w.tile || w.fullscreen) { if (w.fullscreen) Object.assign(w, { x: 0, y: 0, w: pw, h: ph }); else wm.tile(w.id, w.tile || 'fill'); wm.applyGeometry(w); }
     wm.changed();
   };
   for (const ev of ['display-metrics-changed', 'display-added', 'display-removed']) screen.on(ev, () => setTimeout(relayout, 300));

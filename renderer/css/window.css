@@ -1005,3 +1005,25 @@ body.mission-open #spaces { z-index: 7550; }
 .lt-all-dev b { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lt-all-dev small { font-size: 11.5px; }
 .lt-all-dev .lt-dev-dots { margin-top: 4px; }
+
+/* Files: drag-to-select box, typing a path */
+.files-view { position: relative; }
+.f-band { position: absolute; z-index: 5; pointer-events: none; border-radius: 4px; border: 1px solid rgba(var(--accent-rgb), 0.8); background: rgba(var(--accent-rgb), 0.16); }
+.pathbar .path-input { flex: 1; height: 22px; padding: 0 8px; font-size: 12px; border-radius: 6px; }
+.path-suggest { position: absolute; left: 10px; bottom: 32px; z-index: 30; min-width: 280px; max-width: calc(100% - 20px); padding: 5px; border-radius: 12px; display: flex; flex-direction: column; gap: 1px; }
+.ps-item { display: flex; align-items: center; gap: 7px; height: 26px; padding: 0 8px; border-radius: 7px; font-size: 12.5px; white-space: nowrap; }
+.ps-item:hover { background: var(--hover); }
+.ps-item.on { background: var(--accent); color: #fff; }
+.ps-name { overflow: hidden; text-overflow: ellipsis; }
+.pathbar { cursor: text; }
+.pathbar .crumb { cursor: var(--cur-default, default); }
+
+/* Browser: suggestions below the address bar */
+.br-suggest { position: absolute; z-index: 60; padding: 6px; border-radius: 16px; display: flex; flex-direction: column; gap: 1px; max-width: calc(100% - 20px); }
+.br-sg { display: flex; align-items: center; gap: 10px; height: 32px; padding: 0 10px; border-radius: 10px; font-size: 13px; min-width: 0; }
+.br-sg.on { background: var(--accent); color: #fff; }
+.br-sg-ic { width: 15px; height: 15px; flex: none; display: inline-flex; color: var(--text-2); }
+.br-sg.on .br-sg-ic, .br-sg.on .br-sg-sub { color: rgba(255, 255, 255, 0.85); }
+.br-sg-ic svg { width: 15px; height: 15px; }
+.br-sg-t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.br-sg-sub { color: var(--text-2); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; }

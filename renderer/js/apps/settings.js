@@ -768,9 +768,28 @@ const render = {
         row('Tab width', select('textTabSize', [[2, '2 spaces'], [4, '4 spaces'], [8, '8 spaces']]))),
     ];
   },
-  apps() {
+  async apps() {
+    // Launcher Folders: more places with app shortcuts (.desktop files), e.g. games from Flatpak Steam
+    let lf = null;
+    try { lf = await api.apps.folders?.(); } catch { lf = null; }
+    const folderGroup = !lf ? [] : (() => {
+      const save = async (list) => { try { await api.apps.setFolders(list); } catch (e) { alertDialog({ title: 'The folders couldn’t be saved', message: e.message }); } rerender(); };
+      const add = async () => {
+        let picked = null;
+        try { picked = await api.dialog.open({ title: 'Add a Folder of App Shortcuts', directory: true }); } catch { picked = null; }
+        const dir = Array.isArray(picked) ? picked[0] : picked;
+        if (dir) save([...lf.folders, dir]);
+      };
+      const tilde = (p) => p.replace(/^\/home\/[^/]+/, '~');
+      return [h('div.group-title', 'Launcher Folders'),
+        h('div.group',
+          ...lf.found.map((d) => row(tilde(d), h('span.muted', 'Found automatically'), 'Steam games from Steam installed with Flatpak')),
+          ...lf.folders.map((d) => row(tilde(d), h('button.btn', { onclick: () => save(lf.folders.filter((x) => x !== d)) }, 'Remove'))),
+          row('Add Folder…', h('button.btn', { onclick: add }, 'Choose…'), 'The Launcher and Spotlight also list the .desktop files in folders you add here.'))];
+    })();
     return [
       hero('apps', 'Apps', 'Defaults for built-in apps.'),
+      ...folderGroup,
       h('div.group-title', 'Terminal'),
       h('div.group', h('div.row.link', { onclick: () => wm.open('settings', { pane: 'terminal' }) }, h('div.label', 'Terminal settings…', h('small', 'Shell, font, cursor, colors')), h('span.muted', '›'))),
       h('div.group-title', 'Weather'),

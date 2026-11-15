@@ -26,6 +26,7 @@ registerApp({
       { label: 'as Icons', checked: win?.state?.view === 'icons', action: () => win?.state?.setView('icons') },
       { label: 'as List', checked: win?.state?.view === 'list', action: () => win?.state?.setView('list') }, '-',
       { label: 'Show Hidden Files', checked: !!win?.state?.showHidden, shortcut: '⇧⌘.', action: () => win?.state?.toggleHidden() },
+      { label: 'Show File Extensions', checked: store.get('filesShowExt') !== false, action: () => store.set('filesShowExt', store.get('filesShowExt') === false) }, '-',
       { label: 'Sort by Name', action: () => win?.state?.setSort('name') }, { label: 'Sort by Date Modified', action: () => win?.state?.setSort('mtime') },
       { label: 'Sort by Size', action: () => win?.state?.setSort('size') }, { label: 'Sort by Kind', action: () => win?.state?.setSort('ext') }] },
     { title: 'Go', items: [
@@ -43,6 +44,7 @@ class FilesView {
     this.win = win; win.state = this;
     this.view = store.get('filesView') || 'icons';
     this.showHidden = !!store.get('filesShowHidden');
+    this.showExt = store.get('filesShowExt') !== false;
     this.sort = store.get('filesSort') || 'name';
     this.history = []; this.fwd = [];
     this.sel = new Set();
@@ -75,6 +77,7 @@ class FilesView {
     const off = bus.on('fs-changed', () => this.refresh());
     const offS = store.on('change', (k) => {
       if (k === 'filesShowHidden') { this.showHidden = !!store.get(k); this.renderItems(); }
+      if (k === 'filesShowExt') { this.showExt = store.get(k) !== false; this.renderItems(); }
       if (k === 'filesSort') { this.sort = store.get(k); this.renderItems(); }
       if (k === 'filesFoldersFirst') this.renderItems();
     });
@@ -370,17 +373,21 @@ class FilesView {
     if (this.view === 'icons') {
       const grid = h('div.files-grid');
       for (const f of list) {
-        const el = h('div.f-item' + (f.hidden ? '.hidden-file' : ''), { draggable: true }, this.iconFor(f), h('div.nm', f.name));
+        const el = h('div.f-item' + (f.hidden ? '.hidden-file' : ''), { draggable: true }, this.iconFor(f), h('div.nm', { title: f.name }, this.displayName(f)));
         this.bindItem(el, f);
         grid.append(el);
       }
       this.view_.append(grid);
+      // once laid out, and again when the window (so the column width) changes
+      this.nameFit?.disconnect();
+      this.nameFit = new ResizeObserver(() => this.fitNames(grid));
+      this.nameFit.observe(grid);
     } else {
       const tb = h('tbody');
       const th = (label, key) => h('th', { onclick: () => this.setSort(key), style: { cursor: 'default' } }, label + (this.sort === key ? ' ▾' : ''));
       const table = h('table.files-list', h('thead', h('tr', th('Name', 'name'), th('Date Modified', 'mtime'), th('Size', 'size'), th('Kind', 'ext'))), tb);
       for (const f of list) {
-        const tr = h('tr', { draggable: true }, h('td', h('div.cell', this.iconFor(f, 18), f.name)), h('td.muted', fmtDate(f.mtime)), h('td.muted', f.isDir ? '--' : fmtSize(f.size)), h('td.muted', f.isDir ? 'Folder' : (f.ext ? f.ext.toUpperCase() + ' file' : 'Document')));
+        const tr = h('tr', { draggable: true }, h('td', h('div.cell', { title: f.name }, this.iconFor(f, 18), this.displayName(f))), h('td.muted', fmtDate(f.mtime)), h('td.muted', f.isDir ? '--' : fmtSize(f.size)), h('td.muted', f.isDir ? 'Folder' : (f.ext ? f.ext.toUpperCase() + ' file' : 'Document')));
         this.bindItem(tr, f);
         tb.append(tr);
       }
@@ -556,6 +563,46 @@ class FilesView {
 
   setView(v) { this.view = v; store.set('filesView', v); this.renderItems(); this.renderChrome(); }
   setSort(s) { this.sort = s; this.renderItems(); }
+  // a name as shown: without its extension when View › Show File Extensions is off
+  displayName(f) {
+    const ext = !f.isDir && f.ext && f.name.length > f.ext.length + 1 ? f.name.slice(-(f.ext.length + 1)) : '';
+    return ext && !this.showExt ? f.name.slice(0, -ext.length) : f.name;
+  }
+  // Icon view has room for two lines of name. A longer name keeps its first line and the END of the name on the
+  // second (shortened in the middle, like macOS), so the extension — "….mp4" — is always visible.
+  fitNames(grid) {
+    const first = grid.querySelector('.nm');
+    if (!first) return;
+    const cs = getComputedStyle(first);
+    const width = first.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight) - 2;
+    if (width <= 20) return;
+    const ctx = (FilesView.measure ||= document.createElement('canvas').getContext('2d'));
+    ctx.font = `${cs.fontStyle} ${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;   // (cs.font can be empty)
+    const w = (t) => ctx.measureText(t).width;
+    if (grid.dataset.fitWidth === String(width)) return;
+    grid.dataset.fitWidth = width;
+    for (const el of grid.querySelectorAll('.nm')) {
+      const text = (el.dataset.full ??= el.textContent);
+      if (el.textContent !== text) el.textContent = text;
+      if (w(text) <= width) continue;
+      // line 1: as many words as fit (or characters, for one long word)
+      let cut = 0;
+      for (let i = 1; i <= text.length; i++) { if (w(text.slice(0, i)) > width) break; cut = i; }
+      const sp = text.lastIndexOf(' ', cut);
+      if (sp > 0 && cut < text.length) cut = sp + 1;
+      const line1 = text.slice(0, cut), rest = text.slice(cut);
+      if (w(rest) <= width) continue;   // fits on two lines as it is
+      // line 2: the end of the name, with the middle taken out
+      const dot = rest.lastIndexOf('.');
+      const keep = Math.max(dot >= 0 ? rest.length - dot + 6 : 6, 6);
+      let head = rest.length - keep;
+      while (head > 0 && w(rest.slice(0, head) + '…' + rest.slice(-keep)) > width) head--;
+      let tail = rest.slice(-keep);
+      while (head === 0 && tail.length > 1 && w('…' + tail) > width) tail = tail.slice(1);
+      el.textContent = '';
+      el.append(h('div', line1.trimEnd()), h('div', rest.slice(0, head) + '…' + tail));
+    }
+  }
   toggleHidden() { this.showHidden = !this.showHidden; this.renderItems(); }
 
   itemMenu(e, f) {
@@ -590,6 +637,7 @@ class FilesView {
       { label: 'View as Icons', checked: this.view === 'icons', action: () => this.setView('icons') },
       { label: 'View as List', checked: this.view === 'list', action: () => this.setView('list') },
       { label: 'Show Hidden Files', checked: this.showHidden, action: () => this.toggleHidden() },
+      { label: 'Show File Extensions', checked: this.showExt, action: () => store.set('filesShowExt', !this.showExt) },
       { label: 'Sort By', submenu: [['Name', 'name'], ['Date Modified', 'mtime'], ['Size', 'size'], ['Kind', 'ext']].map(([l, k]) => ({ label: l, checked: this.sort === k, action: () => this.setSort(k) })) },
     ]);
   }

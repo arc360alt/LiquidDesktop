@@ -62,6 +62,7 @@ optdepends=(
   "xorg-xinit: starting X11 sessions from LiquidDesktop's own login screen (startx)"
 )
 backup=('etc/sddm.conf.d/zz-liquid-desktop.conf')
+install=liquid-desktop.install
 makedepends=('git' 'npm' 'nodejs' 'meson' 'wayland-protocols')
 provides=("$_name")
 conflicts=("$_name")

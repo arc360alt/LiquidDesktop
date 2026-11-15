@@ -210,7 +210,7 @@ async function startSession({ preload }) {
     const bw = w && appWindows.get(w.id);
     if (bw && ['undo', 'redo', 'cut', 'copy', 'paste', 'selectAll'].includes(cmd)) bw.webContents[cmd]();
   });
-  handle('wm:pointer', async () => { const p = await wm.pointer(); return p ? { x: p.rootX, y: p.rootY } : null; });
+  handle('wm:pointer', async () => { const p = await wm.pointer(); return p ? { x: p.rootX, y: p.rootY, button: !!(p.keyMask & 0x100) } : null; });
   handle('wm:thumbnails', async () => {
     const sources = await desktopCapturer.getSources({ types: ['window'], thumbnailSize: { width: 640, height: 400 } });
     const out = {};

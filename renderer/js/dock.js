@@ -93,15 +93,28 @@ function dockItem(id, { special } = {}) {
     const sx = e.clientX, sy = e.clientY;
     const grab = sx - el.getBoundingClientRect().left;
     let dragging = false;
-    el.setPointerCapture?.(e.pointerId);
+    try { el.setPointerCapture?.(e.pointerId); } catch { /* no such pointer */ }
     const zone = () => [...items.children].filter((x) => x.dataset.app && x.dataset.app !== 'launchpad' && x.dataset.app !== 'trash' && x.classList.contains('dock-item') && !x.classList.contains('minimized-win'));
+    // the dragged icon stays on the screen, whatever the pointer does
+    const onScreen = (x) => clamp(x, 4, innerWidth - el.offsetWidth - 4);
     const follow = (ev) => {
       el.style.transform = '';
-      const left = el.getBoundingClientRect().left;
-      el.style.transform = `translate(${ev.clientX - grab - left}px, ${Math.min(0, ev.clientY - sy)}px) scale(1.06)`;
+      const { left, top } = el.getBoundingClientRect();
+      el.style.transform = `translate(${onScreen(ev.clientX - grab) - left}px, ${clamp(ev.clientY - sy, 34 - top, 0)}px) scale(1.06)`;
+    };
+    // The drag ends when the button comes up. In a session the shell only gets the pointer over the Dock, so
+    // that release can be missed (it happened somewhere else): then the icon stayed stuck to the pointer.
+    // So: a move with no button held ends it too, and while dragging the window manager is asked every
+    // 200ms whether the button is still down.
+    let watch = null;
+    const stillHeld = async () => {
+      if (!isSession) return;
+      try { const p = await S.invoke('wm:pointer'); if (p && p.button === false) up({ type: 'pointerup', clientX: p.x / (devicePixelRatio || 1), clientY: p.y / (devicePixelRatio || 1) }); } catch { /* ask again */ }
     };
     const move = (ev) => {
+      if (ev.buttons === 0) { up({ type: 'pointerup', clientX: ev.clientX, clientY: ev.clientY }); return; }
       if (!dragging && Math.hypot(ev.clientX - sx, ev.clientY - sy) < 12) return;
+      if (!dragging) watch = setInterval(stillHeld, 200);
       if (!dragging) { dragging = true; dragActive = true; mouseX = null; hideTip(); el.classList.add('dock-drag'); applySizes(); }
       const out = ev.clientY < dock.getBoundingClientRect().top - 80 && store.get('dockPinned').includes(id) && !wm.appWindows(id).length;
       if (out !== el.classList.contains('dock-drag-out')) { el.classList.toggle('dock-drag-out', out); out ? showTip(el, 'Remove') : hideTip(); }
@@ -125,10 +138,19 @@ function dockItem(id, { special } = {}) {
         }
       }
       follow(ev);
-      if (out) el.style.transform = `translate(${ev.clientX - sx}px, ${ev.clientY - sy}px)`;
+      if (out) {
+        el.style.transform = '';
+        const { left, top } = el.getBoundingClientRect();
+        el.style.transform = `translate(${onScreen(left + ev.clientX - sx) - left}px, ${clamp(ev.clientY - sy, 34 - top, 0)}px)`;
+      }
     };
+    let ended = false;
     const up = (ev) => {
+      if (ended) return;
+      ended = true;
+      clearInterval(watch);
       el.removeEventListener('pointermove', move); el.removeEventListener('pointerup', up); el.removeEventListener('pointercancel', up);
+      try { el.releasePointerCapture?.(e.pointerId); } catch { /* not captured */ }
       if (!dragging) return;
       dragActive = false;
       suppressClick = true; setTimeout(() => (suppressClick = false), 0);

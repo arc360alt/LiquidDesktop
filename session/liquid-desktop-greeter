@@ -1,8 +1,25 @@
 #!/bin/sh
-# The LiquidDesktop login screen. greetd runs this (as the "greeter" user, inside cage) — see
-# /etc/greetd/config.toml as installed by Settings › Lock Screen › Login Screen.
+# The LiquidDesktop login screen. greetd runs this (as the "greeter" user) — see /etc/greetd/config.toml as
+# installed by Settings › Lock Screen › Login Screen:
+#   liquid-desktop-greeter --cage   sets up the graphics, then starts cage (the small Wayland compositor the
+#                                   login screen runs in), which runs this again without --cage
+#   liquid-desktop-greeter          the login screen itself (Electron)
 HERE="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
 export LIQUID_GREETER_DATA="${LIQUID_GREETER_DATA:-/var/cache/liquid-desktop-greeter}"
+
+# NVIDIA's own driver: the login screen flickers, blinks and leaves trails around the pointer with Chromium's
+# GPU drawing and with cage's hardware cursor. Software drawing (a single, mostly still page: plenty fast) and
+# a software cursor instead.
+if [ -e /proc/driver/nvidia/version ] || [ -d /sys/module/nvidia_drm ]; then
+  export LIQUID_GREETER_NVIDIA=1
+  export WLR_NO_HARDWARE_CURSORS=1
+fi
+
+if [ "$1" = "--cage" ]; then
+  shift
+  exec cage -s -d -- "$0" "$@"
+fi
+
 for E in "$LIQUID_ELECTRON" "$HERE/node_modules/electron/dist/electron" "$(command -v electron43)" "$(command -v electron)"; do
   [ -n "$E" ] && [ -x "$E" ] && exec "$E" "$HERE" --greeter "$@"
 done

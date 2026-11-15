@@ -1,0 +1,15 @@
+# pacman runs these around installing / upgrading liquid-desktop-git.
+
+post_upgrade() {
+  # LiquidDesktop's own login screen (greetd): it now starts cage itself (liquid-desktop-greeter --cage), so it
+  # can set cage up for the graphics driver first (NVIDIA: software cursor). Older configs ran cage directly.
+  f=/etc/greetd/config.toml
+  if [ -f "$f" ] && grep -q 'cage -s -d -- \(/usr/bin/\|/usr/local/bin/\)\?liquid-desktop-greeter"' "$f"; then
+    sed -i 's#"cage -s -d -- \(/usr/bin/\|/usr/local/bin/\)\?liquid-desktop-greeter"#"/usr/bin/liquid-desktop-greeter --cage"#' "$f"
+    echo ":: LiquidDesktop login screen: updated $f (takes effect at the next login screen)"
+  fi
+}
+
+post_install() {
+  post_upgrade
+}

@@ -309,6 +309,8 @@ function battery() {
   try { list = fs.readdirSync(base); } catch { return null; }
   for (const d of list) {
     if (readFile(path.join(base, d, 'type')) !== 'Battery') continue;
+    // a wireless mouse, keyboard, controller or headset ("Device" scope, or a HID battery): not the computer's
+    if (readFile(path.join(base, d, 'scope')) === 'Device' || /^hid-|^hidpp_battery|^wacom_battery|^ps-controller-battery|^sony_controller_battery/.test(d)) continue;
     const cap = Number(readFile(path.join(base, d, 'capacity')));
     const status = readFile(path.join(base, d, 'status')) || '';
     return { percent: isNaN(cap) ? null : cap, charging: /charging|full/i.test(status) && !/discharging/i.test(status), status };

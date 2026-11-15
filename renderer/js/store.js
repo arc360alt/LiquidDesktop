@@ -33,6 +33,7 @@ export const defaults = {
   clock24: false,
   showSeconds: false,
   showBatteryPct: true,
+  showBattery: true,
   hotCorners: { tl: 'none', tr: 'none', bl: 'none', br: 'desktop' },
   requirePassword: true,
   spaces: 2,

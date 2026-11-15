@@ -142,7 +142,7 @@ function renderAppMenus() {
 function renderStatus() {
   const s = status.s;
   // battery
-  if (s.battery && s.battery.percent != null) {
+  if (s.battery && s.battery.percent != null && store.get('showBattery') !== false) {
     battEl.hidden = false;
     const p = s.battery.percent;
     battEl.innerHTML = '';
@@ -217,7 +217,7 @@ export function initMenubar() {
   });
   bus.on('status', renderStatus);
   bus.on('wallpaper-luma', (l) => bar.classList.toggle('dark-text', l > 0.68));
-  store.on('change', (k) => { if (['clock24', 'showSeconds'].includes(k)) tick(); if (k === 'showBatteryPct') renderStatus(); });
+  store.on('change', (k) => { if (['clock24', 'showSeconds'].includes(k)) tick(); if (k === 'showBatteryPct' || k === 'showBattery') renderStatus(); });
 }
 
 /* ---------------------------------------------- system tray (apps running in the background) */

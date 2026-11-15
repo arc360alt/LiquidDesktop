@@ -236,7 +236,7 @@ const render = {
   menubar() {
     return [
       hero('menubar', 'Menu Bar', 'What the clock and status items show.'),
-      h('div.group', row('Use a 24-hour clock', toggle('clock24')), row('Show seconds', toggle('showSeconds')), row('Show battery percentage', toggle('showBatteryPct'))),
+      h('div.group', row('Use a 24-hour clock', toggle('clock24')), row('Show seconds', toggle('showSeconds')), row('Show battery', toggle('showBattery'), 'The battery icon in the menu bar'), row('Show battery percentage', toggle('showBatteryPct'))),
     ];
   },
   async display() {

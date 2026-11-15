@@ -6,10 +6,23 @@ import { status } from './status.js';
 import { api } from './sys.js';
 import { attachLens, theme } from './theme.js';
 import { shell } from './shell.js';
-import { prompt } from './menus.js';
+import { prompt, showMenu } from './menus.js';
 import { DEV_ICONS, btIcon, onBluetooth } from './devices.js';
+import { wm } from './wm.js';
+import { allControls, setCfg, cfg, sizeOf, SIZE_NAMES } from './ccwidgets.js';
+import { validate, saveCustom, customWidgets, isCC } from './customwidget.js';
+import { catalog } from './catalog.js';
+import { appIcon } from './icons.js';
 
-let panel = null, mediaTimer = null, offStatus = null;
+// which controls Control Center shows, in order (Edit Controls); the built-in ones can always be added back
+const BUILTIN = [['conn', 'Connectivity'], ['np', 'Now Playing'], ['focus', 'Focus'], ['dark', 'Dark Mode'], ['shot', 'Screenshot'], ['bright', 'Display'],
+  ['sound', 'Sound'], ['ns', 'Night Shift'], ['lock', 'Lock'], ['mission', 'Desktops'], ['rec', 'Record'], ['battery', 'Battery']];
+const DEFAULT_LAYOUT = BUILTIN.map(([id]) => id);
+const layout = () => { const l = store.get('ccLayout'); return Array.isArray(l) ? l : DEFAULT_LAYOUT; };
+let editing = false;
+
+// panel: the glass box (stays still); grid: what's in it, which scrolls (so the glass rim and blur don't scroll away)
+let panel = null, grid = null, mediaTimer = null, offStatus = null;
 // recording the screen right now (main/recorder.js): the Record button turns into Stop
 let recording = false;
 api.rec?.status?.().then((r) => { recording = !!r?.recording; }).catch(() => {});
@@ -117,7 +130,69 @@ function mainView() {
     h('div.spacer'), h('div', { style: { width: '90px', height: '8px', borderRadius: '4px', background: 'rgba(128,128,128,.3)', overflow: 'hidden' } },
       h('div', { style: { width: batt.percent + '%', height: '100%', background: batt.percent < 20 ? '#ff3b30' : '#34c759' } }))) : null;
 
-  return [conn, np, focus, dark, shot, bright, sound, ns, lockB, mission, rec, extra];
+  const builtins = { conn, np, focus, dark, shot, bright, sound, ns, lock: lockB, mission, rec, battery: extra };
+  const ctx = { sq, close, render: (v) => render(v), shell, wm, layout };
+  const controls = allControls();
+  const make = (id) => {
+    if (id in builtins) return builtins[id];
+    // a control that can be added more than once has instances "id#2", "id#3"… (each with its own options)
+    const x = controls.find((c) => c.id === id.split('#')[0]);
+    try { return x ? x.build(ctx, id) : null; } catch { return null; }
+  };
+  const ids = layout();
+  const out = [];
+  for (const id of ids) {
+    const el = make(id);
+    if (!el) continue;
+    // right-click: the control's options (which app it opens, what the weather shows…)
+    const x = controls.find((c) => c.id === id.split('#')[0]);
+    // right-click: Size (controls that come in more than one), then the control's own options
+    const items = () => [...(x?.sizes?.length > 1 ? [{ header: 'Size' }, ...x.sizes.map((z) => ({ label: SIZE_NAMES[z], checked: sizeOf(x, id) === z, action: () => { setCfg(id, { size: z }); render(); } }))] : []),
+      ...(x?.menu ? [x.sizes?.length > 1 ? '-' : null, ...x.menu(ctx, id)] : [])].filter(Boolean);
+    if (x && (x.menu || x.sizes?.length > 1)) el.addEventListener('contextmenu', (e) => { e.preventDefault(); e.stopPropagation(); showMenu(items(), e.clientX, e.clientY); });
+    if (editing) {
+      el.classList.add('cc-editing');
+      // while editing, a control does nothing except get removed
+      el.dataset.cc = id;
+      for (const t of ['click', 'mousedown']) el.addEventListener(t, (e) => { if (!e.target.closest('.cc-remove')) { e.stopPropagation(); e.preventDefault(); } }, true);
+      el.addEventListener('mousedown', (e) => { if (e.button === 0 && !e.target.closest('.cc-remove')) dragControl(el, e); }, true);
+      el.append(h('button.cc-remove', { title: 'Remove', html: sym.minus, onclick: (e) => { e.stopPropagation(); store.set('ccLayout', layout().filter((x) => x !== id)); render(); } }));
+    }
+    out.push(el);
+  }
+  if (!editing) {
+    out.push(h('button.cc-edit-btn.span4', { onclick: (e) => { e.stopPropagation(); editing = true; render(); } }, 'Edit Controls'));
+    return out;
+  }
+  // edit mode: everything not shown yet, drawn as it would be in Control Center (built-in ones first, so a
+  // removed one is easy to get back); click one to add it
+  const all = [...BUILTIN.map(([id, name]) => ({ id, name })), ...controls.filter((c) => !c.hidden)];
+  // not shown yet, or (multi) another one can still be added
+  const missing = all.filter((c) => (c.multi ? c.canAdd?.(ids) ?? true : !ids.includes(c.id)));
+  const addId = (c) => {
+    if (!c.multi || !ids.includes(c.id)) return c.id;
+    let n = 2;
+    while (ids.includes(`${c.id}#${n}`)) n++;
+    return `${c.id}#${n}`;
+  };
+  out.push(h('div.cc-add-head.span4', h('b', 'Add Controls'), h('div.cc-add-btns',
+    // your own Control Center widgets: make one in Widget Creator, or import a .ldwidget someone shared
+    h('button.btn', { title: 'Make a Control Center widget in Widget Creator', onclick: (e) => { e.stopPropagation(); close(); wm.open('widgetcreator', { target: 'cc' }); } }, 'Create…'),
+    h('button.btn', { onclick: (e) => { e.stopPropagation(); importControl(); } }, 'Import…'),
+    h('button.btn.primary', { onclick: (e) => { e.stopPropagation(); editing = false; render(); } }, 'Done'))));
+  for (const c of missing) {
+    const el = make(addId(c));   // drawn as the one that would be added
+    if (!el) continue;
+    el.classList.add('cc-preview');
+    el.title = 'Add ' + c.name;
+    for (const t of ['click', 'mousedown']) el.addEventListener(t, (e) => { e.stopPropagation(); e.preventDefault(); if (t === 'click') { const nid = addId(c); c.onAdd?.(nid, ids); store.set('ccLayout', [...layout(), nid]); render(c.pickOnAdd ? 'pick:' + nid : undefined); } }, true);
+    el.append(h('span.cc-add-badge', { html: sym.plus }));
+    if (c.custom) el.addEventListener('contextmenu', (e) => { e.preventDefault(); e.stopPropagation(); showMenu(c.menu(ctx, c.id), e.clientX, e.clientY); });
+    out.push(el);
+  }
+  if (!missing.length) out.push(h('small.muted.span4', { style: { gridColumn: 'span 4', textAlign: 'center' } }, 'Everything is already in Control Center.'));
+  out.push(h('button.cc-reset', { onclick: (e) => { e.stopPropagation(); store.set('ccLayout', null); render(); } }, 'Reset to Default'));
+  return out;
 }
 
 async function wifiView() {
@@ -219,11 +294,79 @@ function displayView() {
   }
 }
 
+// Edit Controls: drag a control to move it. The others make way as you go; the order is saved on release.
+function dragControl(el, e) {
+  const sx = e.clientX, sy = e.clientY;
+  const r0 = el.getBoundingClientRect(), gx = sx - r0.left, gy = sy - r0.top;
+  let moving = false;
+  const place = (ev) => {
+    el.style.transform = '';
+    const r = el.getBoundingClientRect();
+    el.style.transform = `translate(${ev.clientX - gx - r.left}px, ${ev.clientY - gy - r.top}px) scale(1.04)`;
+  };
+  const mv = (ev) => {
+    if (!moving && Math.hypot(ev.clientX - sx, ev.clientY - sy) < 6) return;
+    if (!moving) { moving = true; el.classList.add('cc-dragging'); }
+    // the control under the pointer (not the one being dragged): take its place
+    const over = document.elementsFromPoint(ev.clientX, ev.clientY).map((x) => x.closest?.('[data-cc]')).find((x) => x && x !== el);
+    if (over && over.parentNode === el.parentNode) {
+      const kids = [...el.parentNode.children];
+      el.parentNode.insertBefore(el, kids.indexOf(el) < kids.indexOf(over) ? over.nextSibling : over);
+    }
+    place(ev);
+  };
+  const up = () => {
+    removeEventListener('mousemove', mv, true); removeEventListener('mouseup', up, true);
+    el.classList.remove('cc-dragging'); el.style.transform = '';
+    if (!moving) return;
+    const order = [...el.parentNode.querySelectorAll('[data-cc]')].map((x) => x.dataset.cc);
+    store.set('ccLayout', [...order, ...layout().filter((id) => !order.includes(id))]);
+    render();
+  };
+  addEventListener('mousemove', mv, true); addEventListener('mouseup', up, true);
+}
+
+// Import… in Add Controls: a .ldwidget file. A desktop-sized one is made Control Center-sized (it's drawn in
+// percentages, so it fits).
+async function importControl() {
+  const files = await api.dialog?.open({ title: 'Import Widget', filters: [{ name: 'LiquidDesktop widgets', patterns: ['*.ldwidget', '*.json'] }] }).catch(() => null);
+  if (!files?.length) return;
+  try {
+    const spec = validate(await api.fs.read(files[0]));
+    if (!isCC(spec)) spec.size = { s: 'cs', m: 'cw', l: 'cl' }[spec.size] || 'cs';
+    if (customWidgets()[spec.id]) spec.id = spec.id + Math.random().toString(36).slice(2, 5);
+    saveCustom(spec);
+    store.set('ccLayout', [...layout(), 'custom:' + spec.id]);
+    render();
+  } catch (err) { shell.notify({ app: 'widgetcreator', title: 'Couldn’t import the widget', body: err.message }); }
+}
+
+// Choose App… for an app button: every app, with a search field
+function pickView(id) {
+  const list = h('div.cc-list.cc-pick-list');
+  const search = h('input.field.cc-pick-search', { placeholder: 'Search apps', oninput: () => fill() });
+  const apps = catalog.all().filter((a) => a.name).sort((a, b) => a.name.localeCompare(b.name));
+  const fill = () => {
+    const q = search.value.trim().toLowerCase();
+    list.innerHTML = '';
+    for (const a of apps.filter((x) => !q || x.name.toLowerCase().includes(q)).slice(0, 200)) {
+      list.append(h('div.cc-list-item.cc-pick-item', { onclick: (e) => { e.stopPropagation(); setCfg(id, { app: a.id }); render(); } }, appIcon(a, 'cc-app-ic'), a.name));
+    }
+  };
+  fill();
+  setTimeout(() => search.focus(), 50);
+  return [h('div.cc-mod.span4.cc-pick', h('div.cc-add-head', h('b', 'Choose App'), h('button.btn', { onclick: (e) => { e.stopPropagation(); render(); } }, 'Cancel')), search, list)];
+}
+
 async function render(view) {
   if (!panel) return;
+  if (view?.startsWith?.('pick:')) { grid.innerHTML = ''; grid.append(...pickView(view.slice(5))); panel.dataset.view = view; grid.scrollTop = 0; return; }
   const kids = view === 'wifi' ? await wifiView() : view === 'bluetooth' ? await bluetoothView() : view === 'sound' ? await soundView() : view === 'display' ? displayView() : mainView();
-  panel.innerHTML = '';
-  panel.append(...kids.filter(Boolean));
+  // it's rebuilt whenever the status changes (volume, battery…): keep the scroll position
+  const top = panel.dataset.view === (view || '') ? grid.scrollTop : 0;
+  grid.innerHTML = '';
+  grid.append(...kids.filter(Boolean));
+  grid.scrollTop = top;
   panel.dataset.view = view || '';
   if (!view) updateMedia();
 }
@@ -244,7 +387,8 @@ async function updateMedia() {
 
 export function toggleControlCenter(view) {
   if (panel) { close(); return; }
-  panel = h('div.cc.glass.panel.sheen');
+  grid = h('div.cc-grid');
+  panel = h('div.cc.glass.panel.sheen', grid);
   panel.addEventListener('mousedown', (e) => e.stopPropagation());
   document.body.append(panel);
   render(view === 'wifi' ? 'wifi' : undefined);
@@ -253,9 +397,10 @@ export function toggleControlCenter(view) {
   mediaTimer = setInterval(updateMedia, 3000);
   setTimeout(() => document.addEventListener('mousedown', outside), 0);
 }
-function outside(e) { if (panel && !panel.contains(e.target) && !e.target.closest('.global-alert-layer')) close(); }
+function outside(e) { if (panel && !panel.contains(e.target) && !e.target.closest('.global-alert-layer') && !e.target.closest('.menu')) close(); }
 export function closeControlCenter() { if (panel) close(); }
 function close() {
+  editing = false;
   if (!panel) return;
   const p = panel; panel = null;
   p.classList.add('closing');

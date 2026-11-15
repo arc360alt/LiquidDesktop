@@ -92,7 +92,8 @@ function appMenus() {
     { label: 'Apps', shortcut: 'F4', action: () => shell.launchpad() },
     '-', { label: 'Enter Full Screen', disabled: !win, action: () => win.toggleFullscreen() }] });
   menus.push({ title: 'Window', items: windowItems(win) });
-  menus.push({ title: 'Help', items: [
+  const appHelp = custom.find((m) => m.title === 'Help')?.items || [];
+  menus.push({ title: 'Help', items: [...appHelp, ...(appHelp.length ? ['-'] : []),
     { label: 'Keyboard Shortcuts', action: () => wm.open('settings', { pane: 'keyboard' }) },
     { label: 'About LiquidDesktop', action: () => wm.open('about') }] });
   return menus;

@@ -262,6 +262,15 @@ Object.assign(WIDGETS, {
 
 export const CATEGORIES = [['all', 'All Widgets'], ['clock', 'Clock & Calendar'], ['weather', 'Weather'], ['system', 'System'], ['productivity', 'Productivity'], ['media', 'Media'], ['mine', 'My Widgets']];
 export const SIZE_PX = { s: [164, 164], m: [340, 164], l: [340, 340] };
+// Widgets that are one widget at two sizes: the gallery shows the small one; right-click › Size switches
+export const SIZE_GROUPS = [{ s: 'weather', m: 'forecast' }, { s: 'clock', m: 'worldclock' }, { s: 'calendar', m: 'upcoming' }, { s: 'system', m: 'activity' }];
+export const sizeGroup = (type) => SIZE_GROUPS.find((g) => g.s === type || g.m === type);
+/** Right-click › Size items for a widget of this type (none when it comes in one size). setType(newType) switches. */
+export function sizeItems(type, setType) {
+  const g = sizeGroup(type);
+  if (!g) return [];
+  return [{ header: 'Size' }, ...[['s', 'Small'], ['m', 'Medium']].map(([k, l]) => ({ label: l, checked: g[k] === type, action: () => { if (g[k] !== type) setType(g[k]); } })), '-'];
+}
 
 /** A widget's definition: built-in, or a custom one ("custom:<id>"). */
 export function widgetDef(type) {

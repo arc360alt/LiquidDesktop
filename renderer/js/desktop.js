@@ -5,7 +5,7 @@ import { store } from './store.js';
 import { api } from './sys.js';
 import { contextMenu, prompt } from './menus.js';
 import { wm } from './wm.js';
-import { buildWidget, WIDGETS, widgetDef, CATEGORIES, SIZE_PX } from './widgets.js';
+import { buildWidget, WIDGETS, widgetDef, CATEGORIES, SIZE_PX, SIZE_GROUPS, sizeItems } from './widgets.js';
 import { customWidgets, validate, saveCustom, deleteCustom, toFile } from './customwidget.js';
 import { shell } from './shell.js';
 import { fileUrl } from './util.js';
@@ -79,6 +79,20 @@ function freeSpot(type, px, py, skipId) {
   }
   return best || [px ?? 36, py ?? 48];
 }
+// right-click › Size: the widget grows (or shrinks) where it is, kept on the screen; any widget it now covers
+// slides to its nearest free spot
+function resizeWidget(id, type) {
+  let list = store.get('widgets').map((x) => (x.id === id ? { ...x, type } : x));
+  const me = list.find((x) => x.id === id), [w, h] = wsize(type);
+  me.x = Math.max(36, Math.min(me.x, innerWidth - w - 130));
+  me.y = Math.max(48, Math.min(me.y, innerHeight - h - 110));
+  const gap = 12, hits = (o) => { const [ow, oh] = wsize(o.type); return me.x < o.x + ow + gap && me.x + w + gap > o.x && me.y < o.y + oh + gap && me.y + h + gap > o.y; };
+  store.set('widgets', list);   // (freeSpot reads the saved list)
+  for (const o of list.filter((x) => x.id !== id && widgetDef(x.type) && hits(x))) {
+    [o.x, o.y] = freeSpot(o.type, o.x, o.y, o.id);
+    store.set('widgets', list = list.map((x) => (x.id === o.id ? { ...o } : x)));
+  }
+}
 function renderWidgets() {
   widgetLayer.innerHTML = '';
   for (const w of store.get('widgets')) {
@@ -109,6 +123,7 @@ function renderWidgets() {
       addEventListener('mousemove', mv); addEventListener('mouseup', up);
     });
     el.addEventListener('contextmenu', (e) => contextMenu(e, [
+      ...sizeItems(w.type, (t) => resizeWidget(w.id, t)),
       { label: 'Remove Widget', action: () => store.set('widgets', store.get('widgets').filter((x) => x.id !== w.id)) },
       { label: 'Edit Widgets…', action: () => editWidgets() },
     ]));
@@ -153,7 +168,7 @@ function drawGallery() {
   gallery.innerHTML = '';
   const tabs = h('div.wg-tabs', ...CATEGORIES.map(([id, name]) => h('button' + (galleryCat === id ? '.on' : ''), { onclick: () => { galleryCat = id; drawGallery(); } }, name)));
   const row = h('div.wg-row');
-  const types = [...Object.entries(WIDGETS).map(([t, d]) => [t, d]), ...Object.values(customWidgets()).map((c) => ['custom:' + c.id, { name: c.name, cat: 'mine', size: c.size }])]
+  const types = [...Object.entries(WIDGETS).filter(([t]) => !SIZE_GROUPS.some((g) => g.m === t)).map(([t, d]) => [t, d]), ...Object.values(customWidgets()).filter((c) => !/^c/.test(c.size)).map((c) => ['custom:' + c.id, { name: c.name, cat: 'mine', size: c.size }])]
     .filter(([, d]) => galleryCat === 'all' || d.cat === galleryCat);
   for (const [type, def] of types) {
     const item = h('div.wg-item.' + (def.size || 's'), buildWidget(type), h('span', def.name));

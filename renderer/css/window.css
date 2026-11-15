@@ -742,7 +742,7 @@ body.mission-open #spaces { z-index: 7550; }
 /* ===================================================================== Widget Creator */
 .wc { flex: 1; min-height: 0; display: flex; }
 .wc-left { width: 230px; flex: none; padding: 54px 12px 12px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; background: rgba(var(--sidebar-rgb), 0.35); }
-.wc-right { width: 300px; flex: none; padding: 58px 14px 14px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; background: var(--win-content); border-left: 0.5px solid var(--separator); }
+.wc-right { width: 340px; flex: none; padding: 58px 14px 14px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; background: var(--win-content); border-left: 0.5px solid var(--separator); }
 .wc-center { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding-top: 52px;
   background: radial-gradient(circle at 30% 20%, #4f7fd9, #2a3f78 55%, #18213d); }
 .wc-canvas { display: flex; align-items: center; justify-content: center; }
@@ -753,7 +753,6 @@ body.mission-open #spaces { z-index: 7550; }
 .wc-hit:hover { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.55); }
 .wc-hit.sel { box-shadow: 0 0 0 1.5px #fff, 0 0 0 3px var(--accent); }
 .wc-handle { position: absolute; right: -6px; bottom: -6px; width: 12px; height: 12px; border-radius: 3px; background: #fff; box-shadow: 0 0 0 2px var(--accent); cursor: var(--cur-nwse-resize, nwse-resize); }
-.wc-help { color: rgba(255, 255, 255, 0.7); font-size: 12px; }
 .wc-sec { font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-2); margin-top: 10px; }
 .wc-add { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 .wc-add button { display: flex; align-items: center; gap: 6px; border: 0; border-radius: 9px; padding: 6px 8px; background: rgba(128, 128, 128, 0.16); color: var(--text); font: inherit; font-size: 12px; font-weight: 600; text-transform: capitalize; }
@@ -1027,3 +1026,6 @@ body.mission-open #spaces { z-index: 7550; }
 .br-sg-ic svg { width: 15px; height: 15px; }
 .br-sg-t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .br-sg-sub { color: var(--text-2); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; }
+.wc-seg-sep { width: 1px; align-self: stretch; margin: 4px 4px; background: rgba(128, 128, 128, 0.35); }
+/* Widget Creator: the target / size / snap bar above the canvas */
+.wc-sizebar { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 8px; padding: 12px 12px 0; }

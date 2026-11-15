@@ -3,6 +3,8 @@
 - Integrate the DE into Vertex Linux and then remake the website and add an interactive version of the DE so users can test it (DO LATER)
 - Maybe at some point decrease the ram/cpu usage but for right now it runs fine on any computer with above 8GB of ram (DO LATER)
 - Switch the DE to using Wayland instead of X11 (do this over Thanksgiving break when I have time)
+- Improve the widets and make them look better and function smoother, and also fix up the widget creator as it looks really broken if the window is too small
+- Fix the sound and brightness sliders still looking a bit scuffed and broken.
 
 # Fixed
 - Make it so you can hide the battery icon entierly if your on a PC with no device connected that reports its battery. (Add this as a toggle switch under the top bar menu with the 24 hour clock and show secconds option)

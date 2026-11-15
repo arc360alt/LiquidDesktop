@@ -139,10 +139,12 @@
 /* ---------------------------------------------------------------- Control Center */
 .cc {
   position: fixed; top: calc(var(--menubar-h) + 6px); right: 8px; width: 340px; z-index: 15000;
-  padding: 12px; border-radius: 30px; color: var(--on-glass);
-  display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; transform-origin: top right;
+  border-radius: 30px; color: var(--on-glass); display: flex; flex-direction: column; overflow: hidden;
+  max-height: calc(100vh - var(--menubar-h) - 20px); transform-origin: top right;
   animation: ccIn 0.35s var(--spring);
 }
+/* the contents scroll inside the glass box */
+.cc-grid { padding: 12px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; overflow-y: auto; min-height: 0; scrollbar-width: none; }
 .cc.closing { animation: ccOut 0.2s ease forwards; }
 @keyframes ccIn { from { opacity: 0; transform: scale(0.9) translateY(-10px); } }
 @keyframes ccOut { to { opacity: 0; transform: scale(0.94) translateY(-6px); } }
@@ -602,3 +604,73 @@
 .mb-rec.stopping .mb-rec-dot { animation: none; opacity: 0.5; }
 @keyframes recPulse { from { opacity: 1; } to { opacity: 0.45; } }
 .cc-sq.cc-rec.on { background: #ff3b30 !important; }
+
+/* Control Center: Edit Controls */
+.cc-edit-btn { grid-column: span 4; border: 0; background: rgba(128, 128, 128, 0.18); color: inherit; font: inherit; font-size: 12px; font-weight: 600; padding: 8px; border-radius: 14px; }
+.cc-edit-btn:hover { background: rgba(128, 128, 128, 0.28); }
+.cc-editing { animation: ccJiggle 0.3s ease-in-out infinite alternate; }
+.cc-editing > *:not(.cc-remove) { pointer-events: none; }
+@keyframes ccJiggle { from { transform: rotate(-0.6deg); } to { transform: rotate(0.6deg); } }
+.cc-remove { position: absolute; top: 4px; left: 4px; width: 20px; height: 20px; border-radius: 50%; border: 0; padding: 0; background: rgba(60, 60, 67, 0.85); color: #fff; display: flex; align-items: center; justify-content: center; z-index: 2; }
+.cc-remove svg { width: 12px; height: 12px; }
+.cc-add { display: flex; flex-direction: column; gap: 8px; }
+.cc-add-head { display: flex; align-items: center; justify-content: space-between; }
+.cc-add-list { display: flex; flex-direction: column; gap: 2px; max-height: 260px; overflow-y: auto; }
+.cc-add-item { display: flex; align-items: center; gap: 8px; border: 0; background: none; color: inherit; font: inherit; font-size: 12.5px; padding: 6px 8px; border-radius: 9px; text-align: left; }
+.cc-add-item:hover { background: rgba(128, 128, 128, 0.18); }
+.cc-add-item span { width: 18px; height: 18px; border-radius: 50%; background: #34c759; color: #fff; display: flex; align-items: center; justify-content: center; flex: none; }
+.cc-add-item span svg { width: 12px; height: 12px; }
+.cc-add-item small { margin-left: auto; opacity: 0.55; }
+.cc-reset { border: 0; background: none; color: var(--accent); font: inherit; font-size: 12px; align-self: center; padding: 4px; }
+.cc-info { display: flex; flex-direction: column; justify-content: center; gap: 4px; }
+.cc-info-row { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.cc-info-row span svg { width: 15px; height: 15px; }
+.cc-info-row b { margin-left: auto; font-variant-numeric: tabular-nums; }
+.cc-add-head { grid-column: span 4; margin-top: 6px; padding: 8px 4px 0; border-top: 0.5px solid rgba(128, 128, 128, 0.35); }
+.cc-preview { cursor: var(--cur-pointer, pointer); opacity: 0.85; }
+.cc-preview > *:not(.cc-add-badge) { pointer-events: none; }
+.cc-preview:hover { opacity: 1; box-shadow: inset 0 0 0 2px #34c759; }
+.cc-add-badge { position: absolute; top: 4px; left: 4px; width: 20px; height: 20px; border-radius: 50%; background: #34c759; color: #fff; display: flex; align-items: center; justify-content: center; z-index: 2; }
+.cc-add-badge svg { width: 12px; height: 12px; }
+.cc-reset { grid-column: span 4; }
+.cc-editing { cursor: var(--cur-grab, grab); }
+.cc-dragging { animation: none !important; z-index: 5; opacity: 0.92; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3) !important; transition: none; }
+/* Control Center: centred two-line labels, app icons, weather, the app picker */
+.cc-sq { text-align: center; line-height: 1.2; padding: 0 6px; }
+.cc-sq .cc-app-ic { width: 26px; height: 26px; }
+.cc-weather { display: flex; flex-direction: column; justify-content: center; gap: 2px; cursor: var(--cur-pointer, pointer); }
+.cc-weather small { font-size: 11.5px; opacity: 0.8; }
+.cc-wx-top { display: flex; align-items: center; justify-content: space-between; }
+.cc-wx-top small { font-weight: 600; opacity: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cc-wx-ic { width: 22px; height: 22px; display: inline-flex; flex: none; }
+.cc-wx-ic svg { width: 100%; height: 100%; }
+.cc-wx-big { font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.cc-weather.cc-sq b { font-size: 15px; }
+.cc-pick { display: flex; flex-direction: column; gap: 8px; }
+.cc-pick-search { height: 30px; }
+.cc-pick-list { max-height: 420px; overflow-y: auto; }
+.cc-pick-item { display: flex; align-items: center; gap: 10px; cursor: var(--cur-pointer, pointer); }
+.cc-pick-item .cc-app-ic { width: 24px; height: 24px; flex: none; }
+.cc-pick .cc-add-head { border-top: 0; margin-top: 0; padding-top: 0; }
+.cc-wx-body { display: flex; flex-direction: column; justify-content: center; gap: 2px; min-width: 0; }
+.cc-weather.cc-sq .cc-wx-body { align-items: center; }
+.cc-custom { padding: 0; }
+.cc-custom .w-stage { border-radius: inherit; overflow: hidden; }
+.cc-wx-more { display: flex; flex-direction: column; gap: 1px; margin-top: 6px; }
+.cc-add-btns { display: flex; gap: 6px; }
+.cc-add-btns .btn { padding: 4px 10px; font-size: 12px; }
+.cc-info.cc-sq { align-items: center; gap: 2px; }
+.cc-info.cc-sq .cc-info-row { gap: 4px; }
+.cc-weather.row2, .cc-custom.row2, .cc-info.row2 { min-height: 154px; }
+/* Notification Center: Edit Widgets */
+#nc .widget.l { width: auto; height: 340px; grid-column: span 2; }
+.nc-editing { animation: ccJiggle 0.3s ease-in-out infinite alternate; cursor: var(--cur-grab, grab); }
+.nc-editing > *:not(.nc-remove) { pointer-events: none; }
+.nc-dragging { animation: none; z-index: 5; opacity: 0.92; }
+.nc-remove, .nc-add { position: absolute; top: 6px; left: 6px; width: 22px; height: 22px; border-radius: 50%; border: 0; padding: 0; z-index: 6; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 16px; font-weight: 700; line-height: 1; }
+.nc-remove { background: rgba(60, 60, 67, 0.85); }
+.nc-add { background: #34c759; pointer-events: none; }
+.nc-preview { cursor: var(--cur-pointer, pointer); opacity: 0.85; }
+.nc-preview > *:not(.nc-add) { pointer-events: none; }
+.nc-preview:hover { opacity: 1; box-shadow: inset 0 0 0 2px #34c759; }
+.nc-reset { align-self: center; border: 0; background: none; color: var(--accent); font: inherit; font-size: 12px; padding: 4px; }

@@ -3,7 +3,7 @@
 //
 // {
 //   "format": "liquiddesktop-widget", "version": 1,
-//   "id": "…", "name": "Bitcoin", "author": "…", "size": "s" | "m" | "l",
+//   "id": "…", "name": "Bitcoin", "author": "…", "size": "s" | "m" | "l" (desktop) | "cs" | "cw" | "cl" (Control Center),
 //   "background": { "type": "glass" | "color" | "gradient" | "image", "color": "#1c1c1e",
 //                   "from": "#0a84ff", "to": "#5e5ce6", "angle": 135, "image": "data:image/…", "dim": 0.3 },
 //   "textColor": "#ffffff",
@@ -27,7 +27,9 @@ import { sym } from './icons.js';
 import { getWeather, describe } from './weatherdata.js';
 
 export const FORMAT = 'liquiddesktop-widget';
-export const SIZES = { s: [164, 164], m: [340, 164], l: [340, 340] };
+// desktop sizes, and Control Center ones ("c…": 1×1, 2×1, 2×2 of its grid)
+export const SIZES = { s: [164, 164], m: [340, 164], l: [340, 340], cs: [72, 72], cw: [153, 72], cl: [153, 154] };
+export const isCC = (spec) => /^c/.test(spec?.size || '');
 export const ICONS = { sun: sym.sun, moon: sym.moon, bolt: sym.bolt, clock: sym.clock, star: sym.star, music: sym.music, bell: sym.bell, globe: sym.globe, home: sym.home,
   heart: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 21s-7.5-4.6-9.6-9.3C.9 8.3 3.2 4.5 6.9 4.5c2 0 3.6 1.1 5.1 2.9 1.5-1.8 3.1-2.9 5.1-2.9 3.7 0 6 3.8 4.5 7.2C19.5 16.4 12 21 12 21z"/></svg>',
   cloud: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 19h10.5a4.5 4.5 0 0 0 .6-8.96A6 6 0 0 0 6.6 9.1 5 5 0 0 0 7 19z"/></svg>',

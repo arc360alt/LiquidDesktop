@@ -7,7 +7,7 @@ import { sym } from '../icons.js';
 import { api } from '../sys.js';
 import { store } from '../store.js';
 import { alertDialog } from '../menus.js';
-import { FORMAT, SIZES, ICONS, customWidgets, saveCustom, validate, toFile, renderCustom, newId } from '../customwidget.js';
+import { FORMAT, SIZES, ICONS, customWidgets, saveCustom, validate, toFile, renderCustom, newId, isCC } from '../customwidget.js';
 
 const PLACEHOLDERS = [['time', 'Time'], ['time24', 'Time (24-hour)'], ['date', 'Date'], ['weekday', 'Weekday'], ['day', 'Day of month'], ['month', 'Month'], ['year', 'Year'],
   ['battery', 'Battery %'], ['cpu', 'CPU %'], ['mem', 'Memory %'], ['weather.temp', 'Temperature'], ['weather.condition', 'Conditions'], ['weather.high', 'High'], ['weather.low', 'Low'], ['weather.city', 'City']];
@@ -18,6 +18,14 @@ const DEFAULTS = {
   progress: { w: 84, h: 8, style: 'bar', value: '{{battery}}', max: 100, color: '#30d158', track: '#ffffff40' },
   icon: { w: 22, h: 22, name: 'star', color: '#ffd60a' },
 };
+// a Control Center widget (2×1): small enough text for its 72-pixel height
+function ccStarter() {
+  return { ...starter(), size: 'cw', background: { type: 'glass', color: '#1c1c1e', from: '#0a84ff', to: '#5e5ce6', angle: 135, image: '', dim: 0.25 }, textColor: '',
+    elements: [
+      { type: 'text', x: 9, y: 16, w: 84, h: 36, text: '{{time}}', size: 22, weight: 600, align: 'left', font: 'system' },
+      { type: 'text', x: 9, y: 58, w: 84, h: 26, text: '{{weekday}} · {{weather.temp}}°', size: 11, weight: 500, align: 'left', font: 'system' },
+    ] };
+}
 function starter() {
   return { format: FORMAT, version: 1, id: newId(), name: 'My Widget', author: '', size: 's',
     background: { type: 'gradient', color: '#1c1c1e', from: '#0a84ff', to: '#5e5ce6', angle: 135, image: '', dim: 0.25 }, textColor: '#ffffff', sources: [],
@@ -40,22 +48,43 @@ async function shrinkPicture(dataUrl, max = 720) {
 registerApp({
   id: 'widgetcreator', name: 'Widget Creator', size: [1120, 720], minSize: [900, 560], overlayContent: true, hideTitle: true, className: 'wc-win',
   keywords: ['widgets', 'design', 'custom widget', 'ldwidget'],
+  // the how-to (it used to sit under the canvas)
+  menus: (win) => [{ title: 'Help', items: [{ label: 'Widget Creator Help', action: () => alertDialog({ title: 'Widget Creator', message:
+    'Add text, pictures, shapes, progress bars and icons from the sidebar.\n\n'
+    + '• Click an element to select it; drag to move it; drag its corner to resize it.\n'
+    + '• Arrow keys nudge the selected element; hold Alt while dragging to ignore snapping.\n'
+    + '• Text can show live values with placeholders like {{time}}, {{weather.temp}} or {{cpu}} (Insert › Placeholder), and data from the web (Add Data Source).\n'
+    + '• Choose Desktop or Control Center above the canvas, then a size.\n'
+    + '• Save keeps it in your widgets; Export makes a .ldwidget file to share.',
+    buttons: [{ label: 'OK', primary: true }] }, win?.el) }] }],
   open(win, args = {}) {
-    let spec = args.id && customWidgets()[args.id] ? structuredClone(customWidgets()[args.id]) : starter();
+    let spec = args.id && customWidgets()[args.id] ? structuredClone(customWidgets()[args.id]) : args.target === 'cc' ? ccStarter() : starter();
     let sel = spec.elements.length ? 0 : -1, selSource = -1, dirty = false;
-    const SCALE = 1.6;
+    let SCALE = 1.6;   // the preview is drawn bigger: Control Center widgets more, they're small
 
     /* ---- layout */
     const left = h('div.wc-left'), right = h('div.wc-right'), canvasWrap = h('div.wc-canvas');
-    win.body.append(h('div.wc', left, h('div.wc-center', canvasWrap, h('div.wc-help', 'Click to select · drag to move · drag the corner to resize · arrow keys nudge · hold Alt to ignore snapping')), right));
+    win.body.append(h('div.wc', left, h('div.wc-center', canvasWrap), right));
     win.dragRegion(left);
-    const nameField = h('input.field', { value: spec.name, style: { width: '180px', height: '30px' }, oninput: (e) => { spec.name = e.target.value.slice(0, 60); dirty = true; } });
+    const nameField = h('input.field', { value: spec.name, style: { width: '180px', minWidth: '80px', flexShrink: 1, height: '30px' }, oninput: (e) => { spec.name = e.target.value.slice(0, 60); dirty = true; } });
     const sizeSeg = h('div.wc-seg');
+    const addBtn = h('button.btn.primary', { onclick: () => save(true) }, 'Add to Desktop');
     const snapSel = h('select.field.square', { title: 'Snapping while dragging (hold Alt to move freely)', onchange: (e) => store.set('wcSnap', e.target.value) },
       ...[['smart', 'Snap: Smart'], ['grid', 'Snap: Grid'], ['off', 'Snap: Off']].map(([v, l]) => h('option', { value: v, selected: (store.get('wcSnap') || 'smart') === v }, l)));
-    win.toolbar.append(h('div.spacer'), nameField, sizeSeg, snapSel, h('div.spacer'),
+    // where it goes, its size and snapping sit above the canvas (the toolbar has no room for them in a small window)
+    canvasWrap.before(h('div.wc-sizebar', sizeSeg, snapSel));
+    win.toolbar.append(h('div.spacer'), nameField, h('div.spacer'),
       h('div.tb-group', h('button.tb-btn', { title: 'Import a .ldwidget file', onclick: importFile, html: sym.download }), h('button.tb-btn', { title: 'Export as a .ldwidget file', onclick: exportFile, html: sym.share })),
-      h('button.btn', { onclick: () => save(false) }, 'Save'), h('button.btn.primary', { onclick: () => save(true) }, 'Add to Desktop'));
+      h('button.btn', { onclick: () => save(false) }, 'Save'), addBtn);
+    // the name sits centred over the canvas (not the whole toolbar, which starts after the window buttons)
+    const centerCol = win.body.querySelector('.wc-center');
+    const centerName = () => {
+      nameField.style.transform = '';
+      const c = centerCol.getBoundingClientRect(), n = nameField.getBoundingClientRect();
+      if (c.width) nameField.style.transform = `translateX(${Math.round(c.left + c.width / 2 - (n.left + n.width / 2))}px)`;
+    };
+    new ResizeObserver(centerName).observe(win.el);
+    setTimeout(centerName, 450);   // again once the window's opening animation (a scale) is over
 
     const change = (fn) => { fn?.(); dirty = true; drawPreview(); drawLeft(); };
 
@@ -64,6 +93,7 @@ registerApp({
     function drawPreview() {
       previewEl?.stopCustom?.();
       canvasWrap.innerHTML = '';
+      SCALE = isCC(spec) ? 3 : 1.6;
       const [W, H] = SIZES[spec.size];
       previewEl = h('div.widget.glass.sheen.' + spec.size, { style: { width: W + 'px', height: H + 'px' } });
       renderCustom(previewEl, spec, { preview: true });
@@ -78,7 +108,14 @@ registerApp({
       holder.addEventListener('mousedown', (ev) => { if (ev.target === holder) { sel = -1; selSource = -1; drawAll(); } });
       canvasWrap.append(holder);
       sizeSeg.innerHTML = '';
-      for (const [k, l] of [['s', 'Small'], ['m', 'Medium'], ['l', 'Large']]) sizeSeg.append(h('button' + (spec.size === k ? '.on' : ''), { onclick: () => change(() => { spec.size = k; }) }, l));
+      // where it goes (the desktop or Control Center), then its size there
+      const cc = isCC(spec);
+      // switching scales the text with the widget's height (a desktop widget is about twice as tall)
+      const retarget = (size) => { const k = SIZES[size][1] / SIZES[spec.size][1]; for (const e of spec.elements) if (e.type === 'text') e.size = Math.max(6, Math.round((e.size || 14) * k)); spec.size = size; };
+      for (const [t, l] of [[false, 'Desktop'], [true, 'Control Center']]) sizeSeg.append(h('button' + (cc === t ? '.on' : ''), { onclick: () => { if (cc !== t) change(() => retarget(t ? { s: 'cs', m: 'cw', l: 'cl' }[spec.size] : { cs: 's', cw: 'm', cl: 'l' }[spec.size])); } }, l));
+      sizeSeg.append(h('i.wc-seg-sep'));
+      for (const [k, l] of cc ? [['cs', '1×1'], ['cw', '2×1'], ['cl', '2×2']] : [['s', 'Small'], ['m', 'Medium'], ['l', 'Large']]) sizeSeg.append(h('button' + (spec.size === k ? '.on' : ''), { onclick: () => change(() => { spec.size = k; }) }, l));
+      addBtn.textContent = cc ? 'Add to Control Center' : 'Add to Desktop';
     }
     // Snapping while dragging (Snap menu in the toolbar; hold Alt to drag freely):
     //   grid  — positions and sizes land on a grid (every 5% of the widget)
@@ -269,11 +306,14 @@ registerApp({
     function save(toDesktop) {
       try { spec = validate(spec); } catch (err) { return alertDialog({ title: 'Can’t save this widget', message: err.message }, win.el); }
       saveCustom(spec); dirty = false;
-      if (toDesktop) {
+      if (toDesktop && isCC(spec)) {
+        const l = store.get('ccLayout') || ['conn', 'np', 'focus', 'dark', 'shot', 'bright', 'sound', 'ns', 'lock', 'mission', 'rec', 'battery'];
+        if (!l.includes('custom:' + spec.id)) store.set('ccLayout', [...l, 'custom:' + spec.id]);
+      } else if (toDesktop) {
         const list = store.get('widgets') || [];
         if (!list.some((w) => w.type === 'custom:' + spec.id)) store.set('widgets', [...list, { id: 'w' + Date.now(), type: 'custom:' + spec.id, x: 36, y: 48 }]);
       }
-      import('../notifications.js').then(({ notify }) => notify({ app: 'widgetcreator', title: `“${spec.name}” saved`, body: toDesktop ? 'It’s on your desktop and in My Widgets.' : 'Find it under My Widgets in the widget gallery.' }));
+      import('../notifications.js').then(({ notify }) => notify({ app: 'widgetcreator', title: `“${spec.name}” saved`, body: isCC(spec) ? (toDesktop ? 'It’s in Control Center.' : 'Add it from Control Center › Edit Controls.') : toDesktop ? 'It’s on your desktop and in My Widgets.' : 'Find it under My Widgets in the widget gallery.' }));
       drawAll();
     }
     async function exportFile() {

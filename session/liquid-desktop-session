@@ -86,6 +86,13 @@ if [ "$LIQUID_SOFTWARE_RENDERING" != 1 ] && { [ "$__GLX_VENDOR_LIBRARY_NAME" = n
   case " $LIQUID_PICOM_ARGS " in *" --use-damage "*|*" --no-use-damage "*) ;; *) LIQUID_PICOM_ARGS="$LIQUID_PICOM_ARGS --no-use-damage" ;; esac
   export LIQUID_PICOM_ARGS
   echo "liquid-desktop: NVIDIA driver: picom $LIQUID_PICOM_ARGS" >&2
+  # Several monitors: NVIDIA's GLX syncs to whichever monitor it picks first (often not the main one, or a slower
+  # one), and the whole desktop then stutters. Sync to the main monitor instead (unless you set it yourself).
+  if [ -z "$__GL_SYNC_DISPLAY_DEVICE" ] && command -v xrandr >/dev/null \
+      && [ "$(xrandr --listactivemonitors 2>/dev/null | sed -n 's/^Monitors: //p')" -gt 1 ] 2>/dev/null; then
+    LIQUID_SYNC_OUT="$(xrandr --query 2>/dev/null | awk '/ connected primary [0-9]/ { print $1; exit }')"
+    [ -n "$LIQUID_SYNC_OUT" ] && export __GL_SYNC_DISPLAY_DEVICE="$LIQUID_SYNC_OUT" && echo "liquid-desktop: NVIDIA vsync on $LIQUID_SYNC_OUT" >&2
+  fi
 fi
 
 # the compositor: real blur behind the glass, rounded corners, shadows. Software rendering, or a picom backend

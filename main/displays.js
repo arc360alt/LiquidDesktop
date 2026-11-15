@@ -82,37 +82,68 @@ async function list() {
   return { backend: b, displays };
 }
 
+const KEYS = ['width', 'height', 'refresh', 'rotation', 'x', 'y', 'enabled', 'primary'];
+const outputArgs = (name, cfg) => {
+  const args = ['--output', name];
+  if (cfg.enabled === false) return [...args, '--off'];
+  args.push('--mode', `${cfg.width}x${cfg.height}`);
+  if (cfg.refresh) args.push('--rate', String(cfg.refresh));
+  args.push('--rotate', { 0: 'normal', 90: 'left', 180: 'inverted', 270: 'right' }[cfg.rotation || 0]);
+  args.push('--pos', `${Math.round(cfg.x)}x${Math.round(cfg.y)}`);
+  if (cfg.primary) args.push('--primary');
+  return args;
+};
+const slim = (cfg) => Object.fromEntries(KEYS.map((k) => [k, cfg[k]]));
+const save = (list) => {
+  const saved = readSaved();
+  for (const c of list) saved[c.name] = slim(c);
+  fs.mkdirSync(path.dirname(SAVED()), { recursive: true });
+  fs.writeFileSync(SAVED(), JSON.stringify(saved, null, 2));
+};
+
 /**
- * cfg: { width, height, refresh, scale, rotation, x, y, enabled, primary }
+ * Every monitor at once, in ONE xrandr call: one mode set for the whole layout (one call per monitor made the
+ * screen blank and re-light several times, and could fail half way with monitors left overlapping).
+ * list: [{ name, width, height, refresh, rotation, x, y, enabled, primary }]
  */
+async function applyAll(list) {
+  if (backend() !== 'x11') return { ok: false, err: 'Display changes are made in the LiquidDesktop session. In a testing window your own desktop keeps control of its monitors.' };
+  const on = list.filter((c) => c.enabled !== false);
+  if (!on.length) return { ok: false, err: 'At least one display has to stay on.' };
+  // the layout starts at 0,0 and exactly one display is the main one
+  const minX = Math.min(...on.map((c) => c.x)), minY = Math.min(...on.map((c) => c.y));
+  if (!on.some((c) => c.primary)) on[0].primary = true;
+  let seen = false;
+  const fixed = list.map((c) => {
+    const o = { ...c };
+    if (o.enabled !== false) { o.x = Math.round(o.x - minX); o.y = Math.round(o.y - minY); o.primary = !!o.primary && !seen; if (o.primary) seen = true; } else o.primary = false;
+    return o;
+  });
+  // monitors being turned off go first, so the ones staying on have the room (CRTCs, screen size)
+  const order = [...fixed.filter((c) => c.enabled === false), ...fixed.filter((c) => c.enabled !== false)];
+  const r = await run('xrandr', order.flatMap((c) => outputArgs(c.name, c)));
+  if (r.ok) save(fixed);
+  return r;
+}
+
+/** One monitor (older callers): the rest of the layout is kept as it is. */
 async function apply(name, cfg) {
-  const b = backend();
-  if (b === 'x11') {
-    const args = ['--output', name];
-    if (cfg.enabled === false) args.push('--off');
-    else {
-      args.push('--mode', `${cfg.width}x${cfg.height}`);
-      if (cfg.refresh) args.push('--rate', String(cfg.refresh));
-      args.push('--rotate', { 0: 'normal', 90: 'left', 180: 'inverted', 270: 'right' }[cfg.rotation || 0]);
-      args.push('--pos', `${Math.round(cfg.x)}x${Math.round(cfg.y)}`);
-      if (cfg.primary) args.push('--primary');
-    }
-    const r = await run('xrandr', args);
-    if (r.ok) {
-      const saved = readSaved(); saved[name] = cfg; fs.mkdirSync(path.dirname(SAVED()), { recursive: true }); fs.writeFileSync(SAVED(), JSON.stringify(saved, null, 2));
-    }
-    return r;
-  }
-  return { ok: false, err: 'Display changes are made in the LiquidDesktop session. In a testing window your own desktop keeps control of its monitors.' };
+  const { displays } = await list();
+  return applyAll(displays.map((d) => (d.name === name ? { ...d, ...cfg } : d)));
 }
 const readSaved = () => { try { return JSON.parse(fs.readFileSync(SAVED(), 'utf8')); } catch { return {}; } };
 
-/** Session start: put back what the user chose last time (X11 only). */
+/** Session start: put back what the user chose last time (X11 only) — in one go, and only if it differs. */
 async function restoreSaved() {
   if (backend() !== 'x11') return;
   const saved = readSaved();
   const { displays } = await list();
-  for (const d of displays) if (saved[d.name]) await apply(d.name, saved[d.name]);
+  if (!displays.some((d) => saved[d.name])) return;
+  const want = displays.map((d) => ({ ...d, ...(saved[d.name] ? slim(saved[d.name]) : {}) }));
+  const same = (a, b) => a.enabled === b.enabled && (!a.enabled || (a.width === b.width && a.height === b.height && a.x === b.x && a.y === b.y
+    && a.rotation === b.rotation && !!a.primary === !!b.primary && (!a.refresh || !b.refresh || Math.abs(a.refresh - b.refresh) < 0.05)));
+  if (want.every((w, i) => same(w, displays[i]))) return;   // already like that: no mode set (no blank screens at login)
+  await applyAll(want);
 }
 
-module.exports = { list, apply, restoreSaved, backend };
+module.exports = { list, apply, applyAll, restoreSaved, backend };

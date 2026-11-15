@@ -28,6 +28,8 @@ async function startSession({ preload }) {
   const fixedTitle = (bw, t) => { bw.setTitle(t); bw.on('page-title-updated', (e) => e.preventDefault()); };
 
   /* ------------------------------------------------------------ layers */
+  // every monitor: the main one gets the full desktop + shell below; the others get their own wallpaper and
+  // menu bar windows (made in relayout)
   const desktop = new BrowserWindow({ x: 0, y: 0, width: sw, height: sh, frame: false, show: false, resizable: false, skipTaskbar: true,
     backgroundColor: '#0b1220', type: 'desktop', webPreferences: prefs });
   fixedTitle(desktop, 'LiquidDesktop Desktop');
@@ -37,7 +39,8 @@ async function startSession({ preload }) {
   const shell = new BrowserWindow({ x: 0, y: 0, width: sw, height: sh, frame: false, show: false, resizable: false, skipTaskbar: true,
     transparent: true, backgroundColor: '#00000000', hasShadow: false, type: 'dock', webPreferences: prefs });
   fixedTitle(shell, 'LiquidDesktop Shell');
-  wm.registerOwn(xidOf(shell), { role: 'shell' });
+  wm.registerOwn(xidOf(shell), { role: 'shell', primary: true });
+  const extra = new Map();   // display id → { desktop, bar } on monitors other than the main one
   // The start-up screen (inside the shell page) is shown once per session. Whether it's done is kept here, in
   // the main process: a reload of the shell (after a crash) asks for it not to be shown at all, and if start-up
   // never reports back, it's taken down anyway, so it can't come back or stay up for good.
@@ -82,11 +85,16 @@ async function startSession({ preload }) {
   recover('desktop', desktop, () => desktop.loadFile(INDEX, { query: { mode: 'session', layer: 'desktop' } }));
   app.on('child-process-gone', (_e, d) => {
     if (d.reason === 'clean-exit') return;
+    // the GPU process restarted (a mode set on NVIDIA can do it): windows must draw again or they stay frozen
+    if (d.type === 'GPU') for (const ms of [800, 2500]) setTimeout(() => { for (const bw of BrowserWindow.getAllWindows()) if (!bw.isDestroyed()) bw.webContents.invalidate(); }, ms);
     crashLog(`[session] ${d.type}${d.name ? ' (' + d.name + ')' : ''} process gone: ${d.reason} (exit ${d.exitCode})`);
   });
 
   const toShell = (ch, ...a) => { if (!shell.isDestroyed()) shell.webContents.send(ch, ...a); };
-  const toLayers = (ch, ...a) => { for (const bw of [shell, desktop, ...appWindows.values()]) if (!bw.isDestroyed()) bw.webContents.send(ch, ...a); };
+  const bars = () => [...extra.values()].map((x) => x.bar);
+  const toLayers = (ch, ...a) => { for (const bw of [shell, desktop, ...bars(), ...appWindows.values()]) if (!bw.isDestroyed()) bw.webContents.send(ch, ...a); };
+  // which shell window (main one or a monitor's menu bar) a message came from
+  const shellOf = (e) => { for (const bw of [shell, ...bars()]) if (!bw.isDestroyed() && bw.webContents === e.sender) return xidOf(bw); return null; };
 
   /* ------------------------------------------------------------ built-in app windows */
   let appSeq = 100000;
@@ -97,7 +105,9 @@ async function startSession({ preload }) {
     if (waiting && !waiting.bw.isDestroyed() && Date.now() - waiting.at < 15000 && !Object.keys(args || {}).length) { waiting.show(); waiting.bw.focus(); return waiting.id; }
     const id = ++appSeq;
     const [w0, h0] = opts.size || [820, 540];
-    const a = wm.area();
+    // the window manager works in screen pixels, Electron in scaled (DIP) units
+    const k = screen.getPrimaryDisplay().scaleFactor || 1, ap = wm.area();
+    const a = { x: ap.x / k, y: ap.y / k, w: ap.w / k, h: ap.h / k };
     const n = appWindows.size % 7;
     const w = Math.min(w0, a.w - 20), h = Math.min(h0, a.h - 20);
     const bw = new BrowserWindow({
@@ -177,7 +187,15 @@ async function startSession({ preload }) {
   wm.on('shortcut', (name) => toShell('session:shortcut', name));
   wm.on('outside-click', (p) => toShell('session:outside', p));
   wm.on('edge', (side) => toShell('session:edge', side));
-  wm.on('snap-preview', (r) => toShell('session:snap', r));
+  // the preview is drawn by the shell window on that monitor, in its own coordinates
+  wm.on('snap-preview', (r) => {
+    const k = screen.getPrimaryDisplay().scaleFactor || 1;
+    for (const bw of [shell, ...bars()]) if (!bw.isDestroyed()) {
+      const b = bw.getBounds(), ox = Math.round(b.x * k), oy = Math.round(b.y * k);
+      const mine = r && r[0] + r[2] / 2 >= ox && r[0] + r[2] / 2 < ox + b.width * k && r[1] + r[3] / 2 >= oy && r[1] + r[3] / 2 < oy + b.height * k;
+      bw.webContents.send('session:snap', mine ? [r[0] - ox, r[1] - oy, r[2], r[3]] : null);
+    }
+  });
   wm.on('quit-app', (w) => toShell('session:shortcut', 'quit', w.id));
   wm.on('close-app-window', (w) => { const bw = appWindows.get(w.id); if (bw && !bw.isDestroyed()) bw.webContents.send('appwin:close'); });
 
@@ -240,17 +258,17 @@ async function startSession({ preload }) {
   });
   handle('appwin:id', (e) => idOfSender(e));
   // the shell
-  on('shell:regions', (input, modal, blur) => { wm.setShellInput(input, modal); wm.setBlurRegions(blur); });
-  on('shell:focus', (onOff) => wm.focusShell(onOff));
-  on('shell:workarea', (top, bottom) => wm.setWorkarea(top, bottom));
-  on('shell:edges', (e) => wm.setEdges(e));
+  on('shell:regions', (input, modal, blur, e) => { const x = shellOf(e); if (x) { wm.setShellInput(input, modal, x); wm.setBlurRegions(blur, x); } });
+  on('shell:focus', (onOff, e) => { const x = shellOf(e); if (x) wm.focusShell(onOff, x); });
+  on('shell:workarea', (top, bottom, e) => { const x = shellOf(e); if (x) wm.setWorkarea(top, bottom, x); });
+  on('shell:edges', (v, e) => { if (e.sender === shell.webContents) wm.setEdges(v); });
   on('wm:zoom', (id, mode) => wm.zoom(id, mode));
-  on('shell:locked', (v) => wm.setLocked(v));
+  on('shell:locked', (v) => { wm.setLocked(v); for (const b of bars()) if (!b.isDestroyed()) b.webContents.send('session:locked', v); });
   on('shell:notify', (n) => toShell('session:notify', n));
   on('shell:windowMenu', (id, x, y, kind, rel) => {
     // from a title bar: its coordinates are relative to the window (it sits inside the frame container)
     const w = rel && wm.windows.get(id);
-    if (w) { const k = screen.getPrimaryDisplay().scaleFactor || 1; x = Math.round(w.x / k + x); y = Math.round(w.y / k + y); }
+    if (w) { const k = screen.getPrimaryDisplay().scaleFactor || 1, p = wm.prim(); x = Math.round((w.x - p.x) / k + x); y = Math.round((w.y - p.y) / k + y); }
     toShell('session:windowMenu', id, x, y, kind);
   });
   on('frame:op', (id, op, arg) => {
@@ -258,19 +276,67 @@ async function startSession({ preload }) {
       beginMove: () => wm.beginMove(id), beginResize: () => wm.beginResize(id, arg) })[op]?.();
   });
 
-  // resolution / monitor changes: the desktop and shell layers follow the primary display
-  const relayout = () => {
-    const d = screen.getPrimaryDisplay(), b = d.bounds;
-    for (const bw of [desktop, shell]) if (!bw.isDestroyed()) bw.setBounds(b);
-    // the window manager works in screen pixels; Electron's bounds are scaled (1706×1066 for 2560×1600 at 150%)
-    const k = d.scaleFactor || 1, pw = Math.round(b.width * k), ph = Math.round(b.height * k);
-    wm.sw = pw; wm.sh = ph;
-    wm.setCardinal(wm.root, '_NET_DESKTOP_GEOMETRY', [pw, ph]);
-    wm.updateWorkarea();
-    for (const w of wm.windows.values()) if (w.maximized || w.tile || w.fullscreen) { if (w.fullscreen) Object.assign(w, { x: 0, y: 0, w: pw, h: ph }); else wm.tile(w.id, w.tile || 'fill'); wm.applyGeometry(w); }
-    wm.changed();
+  // resolution / monitor changes: the main desktop + shell follow the primary display, every other display gets
+  // its own wallpaper and menu bar, and the window manager learns where all of them are (in screen pixels)
+  const pxOf = (d) => { const k = d.scaleFactor || 1, b = d.bounds; return { x: Math.round(b.x * k), y: Math.round(b.y * k), w: Math.round(b.width * k), h: Math.round(b.height * k) }; };
+  const makeExtra = (d) => {
+    const b = d.bounds, q = { mode: 'session', secondary: '1' };
+    const dk = new BrowserWindow({ ...b, frame: false, show: false, resizable: false, skipTaskbar: true, backgroundColor: '#0b1220', type: 'desktop', webPreferences: prefs });
+    fixedTitle(dk, 'LiquidDesktop Desktop');
+    wm.registerOwn(xidOf(dk), { role: 'desktop', primary: false });
+    dk.loadFile(INDEX, { query: { ...q, layer: 'desktop' } });
+    dk.once('ready-to-show', () => dk.showInactive());
+    const bar = new BrowserWindow({ ...b, frame: false, show: false, resizable: false, skipTaskbar: true, transparent: true, backgroundColor: '#00000000', hasShadow: false, type: 'dock', webPreferences: prefs });
+    fixedTitle(bar, 'LiquidDesktop Shell');
+    const bx = xidOf(bar);
+    wm.registerOwn(bx, { role: 'shell', primary: false });
+    bar.loadFile(INDEX, { query: { ...q, layer: 'shell', boot: '0', login: '0' } });
+    bar.once('ready-to-show', () => { bar.showInactive(); setTimeout(() => wm.setShellInput([], false, bx), 50); });
+    recover('desktop ' + d.id, dk, () => dk.loadFile(INDEX, { query: { ...q, layer: 'desktop' } }));
+    recover('menu bar ' + d.id, bar, () => bar.loadFile(INDEX, { query: { ...q, layer: 'shell', boot: '0', login: '0' } }));
+    return { desktop: dk, bar };
   };
-  for (const ev of ['display-metrics-changed', 'display-added', 'display-removed']) screen.on(ev, () => setTimeout(relayout, 300));
+  const relayout = () => {
+    const all = screen.getAllDisplays(), pd = screen.getPrimaryDisplay(), b = pd.bounds;
+    for (const bw of [desktop, shell]) if (!bw.isDestroyed()) bw.setBounds(b);
+    const mons = all.map((d) => ({ ...pxOf(d), primary: d.id === pd.id }));
+    const rw = Math.max(...mons.map((m) => m.x + m.w)), rh = Math.max(...mons.map((m) => m.y + m.h));
+    // the other displays: add, move or remove their windows
+    const want = new Set();
+    for (const d of all) {
+      if (d.id === pd.id) continue;
+      want.add(d.id);
+      if (!extra.has(d.id)) extra.set(d.id, makeExtra(d));
+      const x = extra.get(d.id);
+      for (const bw of [x.desktop, x.bar]) if (!bw.isDestroyed()) bw.setBounds(d.bounds);
+    }
+    for (const [id, x] of extra) if (!want.has(id)) { extra.delete(id); for (const bw of [x.desktop, x.bar]) if (!bw.isDestroyed()) bw.destroy(); }
+    wm.setMonitors(mons, rw, rh);
+    const pm = pxOf(pd);
+    wm.setShellGeometry(xidOf(shell), { ox: pm.x, oy: pm.y, w: pm.w, h: pm.h });
+    for (const [id, x] of extra) {
+      const d = all.find((o) => o.id === id), m = pxOf(d);
+      if (!x.bar.isDestroyed()) wm.setShellGeometry(xidOf(x.bar), { ox: m.x, oy: m.y, w: m.w, h: m.h });
+    }
+    // windows left on a monitor that's gone come back to one that's there; maximized / tiled / full-screen
+    // windows are fitted again to their monitor
+    for (const w of wm.windows.values()) {
+      if (!wm.monAt(w.x + w.w / 2, w.y + 20, true)) { w.x = null; w.y = null; w.maximized = false; w.tile = null; w.fullscreen = false; wm.placeIfNeeded(w); continue; }
+      if (w.fullscreen) { const m = wm.monOf(w); Object.assign(w, { x: m.x, y: m.y, w: m.w, h: m.h }); wm.applyGeometry(w); }
+      else if (w.maximized || w.tile) wm.tile(w.id, w.tile || 'fill');
+    }
+    wm.restack();
+    wm.changed();
+    // A mode set (NVIDIA especially) can leave Chromium showing a stale frame: the window still takes clicks but
+    // never repaints, so a dialog that opened meanwhile (Settings' "Keep these display settings?") was invisible
+    // and swallowed every click. Make every window of ours draw a fresh frame, now and once the GPU has settled.
+    // …and the shells' click-through shapes, which Chromium reset when they were resized
+    const repaint = () => { wm.reapplyShellInput(); for (const bw of BrowserWindow.getAllWindows()) if (!bw.isDestroyed()) bw.webContents.invalidate(); };
+    repaint(); for (const ms of [150, 600, 2000]) setTimeout(repaint, ms);
+  };
+  relayout();
+  let relayoutTimer;
+  for (const ev of ['display-metrics-changed', 'display-added', 'display-removed']) screen.on(ev, () => { clearTimeout(relayoutTimer); relayoutTimer = setTimeout(relayout, 300); });
 
   app.on('liquid-cursor-changed', () => wm.reloadCursor());
 

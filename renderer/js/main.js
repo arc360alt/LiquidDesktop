@@ -81,6 +81,7 @@ async function bootFull() {
 
 /* ---------------------------------------------------------------- session layers */
 async function bootShell() {
+  if (params.get('secondary')) return bootBar();
   // reloaded after the start-up screen was already done (a crash): don't show it again
   if (params.get('boot') === '0') $('#boot')?.remove();
   S.on('session:hideBoot', hideBoot);
@@ -122,9 +123,31 @@ async function bootShellSteps() {
   autoUpdateCheck();
 }
 
+// A monitor other than the main one: its own menu bar (menus, status items, Control Center, Notification
+// Center), no Dock. Toasts, Spotlight, the lock screen… stay on the main monitor.
+async function bootBar() {
+  $('#boot')?.remove();
+  await common();
+  const { installSessionWM } = await import('./sessionwm.js');
+  const { initShellShape } = await import('./shellshape.js');
+  await catalog.load();
+  await installSessionWM();
+  initMenubar();
+  initNotifications();
+  initControlCenter();
+  status.start();
+  initShellShape({ secondary: true });
+  // while the screen is locked, this monitor is covered (and takes every click) too
+  S.on('session:locked', (on) => {
+    $('#lock-cover')?.remove();
+    if (on) document.body.append(Object.assign(document.createElement('div'), { id: 'lock-cover' }));
+  });
+}
+
 async function bootDesktop() {
   $('#boot')?.remove();
   await common();
+  if (params.get('secondary')) return;   // another monitor: just the wallpaper (icons and widgets are on the main one)
   const { installSessionWM } = await import('./sessionwm.js');
   await catalog.load();
   await installSessionWM();

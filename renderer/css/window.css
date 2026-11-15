@@ -417,6 +417,9 @@ body.mission-open #spaces { z-index: 7550; }
 .disp-canvas { position: relative; }
 .disp-mon { position: absolute; border-radius: 8px; background: linear-gradient(160deg, #4f8fe6, #2a5fb8); color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; font-size: 11px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25), inset 0 0 0 1px rgba(255, 255, 255, 0.25); margin: 2px; }
+.disp-canvas { background: rgba(127, 127, 127, 0.08); border-radius: 10px; }
+.disp-mon { cursor: grab; user-select: none; touch-action: none; }
+.disp-mon.dragging { cursor: grabbing; opacity: 0.85; z-index: 2; box-shadow: 0 0 0 3px var(--accent), 0 8px 20px rgba(0, 0, 0, 0.35); }
 .disp-mon small { opacity: 0.8; font-size: 10px; }
 .disp-mon i { font-style: normal; font-size: 9.5px; padding: 1px 6px; border-radius: 999px; background: rgba(255, 255, 255, 0.25); margin-top: 2px; }
 .disp-mon.sel { box-shadow: 0 0 0 3px var(--accent), 0 2px 8px rgba(0, 0, 0, 0.25); }

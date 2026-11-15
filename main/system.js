@@ -957,6 +957,7 @@ function register({ getWindow, mode }) {
   const displays = require('./displays');
   h('sys:displays', () => displays.list());
   h('sys:setDisplay', (name, cfg) => displays.apply(name, cfg));
+  h('sys:setDisplays', (list) => displays.applyAll(list));
   // Software Update: which commit is installed, and is GitHub ahead of it?
   h('sys:updateCheck', async () => {
     const { net } = require('electron');

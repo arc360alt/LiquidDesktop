@@ -10,8 +10,8 @@ import { dockHidden, revealDock } from './dock.js';
 import { menubarHidden, revealMenubar } from './menubar.js';
 
 const INTERACTIVE = ['#menubar', '#dock', '#dock .dock-floor', '.dock-item', '.menu', '.cc', '#nc.open', '#toasts > *', '#switcher', '#spotlight .bar',
-  '#spotlight .chips > *', '#spotlight .results:not([hidden])', '#launcher', '#widget-gallery', '.global-alert-layer .alert', '#mission', '#lock', '#boot', '.quicklook', '#shot-layer'];
-const MODAL = ['.menu', '.cc', '#nc.open', '#spotlight-layer', '#launcher-layer', '.global-alert-layer', '#mission', '#lock', '#boot', '#switcher', '.quicklook', '#shot-layer'];
+  '#spotlight .chips > *', '#spotlight .results:not([hidden])', '#launcher', '#widget-gallery', '.global-alert-layer .alert', '#mission', '#lock', '#boot', '.quicklook', '#shot-layer', '#lock-cover'];
+const MODAL = ['.menu', '.cc', '#nc.open', '#spotlight-layer', '#launcher-layer', '.global-alert-layer', '#mission', '#lock', '#boot', '#switcher', '.quicklook', '#shot-layer', '#lock-cover'];
 const KEYBOARD = ['#spotlight-layer', '#launcher-layer', '#lock', '.global-alert-layer', '#shot-layer'];
 // glass that gets a real blur behind it: these, plus anything the stylesheets give a backdrop blur (see glassSelectors)
 const GLASS = ['.glass', '#menubar', '#mission', '#launchpad', '.snap-preview'];
@@ -92,6 +92,11 @@ function measure() {
   window.__liquidRegions = { input, modal, blur };   // for debugging: what the window manager was told
   const kb = KEYBOARD.some((s) => $(s));
   if (kb !== lastKb) { lastKb = kb; S.send('shell:focus', kb); }
+  if (secondary) {   // a monitor's own menu bar: no Dock, no reveal strips
+    const work = JSON.stringify([Math.round(30 * dpr), 0]);
+    if (work !== lastWork) { lastWork = work; S.send('shell:workarea', ...JSON.parse(work)); }
+    return;
+  }
   const edges = JSON.stringify({ bottom: dockHidden(), top: menubarHidden() });
   if (edges !== lastEdges) { lastEdges = edges; S.send('shell:edges', JSON.parse(edges)); }
   // in screen pixels, like everything the window manager is told
@@ -113,7 +118,9 @@ function wake(ms = 450) {
   requestAnimationFrame(loop);
 }
 
-export function initShellShape() {
+let secondary = false;
+export function initShellShape(opts = {}) {
+  secondary = !!opts.secondary;
   glassSel = glassSelectors();
   new MutationObserver(() => wake()).observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['class', 'style', 'hidden'] });
   addEventListener('mousemove', () => wake(200), { passive: true });

@@ -82,6 +82,11 @@ class WindowManager extends EventEmitter {
     this.seq = 0;
     this.locked = false;
     this.showingDesktop = false;
+    // Monitors, in screen pixels (set from Electron's display list by main/session.js). The primary one holds the
+    // Dock and the main menu bar; every monitor gets its own desktop (wallpaper) and menu bar window.
+    this.mons = [];
+    this.shells = new Map();       // shell window xid → { ox, oy, w, h, work: {top, bottom}, blurPool, primary }
+    this.desktops = new Set();     // desktop (wallpaper) window xids, one per monitor
   }
 
   /* ================================================================ connection */
@@ -100,8 +105,9 @@ class WindowManager extends EventEmitter {
           return ev;
         };
         this.root = display.screen[0].root;
-        this.sw = display.screen[0].pixel_width;
-        this.sh = display.screen[0].pixel_height;
+        this.rw = this.sw = display.screen[0].pixel_width;
+        this.rh = this.sh = display.screen[0].pixel_height;
+        this.mons = [{ x: 0, y: 0, w: this.sw, h: this.sh, primary: true }];
         this.X.on('error', (e) => { if (process.env.LIQUID_WM_DEBUG) console.warn('[wm] X error', e.message || e); });
         this.X.on('event', (ev) => { try { this.onEvent(ev); } catch (e) { console.error('[wm] event handler', ev.name, e); } });
         this.internAtoms().then(() => this.becomeWM()).then(resolve, reject);
@@ -147,7 +153,7 @@ class WindowManager extends EventEmitter {
       const id = X.AllocID();
       const hgt = side === 'bottom' ? 2 : 1;
       X.CreateWindow(id, this.root, 0, side === 'bottom' ? this.sh - hgt : 0, this.sw, hgt, 0, 0, x11.InputOnly, 0, { overrideRedirect: 1, eventMask: EM.EnterWindow | EM.LeaveWindow });
-      this.edges[side] = { id, armed: false, timer: null };
+      this.edges[side] = { id, armed: false, timer: null, hgt };
     }
     // Shape extension, for the shell's drawable/clickable regions
     await new Promise((res) => X.require('shape', (err, Shape) => { this.Shape = err ? null : Shape; res(); }));
@@ -157,7 +163,6 @@ class WindowManager extends EventEmitter {
     const d32 = this.display.screen[0].depths && this.display.screen[0].depths[32];
     const v32 = d32 && Object.values(d32).find((v) => v.class === 4);
     if (v32) { this.argbVisual = v32.vid; this.argbColormap = X.AllocID(); X.CreateColormap(this.argbColormap, this.root, v32.vid, 0); }
-    this.blurPool = [];
     await this.setupKeys();
     this.startClientGuard();
     this.edgeCursors = {};
@@ -261,8 +266,8 @@ class WindowManager extends EventEmitter {
   async onMapRequest(wid) {
     const own = this.ours.get(wid);
     if (own) {
-      if (own.role === 'shell') { this.shell = wid; this.X.MapWindow(wid); this.restack(); return; }
-      if (own.role === 'desktop') { this.desktop = wid; this.X.MapWindow(wid); this.restack(); return; }
+      if (own.role === 'shell') { if (own.primary !== false) this.shell = wid; this.shellEntry(wid); this.X.MapWindow(wid); this.restack(); return; }
+      if (own.role === 'desktop') { if (own.primary !== false) this.desktop = wid; this.desktops.add(wid); this.X.MapWindow(wid); this.restack(); return; }
       if (own.role === 'frame') { this.X.MapWindow(wid); return; }
       if (own.role === 'app') {
         let w = this.windows.get(own.id);
@@ -296,9 +301,9 @@ class WindowManager extends EventEmitter {
     this.setClientRect(w, nx, ny, nw, nh);
     // an app that grew itself (an Android app reopening at its zoomed size) slides back onto the screen
     if (w.kind === 'native' && (M & 12)) {
-      const top = this.workarea.top, bottom = this.sh - this.workarea.bottom;
-      if (w.y + w.h > bottom) w.y = Math.max(top, bottom - w.h);
-      if (w.x + w.w > this.sw) w.x = Math.max(0, this.sw - w.w);
+      const a = this.area(this.monOf(w)), bottom = a.y + a.h;
+      if (w.y + w.h > bottom) w.y = Math.max(a.y, bottom - w.h);
+      if (w.x + w.w > a.x + a.w) w.x = Math.max(a.x, a.x + a.w - w.w);
       this.applyGeometry(w);
     }
     this.emit('changed');
@@ -318,6 +323,13 @@ class WindowManager extends EventEmitter {
     if (this.managing?.has(wid)) this.vanished.add(wid);   // still being set up: manageNative cleans up
     this.ours.delete(wid);
     this.others.delete(wid);
+    if (this.desktops.delete(wid) && this.desktop === wid) this.desktop = [...this.desktops][0] || null;
+    const sh = this.shells.get(wid);
+    if (sh) {
+      for (const b of sh.blurPool) this.X.DestroyWindow(b.id);
+      this.shells.delete(wid);
+      if (this.shell === wid) this.shell = null;
+    }
     const w = this.byXid.get(wid);
     if (w && wid === w.client) this.unmanage(w, false);
   }
@@ -543,9 +555,11 @@ class WindowManager extends EventEmitter {
   }
 
   placeIfNeeded(w) {
-    const a = this.area();
+    // the monitor the window asked to be on (its middle), or the main one
+    const m = (w.x != null && w.y != null && this.monAt(w.x + w.w / 2, w.y + Math.min(w.h / 2, 40), true)) || this.prim();
+    const a = this.area(m);
     w.w = Math.min(w.w, a.w); w.h = Math.min(w.h, a.h);
-    if (w.x == null || w.y == null || w.x < 0 || w.y < a.y - 1 || w.x + 40 > this.sw || w.y + 40 > this.sh) {
+    if (w.x == null || w.y == null || w.x < a.x || w.y < a.y - 1 || w.x + 40 > a.x + a.w || w.y + 40 > a.y + a.h) {
       const parent = w.transientFor && this.byXid.get(w.transientFor);
       if (parent) { w.x = parent.x + (parent.w - w.w) / 2; w.y = parent.y + Math.min(60, (parent.h - w.h) / 2); }
       else {
@@ -590,7 +604,53 @@ class WindowManager extends EventEmitter {
   }
 
   /* ================================================================ geometry */
-  area() { return { x: 0, y: this.workarea.top, w: this.sw, h: this.sh - this.workarea.top - this.workarea.bottom }; }
+  prim() { return this.mons.find((m) => m.primary) || this.mons[0] || { x: 0, y: 0, w: this.sw, h: this.sh }; }
+  /** The monitor at a point (screen pixels); the nearest one unless strict. */
+  monAt(x, y, strict = false) {
+    const hit = this.mons.find((m) => x >= m.x && x < m.x + m.w && y >= m.y && y < m.y + m.h);
+    if (hit || strict) return hit || null;
+    let best = this.prim(), bd = Infinity;
+    for (const m of this.mons) {
+      const dx = Math.max(m.x - x, 0, x - (m.x + m.w)), dy = Math.max(m.y - y, 0, y - (m.y + m.h)), d = dx * dx + dy * dy;
+      if (d < bd) { bd = d; best = m; }
+    }
+    return best;
+  }
+  monOf(w) { return this.monAt(w.x + w.w / 2, w.y + Math.min(w.h / 2, 60)); }
+  /** Menu bar / Dock space reserved on a monitor (told by the shell window on it). */
+  workFor(m) {
+    for (const s of this.shells.values()) if (s.ox === m.x && s.oy === m.y && s.work) return s.work;
+    return m.primary ? this.workarea : { top: this.workarea.top, bottom: 0 };
+  }
+  area(m = this.prim()) {
+    const wk = this.workFor(m);
+    return { x: m.x, y: m.y + wk.top, w: m.w, h: m.h - wk.top - wk.bottom };
+  }
+  /** main/session.js: the monitors (screen pixels) and the size of the whole screen changed. */
+  setMonitors(mons, rw, rh) {
+    this.mons = mons.length ? mons : [{ x: 0, y: 0, w: rw, h: rh, primary: true }];
+    this.rw = rw; this.rh = rh;
+    const p = this.prim();
+    this.sw = p.w; this.sh = p.h;   // kept for older callers: the main monitor's size
+    this.X.ConfigureWindow(this.catcher, { x: 0, y: 0, width: Math.max(1, rw), height: Math.max(1, rh) });
+    this.placeEdges();
+    this.setCardinal(this.root, '_NET_DESKTOP_GEOMETRY', [rw, rh]);
+    this.updateWorkarea();
+  }
+  shellEntry(xid) {
+    if (!this.shells.has(xid)) this.shells.set(xid, { ox: 0, oy: 0, w: this.sw, h: this.sh, work: null, blurPool: [], primary: xid === this.shell });
+    return this.shells.get(xid);
+  }
+  /**
+   * Chromium resets a window's input shape to the whole window whenever it's resized or moved (a display
+   * change): the transparent shell then swallowed every click on that monitor (Settings looked frozen after
+   * Apply). Put each shell's own shape back.
+   */
+  reapplyShellInput() {
+    for (const [xid, s] of this.shells) if (s.input) this.setShellInput(s.input.rects, s.input.modal, xid); else this.setShellInput([], false, xid);
+  }
+  /** Where a shell / menu bar window sits (screen pixels): its input shapes and blur regions are relative to it. */
+  setShellGeometry(xid, g) { Object.assign(this.shellEntry(xid), g); }
 
   clientRect(w) {
     if (w.kind === 'native') return { x: w.x + EDGE, y: w.y + TB, w: w.w - EDGE * 2, h: w.h - TB - EDGE };
@@ -652,13 +712,13 @@ class WindowManager extends EventEmitter {
     }
   }
 
-  tileRect(kind) {
-    const a = this.area(), g = 6, hw = (a.w - g * 3) / 2, hh = (a.h - g * 3) / 2;
+  tileRect(kind, m = this.prim()) {
+    const a = this.area(m), g = 6, hw = (a.w - g * 3) / 2, hh = (a.h - g * 3) / 2;
     return {
       fill: [a.x + g, a.y + g, a.w - g * 2, a.h - g * 2], left: [a.x + g, a.y + g, hw, a.h - g * 2], right: [a.x + g * 2 + hw, a.y + g, hw, a.h - g * 2],
       tl: [a.x + g, a.y + g, hw, hh], tr: [a.x + g * 2 + hw, a.y + g, hw, hh], bl: [a.x + g, a.y + g * 2 + hh, hw, hh], br: [a.x + g * 2 + hw, a.y + g * 2 + hh, hw, hh],
       center: [a.x + a.w * 0.15, a.y + a.h * 0.08, a.w * 0.7, a.h * 0.84],
-      'fill-nodock': [0, this.workarea.top, this.sw, this.sh - this.workarea.top],
+      'fill-nodock': [m.x, m.y + this.workFor(m).top, m.w, m.h - this.workFor(m).top],
     }[kind];
   }
 
@@ -702,21 +762,25 @@ class WindowManager extends EventEmitter {
   }
 
   /** Give the keyboard to the shell (Spotlight, Apps search, lock screen), or hand it back. */
-  focusShell(on) {
-    if (on && this.shell) this.X.SetInputFocus(this.shell, 1);
+  focusShell(on, xid = this.shell) {
+    if (on && xid) this.X.SetInputFocus(xid, 1);
     else if (this.focused) this.focusClient(this.focused);
   }
 
   restack() {
     const X = this.X;
     const order = [];   // bottom → top
-    if (this.desktop) order.push(this.desktop);
+    for (const d of this.desktops) order.push(d);
     for (const w of this.stack) if (w.space === this.space && !w.minimized && !w.hidden) order.push(w.frame);
     for (const o of this.others) order.push(o);
     if (this.catcherOn) order.push(this.catcher);
     for (const e of Object.values(this.edges || {})) if (e.armed) order.push(e.id);
-    for (const b of this.blurPool || []) if (b.mapped) order.push(b.id);
-    if (this.shell) order.push(this.shell);
+    // each menu bar / shell window with its blur windows right below it; the main shell on top of all
+    const shells = [...this.shells.keys()].sort((a, b) => (a === this.shell) - (b === this.shell));
+    for (const sx of shells) {
+      for (const b of this.shells.get(sx).blurPool) if (b.mapped) order.push(b.id);
+      order.push(sx);
+    }
     // Place windows top-down, each directly below its neighbour, inside a server grab: the compositor
     // only ever sees the final order (raising them one by one from the bottom made windows flash).
     X.GrabServer();
@@ -795,12 +859,12 @@ class WindowManager extends EventEmitter {
     }, this.frameMs());
   }
 
-  tile(id, kind) {
+  tile(id, kind, mon) {
     const w = this.windows.get(id);
     if (!w || !w.resizable) return;
     if (w.fullscreen) this.setFullscreen(id, false);
     if (!w.maximized && !w.tile) w.restoreRect = { x: w.x, y: w.y, w: w.w, h: w.h };
-    const [x, y, ww, hh] = this.tileRect(kind).map(Math.round);
+    const [x, y, ww, hh] = this.tileRect(kind, mon || this.monOf(w)).map(Math.round);
     Object.assign(w, { tile: kind === 'center' ? null : kind, maximized: kind === 'fill' || kind === 'fill-nodock' });
     this.animateTo(w, { x, y, w: ww, h: hh });
     this.emit('changed');
@@ -812,7 +876,8 @@ class WindowManager extends EventEmitter {
     if (on) {
       w.preFull = { x: w.x, y: w.y, w: w.w, h: w.h };
       w.fullscreen = true;
-      this.animateTo(w, { x: 0, y: 0, w: this.sw, h: this.sh });
+      const m = this.monOf(w);
+      this.animateTo(w, { x: m.x, y: m.y, w: m.w, h: m.h });
     } else {
       w.fullscreen = false;
       const p = w.preFull || { x: w.x + 60, y: w.y + 60, w: w.w * 0.7, h: w.h * 0.7 };
@@ -876,7 +941,7 @@ class WindowManager extends EventEmitter {
     if (!p0) return;
     this.dragging = true;
     let start = { px: p0.rootX, py: p0.rootY, x: w.x, y: w.y };
-    let snap = null, moved = false, resized = false, lastSnap = 'none';
+    let snap = null, snapMon = null, moved = false, resized = false, lastSnap = 'none';
     const tick = async () => {
       const p = await this.pointer();
       if (!p || !(p.keyMask & BUTTON1)) return end();
@@ -892,14 +957,20 @@ class WindowManager extends EventEmitter {
           this.emit('changed');
         }
       }
+      // the monitor under the pointer decides the top limit and where the window snaps
+      const pm = this.monAt(p.rootX, p.rootY), top = this.area(pm).y;
       w.x = start.x + (p.rootX - start.px);
-      w.y = Math.max(this.workarea.top, start.y + (p.rootY - start.py));
+      w.y = Math.max(top, start.y + (p.rootY - start.py));
       if (resized) { resized = false; this.applyGeometry(w); } else this.moveGeometry(w);
-      const edge = 3, corner = this.sh * 0.18;
-      snap = p.rootY <= this.workarea.top - 2 ? 'fill'
-        : p.rootX <= edge ? (p.rootY < corner + this.workarea.top ? 'tl' : p.rootY > this.sh - corner ? 'bl' : 'left')
-          : p.rootX >= this.sw - edge - 1 ? (p.rootY < corner + this.workarea.top ? 'tr' : p.rootY > this.sh - corner ? 'br' : 'right') : null;
-      if (snap !== lastSnap) { lastSnap = snap; this.emit('snap-preview', snap ? this.tileRect(snap) : null); }
+      // only edges with no other monitor beyond them snap (the pointer crosses shared edges freely)
+      const edge = 3, corner = pm.h * 0.18, bottom = pm.y + pm.h;
+      const atL = p.rootX <= pm.x + edge && !this.monAt(pm.x - 1, p.rootY, true);
+      const atR = p.rootX >= pm.x + pm.w - edge - 1 && !this.monAt(pm.x + pm.w, p.rootY, true);
+      snap = p.rootY <= top - 2 && !this.monAt(p.rootX, pm.y - 1, true) ? 'fill'
+        : atL ? (p.rootY < corner + top ? 'tl' : p.rootY > bottom - corner ? 'bl' : 'left')
+          : atR ? (p.rootY < corner + top ? 'tr' : p.rootY > bottom - corner ? 'br' : 'right') : null;
+      snapMon = pm;
+      if (snap !== lastSnap) { lastSnap = snap; this.emit('snap-preview', snap ? this.tileRect(snap, pm) : null); }
     };
     let busy = false;
     const timer = setInterval(async () => { if (busy) return; busy = true; try { await tick(); } finally { busy = false; } }, this.frameMs());
@@ -907,7 +978,7 @@ class WindowManager extends EventEmitter {
       clearInterval(timer);
       this.dragging = false;
       this.emit('snap-preview', null);
-      if (snap) { w.restoreRect = { x: start.x, y: start.y, w: w.w, h: w.h }; this.tile(id, snap); }
+      if (snap) { w.restoreRect = { x: start.x, y: start.y, w: w.w, h: w.h }; this.tile(id, snap, snapMon); }
       else this.emit('changed');
     };
   }
@@ -922,6 +993,7 @@ class WindowManager extends EventEmitter {
     const f = { x: w.x, y: w.y, w: w.w, h: w.h };
     const extraW = w.kind === 'native' ? EDGE * 2 : 0, extraH = w.kind === 'native' ? TB + EDGE : 0;
     const minW = w.minW + extraW, minH = w.minH + extraH;
+    const ra = this.area(this.monOf(w));
     let busy = false;
     const timer = setInterval(async () => {
       if (busy) return;
@@ -934,15 +1006,15 @@ class WindowManager extends EventEmitter {
       if (dir.includes('e')) ww = Math.max(minW, f.w + dx);
       if (dir.includes('s')) hh = Math.max(minH, f.h + dy);
       if (dir.includes('w')) { ww = Math.max(minW, f.w - dx); x = f.x + f.w - ww; }
-      if (dir.includes('n')) { hh = Math.max(minH, f.h - dy); y = f.y + f.h - hh; if (y < this.workarea.top) { hh -= this.workarea.top - y; y = this.workarea.top; } }
+      if (dir.includes('n')) { hh = Math.max(minH, f.h - dy); y = f.y + f.h - hh; if (y < ra.y) { hh -= ra.y - y; y = ra.y; } }
       const s = w.hints || {};
       if (s.aspect) {
         // keep the app's shape: the width decides (or the height, when only the top/bottom edge is dragged)
         let cw = ww - extraW, ch = hh - extraH;
         if (dir.includes('e') || dir.includes('w')) ch = cw / s.aspect; else cw = ch * s.aspect;
         // …and it stops at the edges of the usable screen (the side being dragged grows; the other stays put)
-        const roomW = (dir.includes('w') ? f.x + f.w : this.sw - f.x) - extraW;
-        const roomH = (dir.includes('n') ? f.y + f.h - this.workarea.top : this.sh - this.workarea.bottom - f.y) - extraH;
+        const roomW = (dir.includes('w') ? f.x + f.w - ra.x : ra.x + ra.w - f.x) - extraW;
+        const roomH = (dir.includes('n') ? f.y + f.h - ra.y : ra.y + ra.h - f.y) - extraH;
         const k = Math.min(1, s.maxW ? s.maxW / cw : 1, s.maxH ? s.maxH / ch : 1, roomW > 0 ? roomW / cw : 1, roomH > 0 ? roomH / ch : 1);
         const kk = Math.max(k, s.minW ? s.minW / cw : 0, s.minH ? s.minH / ch : 0);
         cw = Math.round(cw * kk); ch = Math.round(ch * kk);
@@ -964,10 +1036,12 @@ class WindowManager extends EventEmitter {
    * but only these rects take clicks — everything else passes through to the apps below. While a popover
    * is open (modal) the whole screen is clickable, so a click outside it can close it.
    */
-  setShellInput(rects, modal) {
-    if (!this.shell || !this.Shape) return;
-    const r = modal ? [[0, 0, this.sw, this.sh]] : rects.length ? rects : [[0, 0, 1, 1]];
-    this.Shape.Rectangles(this.Shape.Op.Set, this.Shape.Kind.Input, this.shell, 0, 0, r);
+  setShellInput(rects, modal, xid = this.shell) {
+    if (!xid || !this.Shape) return;
+    const s = this.shellEntry(xid);
+    s.input = { rects, modal };
+    const r = modal ? [[0, 0, s.w, s.h]] : rects.length ? rects : [[0, 0, 1, 1]];
+    this.Shape.Rectangles(this.Shape.Op.Set, this.Shape.Kind.Input, xid, 0, 0, r);
   }
 
   /**
@@ -975,18 +1049,20 @@ class WindowManager extends EventEmitter {
    * shell. picom blurs what is behind each of them, with rounded corners chosen by the window's name.
    * regions: [{ x, y, w, h, r }] — r is one of the radius buckets listed in session/picom.conf.
    */
-  setBlurRegions(regions) {
-    if (!this.argbVisual || !this.shell) return;
-    const X = this.X;
+  setBlurRegions(regions, xid = this.shell) {
+    if (!this.argbVisual || !xid) return;
+    const X = this.X, s = this.shellEntry(xid), pool = s.blurPool;
     let restack = false;
+    // the shell reports them relative to itself; blur windows live on the root: add where the shell sits
+    regions = regions.map((g) => ({ ...g, x: g.x + s.ox, y: g.y + s.oy }));
     regions.forEach((g, i) => {
-      let b = this.blurPool[i];
+      let b = pool[i];
       if (!b) {
         b = { id: X.AllocID(), mapped: false, geo: '', name: '' };
         X.CreateWindow(b.id, this.root, g.x, g.y, Math.max(1, g.w), Math.max(1, g.h), 0, 32, x11.InputOutput, this.argbVisual,
           { backgroundPixel: 0, borderPixel: 0, overrideRedirect: 1, colormap: this.argbColormap });
         if (this.Shape) this.Shape.Rectangles(this.Shape.Op.Set, this.Shape.Kind.Input, b.id, 0, 0, []);
-        this.blurPool[i] = b;
+        pool[i] = b;
       }
       const name = 'LiquidBlur r' + g.r;
       if (b.name !== name) { b.name = name; X.ChangeProperty(0, b.id, this.A.WM_NAME, this.A.STRING, 8, Buffer.from(name)); }
@@ -994,11 +1070,11 @@ class WindowManager extends EventEmitter {
       if (b.geo !== geo) { b.geo = geo; X.ConfigureWindow(b.id, { x: g.x, y: g.y, width: Math.max(1, g.w), height: Math.max(1, g.h) }); }
       if (!b.mapped) { b.mapped = true; X.MapWindow(b.id); restack = true; }
     });
-    for (let i = regions.length; i < this.blurPool.length; i++) {
-      const b = this.blurPool[i];
+    for (let i = regions.length; i < pool.length; i++) {
+      const b = pool[i];
       if (b.mapped) { b.mapped = false; b.geo = ''; X.UnmapWindow(b.id); }
     }
-    if (restack) for (const b of this.blurPool) if (b.mapped) X.ConfigureWindow(b.id, { sibling: this.shell, stackMode: 1 });
+    if (restack) for (const b of pool) if (b.mapped) X.ConfigureWindow(b.id, { sibling: xid, stackMode: 1 });
   }
 
   async reloadCursor() {
@@ -1006,6 +1082,11 @@ class WindowManager extends EventEmitter {
   }
 
   /** Arm/disarm the screen-edge strips (only while the Dock or menu bar is hidden). */
+  /** The reveal strips sit on the main monitor's top and bottom edges. */
+  placeEdges() {
+    const m = this.prim();
+    for (const [side, e] of Object.entries(this.edges || {})) this.X.ConfigureWindow(e.id, { x: m.x, y: side === 'bottom' ? m.y + m.h - e.hgt : m.y, width: m.w, height: e.hgt });
+  }
   setEdges({ top, bottom }) {
     let changed = false;
     for (const [side, on] of [['top', !!top], ['bottom', !!bottom]]) {
@@ -1034,8 +1115,9 @@ class WindowManager extends EventEmitter {
     }, side === 'bottom' ? 280 : 220);
   }
 
-  setWorkarea(top, bottom) {
-    this.workarea = { top, bottom };
+  setWorkarea(top, bottom, xid = this.shell) {
+    if (xid && this.shells.has(xid)) this.shells.get(xid).work = { top, bottom };
+    if (!xid || xid === this.shell) this.workarea = { top, bottom };
     this.updateWorkarea();
   }
   updateWorkarea() {

@@ -244,68 +244,96 @@ const render = {
     let info = { backend: 'none', displays: [] };
     try { info = await api.sys.displays(); } catch { /* backend unavailable */ }
     const ds = info.displays;
-    const enabled = ds.filter((d) => d.enabled);
-    if (!displayState.sel || !ds.some((d) => d.name === displayState.sel)) displayState.sel = (ds.find((d) => d.primary) || ds[0])?.name;
-    const sel = ds.find((d) => d.name === displayState.sel);
-    // working copy of the selected display's settings
-    const draft = sel ? { ...sel, ...(displayState.draft?.name === sel.name ? displayState.draft : {}) } : null;
-    displayState.draft = draft;
+    // A working copy of every display's settings: drag the monitors to arrange them, change any of them, then
+    // Apply sets the whole layout at once. A fresh copy whenever the real setup changed under us.
+    const sig = JSON.stringify(ds.map((d) => [d.name, ...DISP_KEYS.map((k) => d[k])]));
+    if (!displayState.drafts || displayState.sig !== sig) { displayState.sig = sig; displayState.drafts = ds.map((d) => ({ ...d })); }
+    const drafts = displayState.drafts, orig = (name) => ds.find((d) => d.name === name);
+    if (!displayState.sel || !drafts.some((d) => d.name === displayState.sel)) displayState.sel = (drafts.find((d) => d.primary) || drafts[0])?.name;
+    const draft = drafts.find((d) => d.name === displayState.sel);
+    const enabled = drafts.filter((d) => d.enabled);
+    const changed = drafts.some((d) => DISP_KEYS.some((k) => d[k] !== orig(d.name)?.[k]));
+    const set = (patch) => { Object.assign(draft, patch); rerender(); };
 
-    // arrangement preview: monitors drawn to scale; click one to edit it
+    // the arrangement: monitors to scale. Click one to edit it; drag it next to another to move it there.
     const arr = h('div.disp-arrange');
     if (enabled.length) {
-      const ext = (d) => (d.rotation % 180 ? [d.height, d.width] : [d.width, d.height]).map((v) => v / (d.scale || 1));
+      const ext = (d) => (d.rotation % 180 ? [d.height, d.width] : [d.width, d.height]);
       const minX = Math.min(...enabled.map((d) => d.x)), minY = Math.min(...enabled.map((d) => d.y));
       const maxX = Math.max(...enabled.map((d) => d.x + ext(d)[0])), maxY = Math.max(...enabled.map((d) => d.y + ext(d)[1]));
-      const k = Math.min(430 / (maxX - minX || 1), 140 / (maxY - minY || 1));
-      const box = h('div.disp-canvas', { style: { width: (maxX - minX) * k + 'px', height: (maxY - minY) * k + 'px' } });
+      const k = Math.min(380 / (maxX - minX || 1), 150 / (maxY - minY || 1));
+      // room around the layout so a monitor can be dragged to any side of the others
+      const padX = 110, padY = 60;
+      const box = h('div.disp-canvas', { style: { width: (maxX - minX) * k + padX * 2 + 'px', height: (maxY - minY) * k + padY * 2 + 'px' } });
       for (const d of enabled) {
         const [w, hh] = ext(d);
-        box.append(h('div.disp-mon' + (d.name === displayState.sel ? '.sel' : ''), { style: { left: (d.x - minX) * k + 'px', top: (d.y - minY) * k + 'px', width: w * k - 4 + 'px', height: hh * k - 4 + 'px' },
-          onclick: () => { displayState.sel = d.name; displayState.draft = null; rerender(); } }, h('b', d.name), h('small', `${d.width}×${d.height}`), d.primary ? h('i', 'Main') : null));
+        const el = h('div.disp-mon' + (d.name === displayState.sel ? '.sel' : ''), { style: { left: padX + (d.x - minX) * k + 'px', top: padY + (d.y - minY) * k + 'px', width: w * k - 4 + 'px', height: hh * k - 4 + 'px' } },
+          h('b', d.name), h('small', `${d.width}×${d.height}`), d.primary ? h('i', 'Main') : null);
+        el.addEventListener('pointerdown', (e) => {
+          if (e.button !== 0) return;
+          e.preventDefault();
+          el.setPointerCapture(e.pointerId);
+          const sx = e.clientX, sy = e.clientY, l0 = parseFloat(el.style.left), t0 = parseFloat(el.style.top);
+          let moved = false;
+          const mv = (ev) => {
+            if (!moved && Math.hypot(ev.clientX - sx, ev.clientY - sy) < 4) return;
+            moved = true; el.classList.add('dragging');
+            el.style.left = l0 + ev.clientX - sx + 'px'; el.style.top = t0 + ev.clientY - sy + 'px';
+          };
+          const up = (ev) => {
+            el.removeEventListener('pointermove', mv); el.removeEventListener('pointerup', up); el.removeEventListener('pointercancel', up);
+            displayState.sel = d.name;
+            if (moved) {
+              // where it was dropped, in screen pixels, then snapped against the nearest edge of another monitor
+              const nx = d.x + (ev.clientX - sx) / k, ny = d.y + (ev.clientY - sy) / k;
+              Object.assign(d, snapDisplay(d, nx, ny, enabled.filter((o) => o !== d), ext));
+              normalizeDisplays(enabled);
+            }
+            rerender();
+          };
+          el.addEventListener('pointermove', mv); el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
+        });
+        box.append(el);
       }
       arr.append(box);
     }
-    const disabledList = ds.filter((d) => !d.enabled);
-    const tabs = h('div.segmented', ...ds.map((d) => h('button' + (d.name === displayState.sel ? '.on' : ''), { onclick: () => { displayState.sel = d.name; displayState.draft = null; rerender(); } }, d.name + (d.enabled ? '' : ' (off)'))));
+    const disabledList = drafts.filter((d) => !d.enabled);
+    const tabs = h('div.segmented', ...drafts.map((d) => h('button' + (d.name === displayState.sel ? '.on' : ''), { onclick: () => { displayState.sel = d.name; rerender(); } }, d.name + (d.enabled ? '' : ' (off)'))));
+    const actions = () => h('div.row', h('div.label', changed ? h('small', 'You have unapplied changes.') : null),
+      h('button.btn', { disabled: !changed, onclick: () => { displayState.drafts = null; rerender(); } }, 'Revert'),
+      h('button.btn.primary', { disabled: !changed || info.backend !== 'x11', onclick: () => applyDisplays(ds, drafts) }, 'Apply'));
 
-    const out = [hero('display', 'Displays', info.backend === 'x11' ? 'Arrange and configure your monitors. Changes are remembered for your next login.'
+    const out = [hero('display', 'Displays', info.backend === 'x11' ? 'Drag the displays to arrange them. Changes are remembered for your next login.'
       : 'LiquidDesktop is running in a window, so this is a preview: monitors can be changed when you log into the LiquidDesktop session.')];
     if (ds.length) {
       out.push(h('div.group', { style: { padding: '16px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' } }, arr, ds.length > 1 ? tabs : null,
-        disabledList.length ? h('small.muted', `${disabledList.length} connected display${disabledList.length > 1 ? 's are' : ' is'} turned off — select it above to turn it on.`) : null));
+        disabledList.length ? h('small.muted', `${disabledList.length} connected display${disabledList.length > 1 ? 's are' : ' is'} turned off — select it above to turn it on.`) : null),
+        h('div.group', actions()));
     }
     if (draft) {
       const mode = draft.modes.find((m) => m.width === draft.width && m.height === draft.height) || draft.modes[0];
-      const set = (patch) => { Object.assign(draft, patch); displayState.draft = draft; rerender(); };
       const resSel = h('select.field.square', { style: { height: '28px', minWidth: '190px' }, onchange: (e) => { const m = draft.modes[+e.target.value]; set({ width: m.width, height: m.height, refresh: m.rates[0] }); } },
         ...draft.modes.map((m, i) => h('option', { value: i, selected: m === mode }, `${m.width} × ${m.height}${i === 0 ? '  (largest)' : ''}`)));
       const rateSel = h('select.field.square', { style: { height: '28px', minWidth: '190px' }, onchange: (e) => set({ refresh: +e.target.value }) },
         ...(mode?.rates || []).map((r) => h('option', { value: r, selected: Math.abs(r - draft.refresh) < 0.05 }, `${r.toFixed(r % 1 ? 2 : 0)} Hz`)));
       const rotSel = h('select.field.square', { style: { height: '28px', minWidth: '190px' }, onchange: (e) => set({ rotation: +e.target.value }) },
         ...[[0, 'Standard'], [90, '90°'], [180, '180°'], [270, '270°']].map(([v, l]) => h('option', { value: v, selected: draft.rotation === v }, l)));
-      const others = enabled.filter((d) => d.name !== draft.name);
-      const posSel = others.length ? h('select.field.square', { style: { height: '28px', minWidth: '190px' }, onchange: (e) => {
-        const [where, ref] = e.target.value.split(':');
-        const o = others.find((d) => d.name === ref);
-        if (!o) return;
-        const ow = o.rotation % 180 ? o.height : o.width, oh = o.rotation % 180 ? o.width : o.height;
-        const dw = draft.rotation % 180 ? draft.height : draft.width, dh = draft.rotation % 180 ? draft.width : draft.height;
-        set({ x: where === 'right' ? o.x + ow / (o.scale || 1) : where === 'left' ? o.x - dw / (draft.scale || 1) : o.x, y: where === 'below' ? o.y + oh / (o.scale || 1) : where === 'above' ? o.y - dh / (draft.scale || 1) : o.y });
-      } }, h('option', { value: '' }, `Current (${Math.round(draft.x)}, ${Math.round(draft.y)})`),
-        ...others.flatMap((o) => [['right', 'Right of'], ['left', 'Left of'], ['above', 'Above'], ['below', 'Below']].map(([w, l]) => h('option', { value: `${w}:${o.name}` }, `${l} ${o.name}`)))) : null;
-      const changed = ['width', 'height', 'refresh', 'scale', 'rotation', 'x', 'y', 'enabled', 'primary'].some((k) => draft[k] !== sel[k]);
       out.push(h('div.group-title', `${draft.label !== draft.name ? draft.label + ' — ' : ''}${draft.name}`),
         h('div.group',
-          ds.length > 1 ? row('Use this display', h('label.toggle', h('input', { type: 'checkbox', checked: draft.enabled, onchange: (e) => set({ enabled: e.target.checked, ...(e.target.checked && !draft.width ? { width: draft.modes[0].width, height: draft.modes[0].height, refresh: draft.modes[0].rates[0] } : {}) }) }), h('span'))) : null,
+          ds.length > 1 ? row('Use this display', h('label.toggle', h('input', { type: 'checkbox', checked: draft.enabled, onchange: (e) => {
+            const on = e.target.checked;
+            // a display turned on goes to the right of the others
+            const right = Math.max(0, ...enabled.filter((o) => o !== draft).map((o) => o.x + (o.rotation % 180 ? o.height : o.width)));
+            set({ enabled: on, ...(on ? { x: right, y: 0, ...(!draft.width ? { width: draft.modes[0].width, height: draft.modes[0].height, refresh: draft.modes[0].rates[0] } : {}) } : { primary: false }) });
+          } }), h('span'))) : null,
           draft.enabled ? row('Resolution', resSel) : null,
           draft.enabled ? row('Refresh rate', rateSel) : null,
           draft.enabled ? row('Rotation', rotSel) : null,
-          draft.enabled && posSel ? row('Position', posSel) : null,
-          draft.enabled && info.backend === 'x11' && ds.length > 1 ? row('Main display', h('label.toggle', h('input', { type: 'checkbox', checked: draft.primary, onchange: (e) => set({ primary: e.target.checked }) }), h('span')), 'Holds the menu bar and Dock') : null,
-          h('div.row', h('div.label', changed ? h('small', 'You have unapplied changes.') : null),
-            h('button.btn', { disabled: !changed, onclick: () => { displayState.draft = null; rerender(); } }, 'Revert'),
-            h('button.btn.primary', { disabled: !changed || info.backend !== 'x11', onclick: () => applyDisplay(sel, draft) }, 'Apply'))));
+          draft.enabled && info.backend === 'x11' && ds.length > 1 ? row('Main display', h('label.toggle', h('input', { type: 'checkbox', checked: draft.primary, onchange: (e) => {
+            if (e.target.checked) for (const o of drafts) o.primary = o === draft;
+            set({ primary: e.target.checked || !drafts.some((o) => o !== draft && o.primary) });
+          } }), h('span')), 'Holds the Dock, desktop icons and widgets') : null,
+          actions()));
     }
     // Interface size: LiquidDesktop drawn bigger (crisp, not stretched), and the DPI other apps size their text by
     const ui = isSession ? await api.sys.uiScale?.().catch(() => null) : null;
@@ -1168,24 +1196,51 @@ function bluetoothPane(first) {
   return [root];
 }
 
-const displayState = { sel: null, draft: null };
+const displayState = { sel: null, drafts: null, sig: '' };
+const DISP_KEYS = ['width', 'height', 'refresh', 'rotation', 'x', 'y', 'enabled', 'primary'];
+// A dragged monitor lands touching the nearest side of another one (never overlapping), lined up with its
+// edge or center when it's close to that.
+function snapDisplay(d, nx, ny, others, ext) {
+  if (!others.length) return { x: 0, y: 0 };
+  const [w, hh] = ext(d);
+  let best = null;
+  for (const o of others) {
+    const [ow, oh] = ext(o);
+    const alignY = (y) => { for (const t of [o.y, o.y + oh - hh, o.y + (oh - hh) / 2]) if (Math.abs(y - t) < hh * 0.12) return t; return Math.min(Math.max(y, o.y - hh + 1), o.y + oh - 1); };
+    const alignX = (x) => { for (const t of [o.x, o.x + ow - w, o.x + (ow - w) / 2]) if (Math.abs(x - t) < w * 0.12) return t; return Math.min(Math.max(x, o.x - w + 1), o.x + ow - 1); };
+    for (const c of [{ x: o.x + ow, y: alignY(ny) }, { x: o.x - w, y: alignY(ny) }, { x: alignX(nx), y: o.y - hh }, { x: alignX(nx), y: o.y + oh }]) {
+      const overlaps = others.some((p) => { const [pw, ph] = ext(p); return c.x < p.x + pw && c.x + w > p.x && c.y < p.y + ph && c.y + hh > p.y; });
+      if (overlaps) continue;
+      const dist = Math.hypot(c.x - nx, c.y - ny);
+      if (!best || dist < best.dist) best = { ...c, dist };
+    }
+  }
+  return best ? { x: Math.round(best.x), y: Math.round(best.y) } : { x: d.x, y: d.y };
+}
+// the layout starts at 0,0 (what xrandr expects)
+function normalizeDisplays(list) {
+  const minX = Math.min(...list.map((d) => d.x)), minY = Math.min(...list.map((d) => d.y));
+  for (const d of list) { d.x -= minX; d.y -= minY; }
+}
 const mouseState = { sel: '*' };
 const shellMode = () => document.documentElement.dataset.mode;
 // mouse settings apply as you drag, but the system is only asked once things settle
 let applyTimer;
 const debounceApply = (cfg) => () => { clearTimeout(applyTimer); applyTimer = setTimeout(() => api.sys.inputApply(cfg).catch(() => {}), 180); };
 
-// apply, then ask to keep the change — it reverts by itself after 15 seconds (in case the screen went blank)
-async function applyDisplay(before, after) {
-  const r = await api.sys.setDisplay(after.name, after).catch((e) => ({ ok: false, err: e.message }));
-  if (r && r.ok === false) { alertDialog({ title: 'Couldn’t change the display', message: r.err || 'The display rejected that setting.' }); return; }
+// apply the whole layout, then ask to keep it — it reverts by itself after 15 seconds (in case a screen went blank)
+async function applyDisplays(before, after) {
+  const r = await api.sys.setDisplays(after.map((d) => ({ ...d }))).catch((e) => ({ ok: false, err: e.message }));
+  if (r && r.ok === false) { alertDialog({ title: 'Couldn’t change the displays', message: r.err || 'The display rejected that setting.' }); return; }
+  // let the screens settle (a mode set takes a moment) before the question goes up, so it's drawn on the new setup
+  await new Promise((res) => setTimeout(res, 900));
   let n = 15, settled = false;
   const p = alertDialog({ title: 'Keep these display settings?', message: `Reverting in ${n} seconds.`, buttons: [{ label: 'Revert', value: 'revert' }, { label: 'Keep Changes', value: 'keep', primary: true }] });
   const t = setInterval(() => { n--; const m = document.querySelector('.global-alert-layer .alert p'); if (m) m.textContent = `Reverting in ${n} seconds.`; if (n <= 0 && !settled) document.querySelector('.global-alert-layer .btn:not(.primary)')?.click(); }, 1000);
   const res = await p;
   settled = true; clearInterval(t);
-  if (res.button !== 'keep') await api.sys.setDisplay(before.name, before).catch(() => {});
-  displayState.draft = null;
+  if (res.button !== 'keep') await api.sys.setDisplays(before.map((d) => ({ ...d }))).catch(() => {});
+  displayState.drafts = null;
   setTimeout(rerender, 400);
 }
 

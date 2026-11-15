@@ -1232,6 +1232,7 @@ const debounceApply = (cfg) => () => { clearTimeout(applyTimer); applyTimer = se
 async function applyDisplays(before, after) {
   const r = await api.sys.setDisplays(after.map((d) => ({ ...d }))).catch((e) => ({ ok: false, err: e.message }));
   if (r && r.ok === false) { alertDialog({ title: 'Couldn’t change the displays', message: r.err || 'The display rejected that setting.' }); return; }
+  if (r?.unchanged) { displayState.drafts = null; rerender(); return; }
   // let the screens settle (a mode set takes a moment) before the question goes up, so it's drawn on the new setup
   await new Promise((res) => setTimeout(res, 900));
   let n = 15, settled = false;
@@ -1239,7 +1240,7 @@ async function applyDisplays(before, after) {
   const t = setInterval(() => { n--; const m = document.querySelector('.global-alert-layer .alert p'); if (m) m.textContent = `Reverting in ${n} seconds.`; if (n <= 0 && !settled) document.querySelector('.global-alert-layer .btn:not(.primary)')?.click(); }, 1000);
   const res = await p;
   settled = true; clearInterval(t);
-  if (res.button !== 'keep') await api.sys.setDisplays(before.map((d) => ({ ...d }))).catch(() => {});
+  if (res.button !== 'keep' && !r?.unchanged) await api.sys.setDisplays(before.map((d) => ({ ...d }))).catch(() => {});
   displayState.drafts = null;
   setTimeout(rerender, 400);
 }

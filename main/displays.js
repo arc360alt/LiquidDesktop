@@ -83,16 +83,6 @@ async function list() {
 }
 
 const KEYS = ['width', 'height', 'refresh', 'rotation', 'x', 'y', 'enabled', 'primary'];
-const outputArgs = (name, cfg) => {
-  const args = ['--output', name];
-  if (cfg.enabled === false) return [...args, '--off'];
-  args.push('--mode', `${cfg.width}x${cfg.height}`);
-  if (cfg.refresh) args.push('--rate', String(cfg.refresh));
-  args.push('--rotate', { 0: 'normal', 90: 'left', 180: 'inverted', 270: 'right' }[cfg.rotation || 0]);
-  args.push('--pos', `${Math.round(cfg.x)}x${Math.round(cfg.y)}`);
-  if (cfg.primary) args.push('--primary');
-  return args;
-};
 const slim = (cfg) => Object.fromEntries(KEYS.map((k) => [k, cfg[k]]));
 const save = (list) => {
   const saved = readSaved();
@@ -119,12 +109,40 @@ async function applyAll(list) {
     if (o.enabled !== false) { o.x = Math.round(o.x - minX); o.y = Math.round(o.y - minY); o.primary = !!o.primary && !seen; if (o.primary) seen = true; } else o.primary = false;
     return o;
   });
-  // monitors being turned off go first, so the ones staying on have the room (CRTCs, screen size)
-  const order = [...fixed.filter((c) => c.enabled === false), ...fixed.filter((c) => c.enabled !== false)];
-  const r = await run('xrandr', order.flatMap((c) => outputArgs(c.name, c)));
-  if (r.ok) save(fixed);
-  return r;
+  // Only what changed is sent (NVIDIA's driver re-programs every output it's told about, and a full mode set
+  // of all monitors at once hung its display engine), and never two at a time.
+  if (busy) return { ok: false, err: 'Still applying the previous display change. Try again in a few seconds.' };
+  busy = true;
+  try {
+    const now = (await listX11()).reduce((m, d) => (m[d.name] = d, m), {});
+    const args = [];
+    const off = fixed.filter((c) => c.enabled === false && now[c.name]?.enabled);
+    for (const c of off) args.push('--output', c.name, '--off');
+    for (const c of fixed.filter((x) => x.enabled !== false)) {
+      const d = now[c.name] || {};
+      const modeChanged = !d.enabled || d.width !== c.width || d.height !== c.height || (c.refresh && Math.abs((d.refresh || 0) - c.refresh) > 0.05) || (d.rotation || 0) !== (c.rotation || 0);
+      const posChanged = d.x !== c.x || d.y !== c.y;
+      const primChanged = !!d.primary !== !!c.primary && c.primary;
+      if (!modeChanged && !posChanged && !primChanged) continue;
+      const a = ['--output', c.name];
+      if (modeChanged) {
+        a.push('--mode', `${c.width}x${c.height}`);
+        if (c.refresh) a.push('--rate', String(c.refresh));
+        a.push('--rotate', { 0: 'normal', 90: 'left', 180: 'inverted', 270: 'right' }[c.rotation || 0]);
+      }
+      a.push('--pos', `${c.x}x${c.y}`);
+      if (c.primary) a.push('--primary');
+      args.push(...a);
+    }
+    if (!args.length) { save(fixed); return { ok: true, unchanged: true }; }
+    const r = await run('xrandr', args);
+    if (r.ok) save(fixed);
+    // give the driver time to finish before anything else touches the screens
+    await new Promise((res) => setTimeout(res, 1500));
+    return r;
+  } finally { busy = false; }
 }
+let busy = false;
 
 /** One monitor (older callers): the rest of the layout is kept as it is. */
 async function apply(name, cfg) {

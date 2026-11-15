@@ -673,6 +673,10 @@ class WindowManager extends EventEmitter {
   startClientGuard() {
     if (this.clientGuard) return;
     this.clientGuard = setInterval(() => { for (const w of this.windows.values()) if (w.kind === 'native' && !w.minimized) this.raiseClient(w, false); }, 1500);
+    // Chromium resets a window's input shape to the whole window when it's mapped, moved or resized, at times
+    // we don't hear about: a transparent shell / menu bar layer then swallows every click on its monitor (apps
+    // under it can't be clicked or moved). Re-assert each one's own shape every second; it's a tiny request.
+    this.shapeGuard = setInterval(() => this.reapplyShellInput(), 1000);
   }
   /**
    * How often drags and animations step: once per frame of the fastest screen (a 240 Hz panel gets ~4 ms,

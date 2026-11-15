@@ -85,8 +85,6 @@ async function startSession({ preload }) {
   recover('desktop', desktop, () => desktop.loadFile(INDEX, { query: { mode: 'session', layer: 'desktop' } }));
   app.on('child-process-gone', (_e, d) => {
     if (d.reason === 'clean-exit') return;
-    // the GPU process restarted (a mode set on NVIDIA can do it): windows must draw again or they stay frozen
-    if (d.type === 'GPU') for (const ms of [800, 2500]) setTimeout(() => { for (const bw of BrowserWindow.getAllWindows()) if (!bw.isDestroyed()) bw.webContents.invalidate(); }, ms);
     crashLog(`[session] ${d.type}${d.name ? ' (' + d.name + ')' : ''} process gone: ${d.reason} (exit ${d.exitCode})`);
   });
 
@@ -331,8 +329,10 @@ async function startSession({ preload }) {
     // never repaints, so a dialog that opened meanwhile (Settings' "Keep these display settings?") was invisible
     // and swallowed every click. Make every window of ours draw a fresh frame, now and once the GPU has settled.
     // …and the shells' click-through shapes, which Chromium reset when they were resized
-    const repaint = () => { wm.reapplyShellInput(); for (const bw of BrowserWindow.getAllWindows()) if (!bw.isDestroyed()) bw.webContents.invalidate(); };
-    repaint(); for (const ms of [150, 600, 2000]) setTimeout(repaint, ms);
+    // (shapes are cheap and re-sent a few times; the repaint is one, once the driver has settled — repainting
+    // every window during a mode set added GPU load right when NVIDIA's driver could least take it)
+    for (const ms of [0, 150, 600, 2000]) setTimeout(() => wm.reapplyShellInput(), ms);
+    setTimeout(() => { for (const bw of BrowserWindow.getAllWindows()) if (!bw.isDestroyed()) bw.webContents.invalidate(); }, 2500);
   };
   relayout();
   let relayoutTimer;

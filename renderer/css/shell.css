@@ -601,3 +601,4 @@
 .mb-rec-dot { width: 9px; height: 9px; border-radius: 50%; background: #ff3b30; box-shadow: 0 0 6px rgba(255, 59, 48, 0.7); animation: recPulse 1.4s ease-in-out infinite alternate; }
 .mb-rec.stopping .mb-rec-dot { animation: none; opacity: 0.5; }
 @keyframes recPulse { from { opacity: 1; } to { opacity: 0.45; } }
+.cc-sq.cc-rec.on { background: #ff3b30 !important; }

@@ -147,7 +147,8 @@ function stop() {
 }
 
 const status = () => ({
-  supported: mode === 'session' && !!process.env.DISPLAY && !!findFfmpeg(),
+  // Record is offered whenever the session can record; without ffmpeg, starting says what to install
+  supported: mode === 'session' && !!process.env.DISPLAY, ffmpeg: !!findFfmpeg(),
   recording: !!rec, started: rec?.started || 0, file: rec?.file || null, encoder: rec?.encoder || null,
 });
 

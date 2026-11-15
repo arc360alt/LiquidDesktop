@@ -10,6 +10,10 @@ import { prompt } from './menus.js';
 import { DEV_ICONS, btIcon, onBluetooth } from './devices.js';
 
 let panel = null, mediaTimer = null, offStatus = null;
+// recording the screen right now (main/recorder.js): the Record button turns into Stop
+let recording = false;
+api.rec?.status?.().then((r) => { recording = !!r?.recording; }).catch(() => {});
+api.rec?.onChanged?.((r) => { recording = !!r?.recording; });
 
 function slider(icon, value, onInput, onCommit) {
   const fill = h('div.fill');
@@ -103,7 +107,9 @@ function mainView() {
   const ns = sq(sym.nightshift, 'Night Shift', store.get('nightShift'), () => { store.set('nightShift', !store.get('nightShift')); render(); });
   const lockB = sq(sym.lock, 'Lock', false, () => { close(); shell.lock(); });
   const mission = sq(sym.layers, 'Desktops', false, () => { close(); shell.mission(); });
-  const widgets = sq(sym.widgets, 'Widgets', false, () => { close(); shell.editWidgets(); });
+  // Record: the screenshot tool in Record mode (pick an area, a window or the screen); Stop while recording
+  const rec = sq(sym.record, recording ? 'Stop' : 'Record', recording, () => { close(); if (recording) api.rec.stop(); else setTimeout(() => shell.screenRecord(), 350); });
+  if (recording) rec.classList.add('cc-rec');
 
   const batt = s.battery;
   const extra = batt && batt.percent != null ? h('div.cc-mod.span4.cc-pill', h('div.circ', { html: sym.bolt, style: { width: '32px', height: '32px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: batt.charging ? '#34c759' : 'rgba(128,128,128,.28)', color: batt.charging ? '#fff' : 'inherit' } }),
@@ -111,7 +117,7 @@ function mainView() {
     h('div.spacer'), h('div', { style: { width: '90px', height: '8px', borderRadius: '4px', background: 'rgba(128,128,128,.3)', overflow: 'hidden' } },
       h('div', { style: { width: batt.percent + '%', height: '100%', background: batt.percent < 20 ? '#ff3b30' : '#34c759' } }))) : null;
 
-  return [conn, np, focus, dark, shot, bright, sound, ns, lockB, mission, widgets, extra];
+  return [conn, np, focus, dark, shot, bright, sound, ns, lockB, mission, rec, extra];
 }
 
 async function wifiView() {

@@ -58,9 +58,9 @@ async function record(r, k) {
 /** opts.kind: 'capture' (a picture) or 'record' (a video); the last one used otherwise. */
 export async function screenshotTool(opts = {}) {
   if (open) return;
+  open = true;   // before anything is awaited, so two quick calls can't open two tools
   const recStatus = await api.rec?.status?.().catch(() => null);
-  if (recStatus?.recording) return api.rec.stop();   // the shortcut again while recording: stop
-  open = true;
+  if (recStatus?.recording) { open = false; return api.rec.stop(); }   // the shortcut again while recording: stop
   const canRecord = !!recStatus?.supported;
   let kind = canRecord ? opts.kind || store.get('shotKind') || 'capture' : 'capture';
   let shot;

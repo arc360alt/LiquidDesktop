@@ -5,6 +5,7 @@
 - Switch the DE to using Wayland instead of X11 (do this over Thanksgiving break when I have time)
 - Improve the widets and make them look better and function smoother, and also fix up the widget creator as it looks really broken if the window is too small
 - Fix the sound and brightness sliders still looking a bit scuffed and broken.
+- Fix multidesktop not working AT ALL, so if the DE is used on any PC with 2 or more monitors the entire DE breaks down and just stops functioning entierly/breaks and lags and more.
 
 # Fixed
 - Make it so you can hide the battery icon entierly if your on a PC with no device connected that reports its battery. (Add this as a toggle switch under the top bar menu with the 24 hour clock and show secconds option)

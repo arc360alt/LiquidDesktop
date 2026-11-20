@@ -13,10 +13,11 @@ import { allControls, setCfg, cfg, sizeOf, SIZE_NAMES } from './ccwidgets.js';
 import { validate, saveCustom, customWidgets, isCC } from './customwidget.js';
 import { catalog } from './catalog.js';
 import { appIcon } from './icons.js';
+import { phoneState, mainPhone, onPhone, deviceIcon, signalBars, PHONE_ICONS, phoneAct, sendFiles, browsePhone, has } from './phone.js';
 
 // which controls Control Center shows, in order (Edit Controls); the built-in ones can always be added back
 const BUILTIN = [['conn', 'Connectivity'], ['np', 'Now Playing'], ['focus', 'Focus'], ['dark', 'Dark Mode'], ['shot', 'Screenshot'], ['bright', 'Display'],
-  ['sound', 'Sound'], ['ns', 'Night Shift'], ['lock', 'Lock'], ['mission', 'Desktops'], ['rec', 'Record'], ['battery', 'Battery']];
+  ['sound', 'Sound'], ['ns', 'Night Shift'], ['lock', 'Lock'], ['mission', 'Desktops'], ['rec', 'Record'], ['battery', 'Battery'], ['phone', 'Phone']];
 const DEFAULT_LAYOUT = BUILTIN.map(([id]) => id);
 const layout = () => { const l = store.get('ccLayout'); return Array.isArray(l) ? l : DEFAULT_LAYOUT; };
 let editing = false;
@@ -130,7 +131,7 @@ function mainView() {
     h('div.spacer'), h('div', { style: { width: '90px', height: '8px', borderRadius: '4px', background: 'rgba(128,128,128,.3)', overflow: 'hidden' } },
       h('div', { style: { width: batt.percent + '%', height: '100%', background: batt.percent < 20 ? '#ff3b30' : '#34c759' } }))) : null;
 
-  const builtins = { conn, np, focus, dark, shot, bright, sound, ns, lock: lockB, mission, rec, battery: extra };
+  const builtins = { conn, np, focus, dark, shot, bright, sound, ns, lock: lockB, mission, rec, battery: extra, phone: phoneModule() };
   const ctx = { sq, close, render: (v) => render(v), shell, wm, layout };
   const controls = allControls();
   const make = (id) => {
@@ -294,6 +295,55 @@ function displayView() {
   }
 }
 
+// Phone (KDE Connect): name, battery and signal; Find rings it; click for the details. Not shown without a phone.
+function phoneModule() {
+  const d = mainPhone();
+  if (!d) return editing ? h('div.cc-mod.span4.cc-pill.cc-phone', h('div.circ.ph-circ', { html: PHONE_ICONS.phone }), h('div.t', h('b', 'Phone'), h('small', 'Pair a phone in Settings'))) : null;
+  const b = d.battery;
+  const sub = !d.reachable ? 'Not Connected' : [b ? `${b.percent}%${b.charging ? ' ⚡︎' : ''}` : 'Connected', d.media?.playing ? '♪ ' + d.media.title : null].filter(Boolean).join(' · ');
+  const ring = has(d, 'findmyphone') && d.reachable ? h('button.cc-more.ph-find', { title: 'Play a sound on ' + d.name, html: PHONE_ICONS.ring, onclick: (e) => { e.stopPropagation(); phoneAct(d, 'ring', null, shell.notify); } }) : null;
+  const el = h('div.cc-mod.span4.cc-pill.cc-phone' + (d.reachable ? '.on' : ''), h('div.circ.ph-circ', { html: deviceIcon(d) }),
+    h('div.t', h('b', d.name), h('small', sub)), h('div.spacer'), d.signal ? signalBars(d.signal) : null,
+    b ? h('div.ph-batt-bar', h('i', { style: { width: b.percent + '%', background: b.percent <= 20 && !b.charging ? '#ff3b30' : '#34c759' } })) : null, ring);
+  el.addEventListener('click', () => render('phone'));
+  return el;
+}
+
+function phoneView() {
+  const d = mainPhone();
+  const back = h('button.cc-back', { html: sym.chevronLeft, onclick: () => render() });
+  if (!d) return [h('div.cc-mod.cc-detail', h('h3', back, 'Phone'), h('div.cc-list', h('div.cc-list-item', { onclick: () => { close(); shell.openSettings('phone'); } }, 'Phone Settings…')))];
+  const ok = (p) => d.reachable && has(d, p);
+  const item = (icon, label, enabled, fn) => h('div.cc-list-item' + (enabled ? '' : '.disabled'), { onclick: () => enabled && fn() }, h('div.circ', { html: icon }), h('span.spacer', label));
+  const files = (path) => wm.open('files', { path });
+  const m = d.media;
+  const media = m && (m.title || m.players?.length) ? h('div.cc-phone-media', h('div.cc-np',
+    h('div.art', m.art ? { style: { backgroundImage: `url("${m.art}")` } } : { html: sym.music }),
+    h('div.meta', h('b', m.title || 'Not Playing'), h('span', [m.artist, m.player].filter(Boolean).join(' — ')))),
+  h('div.cc-np-ctrl',
+    h('button', { html: sym.prev, onclick: () => phoneAct(d, 'media', 'Previous') }),
+    h('button.pp', { html: m.playing ? sym.pause : sym.play, onclick: () => phoneAct(d, 'media', 'PlayPause') }),
+    h('button', { html: sym.next, onclick: () => phoneAct(d, 'media', 'Next') }))) : null;
+  const notifs = (d.notifications || []).slice(0, 6);
+  const head = h('div.cc-phone-head', h('div.circ.ph-circ' + (d.reachable ? '.on' : ''), { html: deviceIcon(d) }),
+    h('div.t', h('b', d.name), h('small', !d.reachable ? 'Not Connected' : d.battery ? `Battery ${d.battery.percent}%${d.battery.charging ? ', charging' : ''}` : 'Connected')),
+    h('div.spacer'), d.signal ? signalBars(d.signal) : null);
+  return [h('div.cc-mod.cc-detail.cc-phone-detail', h('h3', back, 'Phone'), head, media,
+    h('div.cc-list',
+      item(PHONE_ICONS.ring, 'Find My Phone', ok('findmyphone'), () => phoneAct(d, 'ring', null, shell.notify)),
+      item(PHONE_ICONS.clipboard, 'Send Clipboard', ok('clipboard'), () => phoneAct(d, 'clipboard', null, shell.notify).then((r) => r && shell.notify({ app: 'settings', title: d.name, body: 'Clipboard sent.' }))),
+      item(PHONE_ICONS.send, 'Send Files…', ok('share'), () => { close(); sendFiles(d, shell.notify); }),
+      item(PHONE_ICONS.folder, 'Browse Files', ok('sftp'), () => { close(); browsePhone(d, shell.notify, files); }),
+      item(sym.compose, 'Messages', d.supported.includes('sms') || has(d, 'sms'), () => { close(); wm.activate('messages'); }),
+      item(PHONE_ICONS.phone, 'Open Phone', true, () => { close(); wm.activate('phone'); })),
+    notifs.length ? h('h5.cc-sub', 'Notifications') : null,
+    notifs.length ? h('div.cc-list.cc-phone-notifs', ...notifs.map((n) => h('div.cc-list-item.cc-phone-notif',
+      n.icon ? h('img.ph-nic', { src: n.icon }) : h('div.circ', { html: sym.bell }),
+      h('div.spacer.ph-ntext', h('b', n.title || n.app), h('small', n.text)),
+      n.dismissable ? h('button.cc-back.ph-dismiss', { title: 'Dismiss', html: sym.close, onclick: (e) => { e.stopPropagation(); phoneAct(d, 'dismiss', n.id); e.currentTarget.closest('.cc-list-item').remove(); } }) : null))) : null,
+    h('div.cc-list', h('div.cc-list-item', { onclick: () => { close(); shell.openSettings('phone'); } }, 'Phone Settings…')))];
+}
+
 // Edit Controls: drag a control to move it. The others make way as you go; the order is saved on release.
 function dragControl(el, e) {
   const sx = e.clientX, sy = e.clientY;
@@ -361,7 +411,7 @@ function pickView(id) {
 async function render(view) {
   if (!panel) return;
   if (view?.startsWith?.('pick:')) { grid.innerHTML = ''; grid.append(...pickView(view.slice(5))); panel.dataset.view = view; grid.scrollTop = 0; return; }
-  const kids = view === 'wifi' ? await wifiView() : view === 'bluetooth' ? await bluetoothView() : view === 'sound' ? await soundView() : view === 'display' ? displayView() : mainView();
+  const kids = view === 'wifi' ? await wifiView() : view === 'bluetooth' ? await bluetoothView() : view === 'sound' ? await soundView() : view === 'display' ? displayView() : view === 'phone' ? phoneView() : mainView();
   // it's rebuilt whenever the status changes (volume, battery…): keep the scroll position
   const top = panel.dataset.view === (view || '') ? grid.scrollTop : 0;
   grid.innerHTML = '';
@@ -394,6 +444,8 @@ export function toggleControlCenter(view) {
   render(view === 'wifi' ? 'wifi' : undefined);
   status.refresh();
   offStatus = bus.on('status', () => { if (panel && !panel.dataset.view && !panel.matches(':active')) render(); });
+  // the phone's battery, music or notifications changed: redraw the main view or the Phone view
+  onPhone(panel, () => { if (panel && ['', 'phone'].includes(panel.dataset.view) && !panel.matches(':active') && !editing) render(panel.dataset.view || undefined); });
   mediaTimer = setInterval(updateMedia, 3000);
   setTimeout(() => document.addEventListener('mousedown', outside), 0);
 }

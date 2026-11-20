@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 const call = (name) => async (...args) => {
   const r = await ipcRenderer.invoke(name, ...args);
@@ -11,7 +11,8 @@ const names = ['sys:info', 'sys:status', 'sys:rendering', 'sys:setRendering', 's
   'fs:open', 'fs:reveal', 'fs:search', 'fs:exists', 'fs:places', 'apps:list', 'apps:info', 'apps:folders', 'apps:setFolders', 'apps:iconFor', 'apps:byId', 'apps:launch', 'apps:run', 'clip:write', 'clip:read', 'pty:create',
   'shell:toggleFullscreen', 'shell:devtools', 'shell:quit',
   'bt:state', 'bt:scan', 'bt:pair', 'bt:connect', 'bt:forget', 'bt:power', 'audio:devices', 'audio:setDefault', 'audio:setVolume', 'audio:setMute', 'defaults:list', 'defaults:apply', 'defaults:get', 'apps:openWith', 'wall:list', 'wall:add', 'wall:remove',
-  'android:status', 'android:install', 'android:uninstall', 'android:setOn', 'android:open', 'android:stop', 'android:forceQuit', 'android:playId', 'android:setMultiWindow', 'android:resizeApp', 'android:setArm', 'android:zoomApp', 'android:captions', 'android:hideCaptions', 'android:back', 'drives:list', 'drives:mount', 'drives:eject', 'rec:start', 'rec:stop', 'rec:status', 'rec:folder'];
+  'android:status', 'android:install', 'android:uninstall', 'android:setOn', 'android:open', 'android:stop', 'android:forceQuit', 'android:playId', 'android:setMultiWindow', 'android:resizeApp', 'android:setArm', 'android:zoomApp', 'android:captions', 'android:hideCaptions', 'android:back', 'drives:list', 'drives:mount', 'drives:eject', 'rec:start', 'rec:stop', 'rec:status', 'rec:folder',
+  'kdc:state', 'kdc:act', 'kdc:rename', 'kdc:refresh', 'kdc:setEnabled', 'kdc:settings', 'kdc:setReceiveDir', 'kdc:conversations', 'kdc:conversation', 'kdc:sendText', 'kdc:fetchLatest', 'kdc:attachment', 'kdc:contacts', 'kdc:syncContacts', 'kdc:calls', 'kdc:clearCalls', 'appmenu:layout', 'appmenu:event', 'appmenu:enabled', 'appmenu:setEnabled'];
 const api = {};
 for (const n of names) {
   const [ns, fn] = n.split(':');
@@ -34,6 +35,12 @@ api.sys.onUpdated = (fn) => ipcRenderer.on('sys:updated', () => fn());
 api.apps.onChanged = (fn) => ipcRenderer.on('apps:changed', () => fn());
 api.rec.onChanged = (fn) => ipcRenderer.on('rec:changed', (_e, s) => fn(s));
 api.rgb.onChanged = (fn) => ipcRenderer.on('rgb:changed', () => fn());
+api.kdc.onChanged = (fn) => ipcRenderer.on('kdc:changed', (_e, s) => fn(s));
+api.kdc.onFile = (fn) => ipcRenderer.on('kdc:file', (_e, f) => fn(f));
+api.kdc.onSms = (fn) => ipcRenderer.on('kdc:sms', (_e, list) => fn(list));
+api.kdc.onCall = (fn) => ipcRenderer.on('kdc:call', (_e, c) => fn(c));
+api.kdc.onContacts = (fn) => ipcRenderer.on('kdc:contacts', (_e, d) => fn(d));
+api.appmenu.onChanged = (fn) => ipcRenderer.on('appmenu:changed', (_e, id) => fn(id));
 api.bt.onChanged = (fn) => ipcRenderer.on('bt:changed', () => fn());
 api.bt.onCode = (fn) => ipcRenderer.on('bt:code', (_e, c) => fn(c));
 api.android.onProgress = (fn) => ipcRenderer.on('android:progress', (_e, m) => fn(m));
@@ -59,6 +66,8 @@ api.browser = {
   on: (ch, fn) => { if (/^browser:/.test(ch)) ipcRenderer.on(ch, (_e, ...a) => fn(...a)); },
 };
 api.native = true;
+// the path of a file dropped on a page (File.path is gone from Electron)
+api.pathOf = (file) => { try { return webUtils.getPathForFile(file) || ''; } catch { return ''; } };
 // drawn without a GPU (main/main.js): the web UI uses solid glass instead of blurred see-through glass
 api.softwareRendering = process.env.LIQUID_SOFTWARE_RENDERING === '1';
 contextBridge.exposeInMainWorld('sys', api);

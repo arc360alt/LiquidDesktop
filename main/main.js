@@ -31,6 +31,21 @@ if (mode === 'session') {
   // the session is an X11 window manager, so Chromium must talk X11 even if a Wayland socket is around
   app.commandLine.appendSwitch('ozone-platform', 'x11');
   delete process.env.WAYLAND_DISPLAY;
+  // Chromium gives up when its GPU process crashed a few times in a row ("GPU process isn't usable. Goodbye.") and
+  // takes the whole process — here the whole desktop — with it. NVIDIA's driver can crash it a few times in a row
+  // while monitors are rearranged; restarting it again is what's wanted.
+  if (!softwareRendering) app.commandLine.appendSwitch('disable-gpu-process-crash-limit');
+  // A mistake in the main process must not end the session (by default Electron puts up an error dialog over
+  // the desktop): log it to crashes.log and carry on.
+  process.on('uncaughtException', (err) => {
+    const line = `${new Date().toISOString()} [main] uncaught: ${err && err.stack || err}`;
+    console.error(line);
+    try {
+      const dir = path.join(process.env.XDG_CONFIG_HOME || path.join(require('os').homedir(), '.config'), 'LiquidDesktop');
+      require('fs').mkdirSync(dir, { recursive: true });
+      require('fs').appendFileSync(path.join(dir, 'crashes.log'), line + '\n');
+    } catch { /* not writable */ }
+  });
   // Settings › Displays › Interface size (main/system.js): everything LiquidDesktop draws, scaled crisply.
   // The window manager works in screen pixels and converts with the display's scaleFactor.
   try {
@@ -77,6 +92,7 @@ app.whenReady().then(async () => {
   require('./notifications').register({ resolveIcon: require('./system').resolveIcon });
   require('./tray').register({ resolveIcon: require('./system').resolveIcon });
   require('./bluetooth').register();
+  require('./kdeconnect').register();
   require('./audio').register(require('electron').ipcMain);
   require('./defaultapps').register({ mode });
   require('./android').register();
@@ -95,11 +111,12 @@ app.whenReady().then(async () => {
     } catch (err) {
       console.error('[LiquidDesktop] could not start the session:', err.message);
       console.error('Is another window manager running? Use `npm start` to run LiquidDesktop in a window instead.');
-      app.exit(1);
+      app.exit(3);   // 3: not a crash (session/liquid-desktop-session-inner doesn't start it again)
     }
   } else {
     system.register({ getWindow: () => win, mode });
     require('./portal').register({});   // Open / Save dialogs for LiquidDesktop's own apps
+    require('./appmenu').register({});   // (only the setting: no app menus in a window)
     createWindowed();
   }
 });

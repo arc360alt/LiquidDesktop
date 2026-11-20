@@ -36,6 +36,9 @@ import './apps/settings.js';
 import './apps/about.js';
 import './apps/appstore.js';
 import './apps/lighting.js';
+import './apps/messages.js';
+import './apps/contacts.js';
+import './apps/phonehub.js';
 
 const progress = (p) => { const b = $('#boot .bar i'); if (b) b.style.width = p + '%'; };
 const hideBoot = () => {
@@ -58,6 +61,7 @@ async function bootFull() {
   await common();
   api.sys.onUpdated?.(() => shell.updatedPrompt());
   import('./notifications.js').then(({ notifyRemote, closeRemote }) => { api.notif?.onShow(notifyRemote); api.notif?.onClose(closeRemote); });
+  import('./phone.js').then((m) => m.initPhoneNotices());   // files received from the phone
   progress(35);
   wm.init();
   initMenubar();
@@ -97,6 +101,7 @@ async function bootShellSteps() {
   await common();
   api.sys.onUpdated?.(() => shell.updatedPrompt());
   import('./notifications.js').then(({ notifyRemote, closeRemote }) => { api.notif?.onShow(notifyRemote); api.notif?.onClose(closeRemote); });
+  import('./phone.js').then((m) => m.initPhoneNotices());   // files received from the phone
   const { installSessionWM, windowMenu } = await import('./sessionwm.js');
   const { initShellShape } = await import('./shellshape.js');
   await catalog.load();
@@ -109,6 +114,7 @@ async function bootShellSteps() {
   initDock();
   initSessionShell({ windowMenu });
   initShellShape();
+  import('./genie.js').then((m) => m.initGenie());
   progress(100);
   // LiquidDesktop's own login screen at startup — skipped when you just logged in through the LiquidDesktop
   // login screen (SDDM), so you don't type your password twice (Settings › Lock Screen)

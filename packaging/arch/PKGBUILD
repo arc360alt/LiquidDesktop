@@ -48,6 +48,8 @@ optdepends=(
   'bluez-utils: Bluetooth toggle (bluetoothctl)'
   'playerctl: Now Playing in Control Center'
   'upower: battery details'
+  'kdeconnect: your phone in Settings › Phone, Control Center and widgets (only its background service is used)'
+  'appmenu-gtk-module: GTK apps'\'' menus in the menu bar'
   'glib2: move to Trash via gio'
   'xorg-xwayland: run the session nested in a window on Wayland (liquid-desktop-nested)'
   'xorg-server-xephyr: run the session nested in a window on X11'

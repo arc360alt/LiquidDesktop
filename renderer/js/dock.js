@@ -1,4 +1,5 @@
 // The Dock: pinned + running apps, magnification, bounce, minimized windows, Trash, drag-to-reorder.
+import { minimizedThumb } from './genie.js';
 import { h, $, $$, bus, clamp } from './util.js';
 import { appIcon, sym } from './icons.js';
 import { store, dockHideMode } from './store.js';
@@ -178,7 +179,10 @@ function dockItem(id, { special } = {}) {
 }
 
 function minimizedItem(w) {
-  const thumb = h('div.mini-thumb', h('div', { style: { position: 'absolute', inset: '0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '8px', color: 'var(--text-2)' } }, w.title));
+  // the window's own picture (taken as it was minimized, renderer/js/genie.js), else its title
+  const pic = minimizedThumb(w.id);
+  const thumb = pic ? h('div.mini-thumb.pic', { style: { backgroundImage: `url("${pic}")` } })
+    : h('div.mini-thumb', h('div', { style: { position: 'absolute', inset: '0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '8px', color: 'var(--text-2)' } }, w.title));
   const el = h('div.dock-item.minimized-win', { 'data-win': w.id }, h('div.icon', thumb, h('div.mini-badge', appIcon(w.app))));
   el.addEventListener('mouseenter', () => showTip(el, w.title));
   el.addEventListener('mouseleave', hideTip);

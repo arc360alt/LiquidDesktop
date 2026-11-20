@@ -18,9 +18,15 @@ const ATOM_NAMES = ['WM_PROTOCOLS', 'WM_DELETE_WINDOW', 'WM_TAKE_FOCUS', 'WM_STA
   '_NET_WM_WINDOW_TYPE_COMBO', '_NET_WM_WINDOW_TYPE_DND', '_NET_WM_WINDOW_TYPE_NORMAL', '_NET_WM_STATE', '_NET_WM_STATE_FULLSCREEN',
   '_NET_WM_STATE_MAXIMIZED_VERT', '_NET_WM_STATE_MAXIMIZED_HORZ', '_NET_WM_STATE_HIDDEN', '_NET_WM_STATE_FOCUSED', '_NET_WM_MOVERESIZE',
   '_NET_CLOSE_WINDOW', '_NET_FRAME_EXTENTS', '_NET_REQUEST_FRAME_EXTENTS', '_NET_WORKAREA', '_NET_NUMBER_OF_DESKTOPS', '_NET_CURRENT_DESKTOP',
-  '_NET_WM_DESKTOP', '_NET_DESKTOP_GEOMETRY', '_NET_WM_PID', '_MOTIF_WM_HINTS', 'ATOM', 'CARDINAL', 'WINDOW', 'STRING'];
+  '_NET_WM_DESKTOP', '_NET_DESKTOP_GEOMETRY', '_NET_WM_PID', '_MOTIF_WM_HINTS', 'ATOM', 'CARDINAL', 'WINDOW', 'STRING', '_NET_WM_CM_S0'];
 
 const ANY_MODIFIER = 0x8000, ANY_BUTTON = 0;
+// Alt-dragging a window: where it tiles, from the pointer's place on the monitor (same as renderer/js/tiling.js)
+function zoneAt(x, y) {
+  if (x < 1 / 3) return y < 0.25 ? 'tl' : y > 0.75 ? 'bl' : 'left';
+  if (x > 2 / 3) return y < 0.25 ? 'tr' : y > 0.75 ? 'br' : 'right';
+  return y < 1 / 3 ? 'top' : y > 2 / 3 ? 'bottom' : 'fill';
+}
 const SHIFT = 1, LOCK = 2, CTRL = 4, ALT = 8, NUMLOCK = 16, SUPER = 64;
 const BUTTON1 = 0x100;
 const TB = 36;          // title bar height of native frames
@@ -29,17 +35,21 @@ const HANDLE = 6;
 const DEBUG = !!process.env.LIQUID_WM_DEBUG;       // width of the invisible resize handles along a native window's sides and bottom
 
 // keysyms used for global shortcuts
-const KS = { space: 0x20, s: 0x73, r: 0x72, Tab: 0xff09, F3: 0xffc0, F4: 0xffc1, F11: 0xffc8, q: 0x71, w: 0x77, m: 0x6d, f: 0x66, 3: 0x33, Print: 0xff61,
+const KS = { space: 0x20, period: 0x2e, s: 0x73, r: 0x72, Tab: 0xff09, F3: 0xffc0, F4: 0xffc1, F11: 0xffc8, q: 0x71, w: 0x77, m: 0x6d, f: 0x66, 3: 0x33, Print: 0xff61,
   Left: 0xff51, Up: 0xff52, Right: 0xff53, Down: 0xff54, F4alt: 0xffc1, Alt_L: 0xffe9, Alt_R: 0xffea, Super_L: 0xffeb, Super_R: 0xffec,
   VolUp: 0x1008ff13, VolDown: 0x1008ff11, Mute: 0x1008ff12, BrightUp: 0x1008ff02, BrightDown: 0x1008ff03, Play: 0x1008ff14, Next: 0x1008ff17, Prev: 0x1008ff16 };
 
 const SHORTCUTS = [
   ['spotlight', ALT, 'space'], ['spotlight', SUPER, 'space'],
+  // Emoji & Symbols: Ctrl+Cmd+Space like on a Mac (Cmd is Alt or Super here), or Super+. like on Windows
+  ['emoji', CTRL | ALT, 'space'], ['emoji', CTRL | SUPER, 'space'], ['emoji', SUPER, 'period'],
   ['switcher-next', ALT, 'Tab'], ['switcher-prev', ALT | SHIFT, 'Tab'], ['switcher-next', SUPER, 'Tab'],
   ['mission', 0, 'F3'], ['mission', CTRL, 'Up'], ['launcher', 0, 'F4'], ['desktop', 0, 'F11'],
   ['lock', CTRL | ALT, 'q'], ['lock', CTRL | SUPER, 'q'], ['screenshot', 0, 'Print'], ['screenshot', ALT | SHIFT, '3'], ['screenshot-tool', SUPER | SHIFT, 's'], ['screen-record', SUPER | SHIFT, 'r'],
   ['close', ALT, 'w'], ['close', ALT, 'F4alt'], ['minimize', ALT, 'm'], ['quit', ALT, 'q'], ['fullscreen', CTRL | ALT, 'f'],
   ['tile-left', ALT | SHIFT, 'Left'], ['tile-right', ALT | SHIFT, 'Right'], ['tile-fill', ALT | SHIFT, 'Up'], ['tile-center', ALT | SHIFT, 'Down'],
+  // like the Mac's Fn+Ctrl+arrows: Ctrl+Super+arrows tile to that half, Ctrl+Super+R returns to the previous size
+  ['tile-left', CTRL | SUPER, 'Left'], ['tile-right', CTRL | SUPER, 'Right'], ['tile-top', CTRL | SUPER, 'Up'], ['tile-bottom', CTRL | SUPER, 'Down'], ['tile-restore', CTRL | SUPER, 'r'],
   ['space-left', CTRL | ALT, 'Left'], ['space-right', CTRL | ALT, 'Right'],
   ['volume-up', 0, 'VolUp'], ['volume-down', 0, 'VolDown'], ['mute', 0, 'Mute'], ['brightness-up', 0, 'BrightUp'], ['brightness-down', 0, 'BrightDown'],
   ['media-play', 0, 'Play'], ['media-next', 0, 'Next'], ['media-prev', 0, 'Prev'],
@@ -628,7 +638,22 @@ class WindowManager extends EventEmitter {
   }
   /** main/session.js: the monitors (screen pixels) and the size of the whole screen changed. */
   setMonitors(mons, rw, rh) {
+    // which monitor (by id) each window is on now, so it can go along when that monitor moves or changes size
+    const home = new Map();
+    for (const w of this.windows.values()) if (w.x != null && w.y != null) { const m = this.monAt(w.x + w.w / 2, w.y + Math.min(w.h / 2, 60), true); if (m && m.id != null) home.set(w, m); }
     this.mons = mons.length ? mons : [{ x: 0, y: 0, w: rw, h: rh, primary: true }];
+    for (const [w, om] of home) {
+      const nm = this.mons.find((m) => m.id === om.id);
+      if (!nm || (nm.x === om.x && nm.y === om.y && nm.w === om.w && nm.h === om.h)) continue;
+      const move = (r) => {
+        if (!r) return;
+        r.w = Math.min(r.w, nm.w); r.h = Math.min(r.h, nm.h);
+        r.x = nm.x + Math.max(0, Math.min(r.x - om.x, nm.w - r.w));
+        r.y = nm.y + Math.max(0, Math.min(r.y - om.y, nm.h - r.h));
+      };
+      move(w); move(w.restoreRect); move(w.preFull);
+      w.moved = true;   // refit() applies it
+    }
     this.rw = rw; this.rh = rh;
     const p = this.prim();
     this.sw = p.w; this.sh = p.h;   // kept for older callers: the main monitor's size
@@ -677,6 +702,8 @@ class WindowManager extends EventEmitter {
     // we don't hear about: a transparent shell / menu bar layer then swallows every click on its monitor (apps
     // under it can't be clicked or moved). Re-assert each one's own shape every second; it's a tiny request.
     this.shapeGuard = setInterval(() => this.reapplyShellInput(), 1000);
+    this.checkCompositor();
+    this.compositorGuard = setInterval(() => this.checkCompositor(), 1500);
   }
   /**
    * How often drags and animations step: once per frame of the fastest screen (a 240 Hz panel gets ~4 ms,
@@ -716,10 +743,34 @@ class WindowManager extends EventEmitter {
     }
   }
 
+  /**
+   * After a display change: put a window where it belongs on its monitor right away — full screen, fill and tiles
+   * fitted again, other windows kept on screen — without the zoom animation (a dozen resizes per window while the
+   * driver was still busy with the mode set). Only windows whose geometry actually changes are touched.
+   */
+  refit(w) {
+    if (w.anim) { clearInterval(w.anim); w.anim = null; }
+    const m = this.monOf(w), before = `${w.x},${w.y},${w.w},${w.h}`;
+    if (w.fullscreen) Object.assign(w, { x: m.x, y: m.y, w: m.w, h: m.h });
+    else if (w.maximized || w.tile) {
+      const r = this.tileRect(w.tile || 'fill', m);
+      if (r) { const [x, y, ww, hh] = r.map(Math.round); Object.assign(w, { x, y, w: ww, h: hh }); }
+    } else {
+      const a = this.area(m);
+      w.w = Math.min(w.w, a.w); w.h = Math.min(w.h, a.h);
+      w.x = Math.round(Math.max(a.x, Math.min(w.x, a.x + a.w - w.w)));
+      w.y = Math.round(Math.max(a.y, Math.min(w.y, a.y + a.h - Math.min(w.h, 60))));
+    }
+    const moved = w.moved; w.moved = false;
+    if (moved || `${w.x},${w.y},${w.w},${w.h}` !== before) this.applyGeometry(w);
+  }
+
   tileRect(kind, m = this.prim()) {
-    const a = this.area(m), g = 6, hw = (a.w - g * 3) / 2, hh = (a.h - g * 3) / 2;
+    // tiled windows keep a small margin between them and around the edges (Settings › Desktop & Dock)
+    const a = this.area(m), g = this.tileMargins === false ? 0 : 6, hw = (a.w - g * 3) / 2, hh = (a.h - g * 3) / 2;
     return {
       fill: [a.x + g, a.y + g, a.w - g * 2, a.h - g * 2], left: [a.x + g, a.y + g, hw, a.h - g * 2], right: [a.x + g * 2 + hw, a.y + g, hw, a.h - g * 2],
+      top: [a.x + g, a.y + g, a.w - g * 2, hh], bottom: [a.x + g, a.y + g * 2 + hh, a.w - g * 2, hh],
       tl: [a.x + g, a.y + g, hw, hh], tr: [a.x + g * 2 + hw, a.y + g, hw, hh], bl: [a.x + g, a.y + g * 2 + hh, hw, hh], br: [a.x + g * 2 + hw, a.y + g * 2 + hh, hw, hh],
       center: [a.x + a.w * 0.15, a.y + a.h * 0.08, a.w * 0.7, a.h * 0.84],
       'fill-nodock': [m.x, m.y + this.workFor(m).top, m.w, m.h - this.workFor(m).top],
@@ -787,14 +838,18 @@ class WindowManager extends EventEmitter {
     }
     // Place windows top-down, each directly below its neighbour, inside a server grab: the compositor
     // only ever sees the final order (raising them one by one from the bottom made windows flash).
+    // (A throw while the server is grabbed would leave every other client — the compositor, Chromium's GPU
+    // process — frozen for good: the whole desktop hung. So the grab is always released.)
     X.GrabServer();
-    let above = null;
-    for (let i = order.length - 1; i >= 0; i--) {
-      if (above == null) X.ConfigureWindow(order[i], { stackMode: 0 });
-      else X.ConfigureWindow(order[i], { sibling: above, stackMode: 1 });
-      above = order[i];
-    }
-    X.UngrabServer();
+    try {
+      let above = null;
+      for (let i = order.length - 1; i >= 0; i--) {
+        if (!order[i]) continue;
+        if (above == null) X.ConfigureWindow(order[i], { stackMode: 0 });
+        else X.ConfigureWindow(order[i], { sibling: above, stackMode: 1 });
+        above = order[i];
+      }
+    } finally { X.UngrabServer(); }
     this.setWindows(this.root, '_NET_CLIENT_LIST_STACKING', this.stack.map((w) => w.client));
   }
 
@@ -810,7 +865,18 @@ class WindowManager extends EventEmitter {
 
   minimize(id) {
     const w = this.windows.get(id);
-    if (!w || w.minimized) return;
+    if (!w || w.minimized || w.minimizing) return;
+    // the Genie / Scale animation (main/session.js draws it in the shell): the window is taken away once its
+    // picture is on screen in its place; no compositor, no animation (the shell can't draw over the apps then)
+    if (this.animateMinimize && this.composited !== false && !w.hidden && w.space === this.space) {
+      w.minimizing = true;
+      Promise.resolve(this.animateMinimize(w, false)).catch(() => {}).finally(() => { w.minimizing = false; this.doMinimize(w); });
+      return;
+    }
+    this.doMinimize(w);
+  }
+  doMinimize(w) {
+    if (!this.windows.has(w.id) || w.minimized) return;
     w.minimized = true;
     if (w.frame === w.client) w.ignoreUnmaps++;
     this.X.UnmapWindow(w.frame);
@@ -819,11 +885,20 @@ class WindowManager extends EventEmitter {
     this.emit('changed');
   }
 
-  restore(id) {
+  async restore(id) {
     const w = this.windows.get(id);
-    if (!w) return;
+    if (!w || w.restoring) return;
     if (w.space !== this.space) this.switchSpace(w.space);
-    if (w.minimized) { w.minimized = false; this.X.MapWindow(w.frame); this.setState(w, 1); }
+    if (w.minimized) {
+      // back out of the Dock first (the reverse animation), then the window itself
+      if (this.animateMinimize && this.composited !== false) {
+        w.restoring = true;
+        try { await this.animateMinimize(w, true); } catch { /* shown right away */ }
+        w.restoring = false;
+        if (!this.windows.has(id) || !w.minimized) return;
+      }
+      w.minimized = false; this.X.MapWindow(w.frame); this.setState(w, 1);
+    }
     this.activate(id);
   }
 
@@ -866,12 +941,29 @@ class WindowManager extends EventEmitter {
   tile(id, kind, mon) {
     const w = this.windows.get(id);
     if (!w || !w.resizable) return;
+    // Return to Previous Size
+    if (kind === 'restore') { if (w.maximized || w.tile) this.toggleMaximize(id); return; }
     if (w.fullscreen) this.setFullscreen(id, false);
     if (!w.maximized && !w.tile) w.restoreRect = { x: w.x, y: w.y, w: w.w, h: w.h };
     const [x, y, ww, hh] = this.tileRect(kind, mon || this.monOf(w)).map(Math.round);
     Object.assign(w, { tile: kind === 'center' ? null : kind, maximized: kind === 'fill' || kind === 'fill-nodock' });
     this.animateTo(w, { x, y, w: ww, h: hh });
     this.emit('changed');
+  }
+
+  /**
+   * Arrange (macOS Tahoe): the window takes the first place of the layout, the windows behind it on this
+   * Desktop and monitor (most recently used first) the others. places: ['left', 'right'], ['tl', 'tr', 'bl', 'br']…
+   */
+  arrange(id, places) {
+    const w = this.windows.get(id);
+    if (!w || !Array.isArray(places)) return;
+    const m = this.monOf(w);
+    const others = [...this.stack].reverse().filter((o) => o !== w && o.space === this.space && !o.minimized && !o.hidden && o.resizable && this.monOf(o) === m);
+    [w, ...others].slice(0, places.length).forEach((o, i) => { if (o.fullscreen) this.setFullscreen(o.id, false); this.tile(o.id, places[i], m); });
+    // the windows that were arranged come forward, the first one on top
+    for (const o of [w, ...others].slice(1, places.length).reverse()) { this.stack = this.stack.filter((x) => x !== o); this.stack.push(o); }
+    this.activate(id);
   }
 
   setFullscreen(id, on) {
@@ -966,13 +1058,18 @@ class WindowManager extends EventEmitter {
       w.x = start.x + (p.rootX - start.px);
       w.y = Math.max(top, start.y + (p.rootY - start.py));
       if (resized) { resized = false; this.applyGeometry(w); } else this.moveGeometry(w);
-      // only edges with no other monitor beyond them snap (the pointer crosses shared edges freely)
+      // holding Alt (⌥): tile wherever the pointer is (macOS Sequoia), see zoneAt
       const edge = 3, corner = pm.h * 0.18, bottom = pm.y + pm.h;
-      const atL = p.rootX <= pm.x + edge && !this.monAt(pm.x - 1, p.rootY, true);
-      const atR = p.rootX >= pm.x + pm.w - edge - 1 && !this.monAt(pm.x + pm.w, p.rootY, true);
-      snap = p.rootY <= top - 2 && !this.monAt(p.rootX, pm.y - 1, true) ? 'fill'
-        : atL ? (p.rootY < corner + top ? 'tl' : p.rootY > bottom - corner ? 'bl' : 'left')
-          : atR ? (p.rootY < corner + top ? 'tr' : p.rootY > bottom - corner ? 'br' : 'right') : null;
+      if (p.keyMask & ALT && w.resizable) snap = zoneAt((p.rootX - pm.x) / pm.w, (p.rootY - pm.y) / pm.h);
+      else if (this.edgeTiling === false || !w.resizable) snap = null;
+      else {
+        // only edges with no other monitor beyond them snap (the pointer crosses shared edges freely)
+        const atL = p.rootX <= pm.x + edge && !this.monAt(pm.x - 1, p.rootY, true);
+        const atR = p.rootX >= pm.x + pm.w - edge - 1 && !this.monAt(pm.x + pm.w, p.rootY, true);
+        snap = p.rootY <= top - 2 && !this.monAt(p.rootX, pm.y - 1, true) ? 'fill'
+          : atL ? (p.rootY < corner + top ? 'tl' : p.rootY > bottom - corner ? 'bl' : 'left')
+            : atR ? (p.rootY < corner + top ? 'tr' : p.rootY > bottom - corner ? 'br' : 'right') : null;
+      }
       snapMon = pm;
       if (snap !== lastSnap) { lastSnap = snap; this.emit('snap-preview', snap ? this.tileRect(snap, pm) : null); }
     };
@@ -1046,6 +1143,43 @@ class WindowManager extends EventEmitter {
     s.input = { rects, modal };
     const r = modal ? [[0, 0, s.w, s.h]] : rects.length ? rects : [[0, 0, 1, 1]];
     this.Shape.Rectangles(this.Shape.Op.Set, this.Shape.Kind.Input, xid, 0, 0, r);
+    this.applyShellBounding(xid);
+  }
+
+  /**
+   * The shell and menu bar windows are transparent and cover their whole monitor. That only looks right while a
+   * compositor (picom) is running: without one (it failed to start, crashed during a display change, isn't
+   * installed) a transparent window is drawn black, and the monitor went black except for the menu bar and Dock.
+   * So while there is no compositor each of them is cut down to the parts it actually shows (what takes clicks,
+   * plus the glass surfaces); the wallpaper and apps below show through. With a compositor: the whole window.
+   */
+  applyShellBounding(xid) {
+    const s = this.shells.get(xid);
+    if (!s || !this.Shape) return;
+    if (this.composited !== false) {
+      if (s.bounded) { s.bounded = false; this.Shape.Mask(this.Shape.Op.Set, this.Shape.Kind.Bounding, xid, 0, 0, 0); }
+      return;
+    }
+    s.bounded = true;
+    const full = this.locked && (xid === this.shell || s.primary === false);   // the lock screen covers every monitor
+    const r = full ? [[0, 0, s.w, s.h]] : [...(s.input?.rects || []), ...(s.blurLocal || []).map((g) => [g.x, g.y, g.w, g.h])]
+      .filter((q) => q[2] > 0 && q[3] > 0).map((q) => q.map(Math.round));
+    this.Shape.Rectangles(this.Shape.Op.Set, this.Shape.Kind.Bounding, xid, 0, 0, r.length ? r : [[0, 0, 1, 1]]);
+  }
+
+  /** Is a compositor running (it owns the _NET_WM_CM_S0 selection)? Checked now and every couple of seconds. */
+  checkCompositor() {
+    if (!this.A._NET_WM_CM_S0) return;
+    this.X.GetSelectionOwner(this.A._NET_WM_CM_S0, (err, owner) => {
+      if (err) return;
+      const on = !!owner;
+      if (on === this.composited) return;
+      const first = this.composited === undefined;
+      this.composited = on;
+      if (!first || !on) console.log(`[wm] compositor ${on ? 'running' : 'not running: shell windows cut to their visible parts'}`);
+      for (const xid of this.shells.keys()) this.applyShellBounding(xid);
+      this.emit('compositor', on);
+    });
   }
 
   /**
@@ -1058,6 +1192,7 @@ class WindowManager extends EventEmitter {
     const X = this.X, s = this.shellEntry(xid), pool = s.blurPool;
     let restack = false;
     // the shell reports them relative to itself; blur windows live on the root: add where the shell sits
+    s.blurLocal = regions;
     regions = regions.map((g) => ({ ...g, x: g.x + s.ox, y: g.y + s.oy }));
     regions.forEach((g, i) => {
       let b = pool[i];
@@ -1130,7 +1265,7 @@ class WindowManager extends EventEmitter {
     for (let i = 0; i < this.spaces; i++) vals.push(a.x, a.y, a.w, a.h);
     this.setCardinal(this.root, '_NET_WORKAREA', vals);
   }
-  setLocked(on) { this.locked = on; if (on) this.focusShell(true); else this.focusTop(); }
+  setLocked(on) { this.locked = on; for (const xid of this.shells.keys()) this.applyShellBounding(xid); if (on) this.focusShell(true); else this.focusTop(); }
 
   /* ================================================================ keyboard */
   async setupKeys() {
@@ -1139,6 +1274,7 @@ class WindowManager extends EventEmitter {
     const map = await new Promise((res) => X.GetKeyboardMapping(min, max - min + 1, (e, m) => res(e ? [] : m)));
     this.keycodeOf = {};
     this.keysymOf = {};
+    this.keymap = { min, map, per: map[0]?.length || 1 };   // for typeText: which keycodes are unused
     map.forEach((syms, i) => {
       const code = min + i;
       this.keysymOf[code] = syms[0];
@@ -1152,6 +1288,44 @@ class WindowManager extends EventEmitter {
       this.grabbed.push({ name, mods, code });
     }
     if (process.env.LIQUID_WM_DEBUG) console.log('[wm] grabbed', this.grabbed.length, 'shortcuts');
+  }
+
+  /**
+   * Type text into the focused window (the Emoji & Symbols picker): each character goes in as a key press. A key
+   * nobody uses is pointed at the character's keysym for a moment, the way xdotool does it, so any character works
+   * in any app — no clipboard involved.
+   */
+  async typeText(text) {
+    const X = this.X;
+    if (!this.xtest) this.xtest = await new Promise((res) => X.require('xtest', (e, t) => res(e ? null : t)));
+    if (!this.xtest || !this.keymap) return false;
+    const { min, map, per } = this.keymap;
+    // a spare keycode: no keysyms at all (the top of the range usually is), and not one of our shortcuts
+    let spare = 0;
+    for (let i = map.length - 1; i >= 0 && !spare; i--) if (map[i].every((k) => !k) && !this.grabbed?.some((g) => g.code === min + i)) spare = min + i;
+    if (!spare) return false;
+    const setKey = (keysym) => {
+      // ChangeKeyboardMapping (opcode 100): one keycode, `per` keysyms (the same one at every level)
+      X.seq_num++;
+      X.pack_stream.pack('CCSCCxx' + 'L'.repeat(per), [100, 1, 2 + per, spare, per, ...Array(per).fill(keysym)]);
+      X.pack_stream.flush();
+    };
+    const pause = (ms) => new Promise((r) => setTimeout(r, ms));
+    // let go of the keyboard first: the app has to be focused, and modifiers still held (Ctrl from the shortcut,
+    // say) would turn the character into a shortcut
+    if (this.focused) this.focusClient(this.focused);
+    await pause(60);
+    for (const ch of text) {
+      const cp = ch.codePointAt(0);
+      setKey(cp >= 0x20 && cp <= 0x7e || cp >= 0xa0 && cp <= 0xff ? cp : 0x01000000 + cp);
+      await pause(25);   // apps re-read the keyboard map when they're told it changed
+      this.xtest.FakeInput(this.xtest.KeyPress, spare, 0, this.root, 0, 0);
+      this.xtest.FakeInput(this.xtest.KeyRelease, spare, 0, this.root, 0, 0);
+      await pause(15);
+    }
+    await pause(60);
+    setKey(0);   // and the key is unused again
+    return true;
   }
 
   onKey(ev, down) {
@@ -1180,7 +1354,7 @@ class WindowManager extends EventEmitter {
       case 'minimize': if (w) this.minimize(w.id); return;
       case 'quit': if (w) this.emit('quit-app', w); return;
       case 'fullscreen': if (w) this.setFullscreen(w.id, !w.fullscreen); return;
-      case 'tile-left': case 'tile-right': case 'tile-fill': case 'tile-center': if (w) this.tile(w.id, hit.name.slice(5)); return;
+      case 'tile-left': case 'tile-right': case 'tile-fill': case 'tile-center': case 'tile-top': case 'tile-bottom': case 'tile-restore': if (w) this.tile(w.id, hit.name.slice(5)); return;
       case 'space-left': this.switchSpace(this.space - 1); return;
       case 'space-right': this.switchSpace(this.space + 1); return;
       case 'desktop': this.toggleDesktop(); return;
@@ -1202,7 +1376,7 @@ class WindowManager extends EventEmitter {
   snapshot() {
     const order = this.stack.map((w) => w.id);
     return [...this.windows.values()].map((w) => ({
-      id: w.id, kind: w.kind, appId: w.appId || null, title: w.title, wmClass: w.wmClass || null, menus: w.menus || null,
+      id: w.id, kind: w.kind, appId: w.appId || null, title: w.title, wmClass: w.wmClass || null, menus: w.menus || null, appmenu: !!this.hasAppMenu?.(w),
       x: w.x, y: w.y, w: w.w, h: w.h, minimized: w.minimized, maximized: !!w.maximized, fullscreen: !!w.fullscreen, tile: w.tile,
       space: w.space, focused: this.focused === w, z: order.indexOf(w.id), frame: w.frame,
     }));

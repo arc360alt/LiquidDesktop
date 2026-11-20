@@ -11,6 +11,7 @@ import { prompt, confirmDialog, alertDialog } from '../menus.js';
 import { bus } from '../util.js';
 import { isSession } from '../layer.js';
 import { DEV_ICONS, btIcon, onBluetooth, onPairingCode } from '../devices.js';
+import { PHONE_ICONS, phoneState, refreshPhone, onPhone, deviceIcon, signalBars, phoneAct, sendFiles, browsePhone, pairText } from '../phone.js';
 
 const ACCENTS = [['Multicolor', '#0a84ff'], ['Blue', '#007aff'], ['Purple', '#af52de'], ['Pink', '#ff2d55'], ['Red', '#ff3b30'], ['Orange', '#ff9500'], ['Yellow', '#ffcc00'], ['Green', '#34c759'], ['Graphite', '#8e8e93']];
 
@@ -18,6 +19,7 @@ const PANES = [
   ['general', 'General', '#8e8e93', sym.gear], ['defaults', 'Default Apps', '#30b0c7', sym.check], ['appearance', 'Appearance', '#1c1c1e', sym.contrast], ['wallpaper', 'Wallpaper', '#32ade6', sym.photo],
   ['dock', 'Desktop & Dock', '#1c1c1e', sym.dock], ['menubar', 'Menu Bar', '#0a84ff', sym.controls], ['display', 'Displays', '#0a84ff', sym.display],
   ['energy', 'Battery', '#34c759', sym.bolt], ['sound', 'Sound', '#ff2d55', sym.speaker], ['network', 'Wi-Fi', '#0a84ff', sym.wifi], ['bluetooth', 'Bluetooth', '#0a84ff', sym.bluetooth],
+  ['phone', 'Phone', '#30d158', PHONE_ICONS.phone],
   ['notifications', 'Notifications', '#ff3b30', sym.bell], ['focus', 'Focus', '#5e5ce6', sym.moon], ['lock', 'Lock Screen', '#1c1c1e', sym.lock],
   ['mouse', 'Mouse & Trackpad', '#8e8e93', '<svg class="sym" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="6" y="3" width="12" height="18" rx="6"/><path d="M12 3v6"/></svg>'], ['keyboard', 'Keyboard', '#8e8e93', sym.keyboard], ['terminal', 'Terminal', '#1c1c1e', sym.terminal], ['apps', 'Apps', '#5e5ce6', sym.grid],
   ['android', 'Android', '#30c06b', '<svg class="sym" viewBox="0 0 24 24" fill="currentColor"><path d="M5.5 11a6.5 6.5 0 0 1 13 0z"/><rect x="5.5" y="12" width="13" height="8" rx="2"/><path d="M8.6 5.6 7.2 3.5M15.4 5.6l1.4-2.1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="9.4" cy="8.6" r="1" fill="#30c06b"/><circle cx="14.6" cy="8.6" r="1" fill="#30c06b"/></svg>'],
@@ -223,7 +225,9 @@ const render = {
       h('div.group-title', 'Desktop & Windows'),
       h('div.group',
         row('Show files on the desktop', toggle('showDesktopIcons')),
-        row('Drag windows to screen edges to tile', toggle('windowTiling')),
+        row('Minimize windows using', select('minimizeEffect', [['genie', 'Genie effect'], ['scale', 'Scale effect']])),
+        row('Drag windows to screen edges to tile', toggle('windowTiling'), 'Hold ⌥ Alt while dragging to tile anywhere, wherever this is set.'),
+        row('Tiled windows have margins', toggle('tileMargins')),
         row('Clicking a window’s green button', select('zoomAction', [['fill', 'Fills the screen'], ['fill-nodock', 'Fills the screen and hides the Dock'], ['fullscreen', 'Goes full screen (hides menu bar and Dock)']]),
           'Double-clicking a title bar always fills the screen.'),
         row('Desktops (Spaces)', h('span.muted', `${wm.spaceEls.length}  `), 'Add or remove them in Mission Control (F3).'),
@@ -233,10 +237,15 @@ const render = {
       h('div.group', row('Top left', corner('tl')), row('Top right', corner('tr')), row('Bottom left', corner('bl')), row('Bottom right', corner('br'))),
     ];
   },
-  menubar() {
+  async menubar() {
+    const global = api.appmenu?.enabled ? await api.appmenu.enabled().catch(() => null) : null;
     return [
-      hero('menubar', 'Menu Bar', 'What the clock and status items show.'),
+      hero('menubar', 'Menu Bar', 'What the clock and status items show, and where apps keep their menus.'),
       h('div.group', row('Use a 24-hour clock', toggle('clock24')), row('Show seconds', toggle('showSeconds')), row('Show battery', toggle('showBattery'), 'The battery icon in the menu bar'), row('Show battery percentage', toggle('showBatteryPct'))),
+      global == null ? null : h('div.group', row('Show app menus in the menu bar', h('label.toggle', h('input', { type: 'checkbox', checked: global, onchange: async (e) => {
+        await api.appmenu.setEnabled(e.target.checked).catch(() => {});
+        import('../shell.js').then(({ shell }) => shell.notify({ app: 'settings', title: 'App menus', body: e.target.checked ? 'Apps you open from now on show their menus in the menu bar.' : 'Apps you open from now on keep their menus in their own windows.' }));
+      } }), h('span')), 'Linux apps’ File, Edit, View… menus appear at the top of the screen, like on a Mac. Works with Qt, KDE, Chrome/Electron apps, and GTK apps when appmenu-gtk-module is installed. Apps that are already open change when they are opened again.')),
     ];
   },
   async display() {
@@ -549,6 +558,11 @@ const render = {
       hero('bluetooth', 'Bluetooth', b ? 'Turn Bluetooth on or off. Pair devices with your system’s Bluetooth tool.' : 'No Bluetooth controller found (bluetoothctl).'),
       h('div.group', row('Bluetooth', h('label.toggle', h('input', { type: 'checkbox', disabled: !b, checked: !!b?.powered, onchange: async (e) => { await api.sys.bluetoothPower(e.target.checked); status.refresh(); } }), h('span')))),
     ];
+  },
+  async phone() {
+    if (!api.kdc?.state) return [hero('phone', 'Phone', 'Your phone can only be connected when LiquidDesktop runs on your computer (not in a browser).')];
+    await refreshPhone();
+    return phonePane();
   },
   notifications() {
     return [
@@ -1193,6 +1207,97 @@ function bluetoothPane(first) {
   // start looking now; stop once the pane is gone
   setTimeout(() => scan(true), 300);
   const watch = setInterval(() => { if (root.isConnected) return; clearInterval(watch); offCode(); scan(false); }, 1500);
+  return [root];
+}
+
+// Phone (KDE Connect): your devices, pairing, what each one shares. Redraws itself whenever KDE Connect reports
+// a change (a phone connecting, its battery, a pairing request) for as long as the pane is shown.
+const phoneSel = { id: undefined };   // undefined: the first paired device is opened
+function phonePane() {
+  const root = h('div.ph-pane');
+  const busy = new Set();
+  const notify = (n) => import('../shell.js').then((m) => m.shell.notify(n));
+  const run = async (d, what, arg) => { busy.add(d.id + what); draw(); await phoneAct(d, what, arg, notify); busy.delete(d.id + what); draw(); };
+  const install = () => wm.open('terminal', { command: 'LIQUID_UPDATE_PAUSE=1 sh -c \'if command -v pacman >/dev/null; then sudo pacman -S --needed kdeconnect; elif command -v apt-get >/dev/null; then sudo apt-get install kdeconnect; elif command -v dnf >/dev/null; then sudo dnf install kdeconnect; elif command -v zypper >/dev/null; then sudo zypper install kdeconnect-kde; else echo "Install KDE Connect with your package manager."; fi\'' });
+  const intro = 'See your phone’s battery, notifications and music here, make it ring when it’s lost, and send files and your clipboard back and forth. Install KDE Connect on the phone (Google Play, F-Droid or the App Store) and keep both on the same Wi-Fi.';
+
+  function devRow(d) {
+    const sub = [pairText(d), d.battery ? `Battery ${d.battery.percent}%${d.battery.charging ? ' (charging)' : ''}` : null].filter(Boolean).join(' · ');
+    const working = busy.has(d.id + 'pair') || d.requested;
+    const btn = d.paired ? null
+      : d.requestedByPeer ? null
+        : h('button.btn', { disabled: working || !d.reachable, onclick: (e) => { e.stopPropagation(); run(d, 'pair'); } }, working ? 'Waiting…' : 'Pair');
+    const el = h('div.row.bt-dev.ph-dev' + (d.paired ? '.link' : '') + (phoneSel.id === d.id ? '.sel' : ''),
+      h('span.snd-ic' + (d.reachable && d.paired ? '.on' : ''), { html: deviceIcon(d) }),
+      h('div.label', d.name, h('small', sub)), d.paired && d.signal ? signalBars(d.signal) : null, working ? h('span.spinner') : null, btn,
+      d.paired ? h('span.muted.ph-chev', phoneSel.id === d.id ? '⌄' : '›') : null);
+    if (d.paired) el.addEventListener('click', () => { phoneSel.id = phoneSel.id === d.id ? null : d.id; draw(); });
+    return el;
+  }
+  function detail(d) {
+    const on = (p) => d.plugins.includes(p);
+    const act = (icon, label, what, enabled, fn) => h('button.ph-act', { disabled: !enabled || !d.reachable || busy.has(d.id + what), onclick: fn || (() => run(d, what)) }, h('span', { html: icon }), label);
+    const actions = h('div.ph-acts',
+      act(PHONE_ICONS.ring, 'Find', 'ring', on('findmyphone')),
+      act(PHONE_ICONS.ping, 'Ping', 'ping', on('ping')),
+      act(PHONE_ICONS.send, 'Send Files…', 'share', on('share'), () => sendFiles(d, notify)),
+      act(PHONE_ICONS.clipboard, 'Send Clipboard', 'clipboard', on('clipboard')),
+      act(PHONE_ICONS.folder, 'Browse Files', 'browse', on('sftp'), () => browsePhone(d, notify, (path) => wm.open('files', { path }))));
+    const st = phoneState();
+    const features = (st.features || []).filter(([id]) => d.supported.includes(id) || d.plugins.includes(id)).map(([id, label, text]) =>
+      row(label, h('label.toggle', h('input', { type: 'checkbox', checked: d.plugins.includes(id), disabled: !d.reachable, onchange: (e) => run(d, 'feature', { id, on: e.target.checked }) }), h('span')), text));
+    return [
+      h('div.group.ph-detail', actions,
+        !d.reachable ? row(h('span.muted', `${d.name} isn’t connected. Open KDE Connect on it, and check that it’s on the same network as this computer.`), null) : null),
+      features.length ? h('div.group-title', 'Shared with This Computer') : null,
+      features.length ? h('div.group', ...features) : null,
+      h('div.group', row(h('span', 'Encryption key'), h('code.ph-key', d.verificationKey || '—'), 'Both devices show the same key when they’re paired with each other.'),
+        row('', h('button.btn.danger', { onclick: async () => {
+          if (await confirmDialog(`Unpair “${d.name}”?`, 'It stops sharing with this computer until you pair it again.', 'Unpair', { danger: true })) { phoneSel.id = null; run(d, 'unpair'); }
+        } }, 'Unpair…'))),
+    ];
+  }
+  function draw() {
+    if (!root.isConnected && root.childElementCount) return;
+    const st = phoneState();
+    if (!st.running) {
+      root.replaceChildren(hero('phone', 'Phone', intro), h('div.group', st.installed
+        ? row('Use Phone', h('label.toggle', h('input', { type: 'checkbox', checked: false, onchange: () => api.kdc.setEnabled(true).then(() => setTimeout(refreshPhone, 1500)) }), h('span')), 'Starts KDE Connect’s background service (no window opens).')
+        : row('KDE Connect isn’t installed', h('button.btn.primary', { onclick: install }, 'Install…'), 'LiquidDesktop uses KDE Connect’s background service to talk to your phone. Its own windows are never shown.')));
+      return;
+    }
+    const mine = st.devices.filter((d) => d.paired), asking = st.devices.filter((d) => d.requestedByPeer && !d.paired), near = st.devices.filter((d) => !d.paired && d.reachable && !d.requestedByPeer);
+    if (phoneSel.id === undefined && mine.length) phoneSel.id = mine[0].id;
+    const sel = mine.find((d) => d.id === phoneSel.id);
+    const nameField = h('input.field', { value: st.name || '', style: { width: '200px' }, onchange: (e) => e.target.value.trim() && api.kdc.rename(e.target.value.trim()) });
+    root.replaceChildren(
+      hero('phone', 'Phone', intro),
+      h('div.group',
+        row('Use Phone', h('label.toggle', h('input', { type: 'checkbox', checked: true, onchange: async (e) => {
+          if (!(await confirmDialog('Turn off Phone?', 'KDE Connect’s background service stops, and your devices stop sharing with this computer until you turn it on again.', 'Turn Off'))) { e.target.checked = true; return; }
+          await api.kdc.setEnabled(false); setTimeout(refreshPhone, 1000);
+        } }), h('span'))),
+        row('This computer’s name', nameField, 'What your phone calls this computer.'),
+        // where files sent from the phone go (KDE Connect's download folder for every paired device)
+        row('Save received files in', h('div', { style: { display: 'flex', gap: '6px', alignItems: 'center' } },
+          h('span.muted', { style: { fontSize: '12px', maxWidth: '170px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', direction: 'rtl' }, title: st.receiveDir }, (st.receiveDir || '').replace(/^\/home\/[^/]+/, '~')),
+          h('button.btn', { onclick: () => wm.open('files', { path: st.receiveDir }) }, 'Show'),
+          h('button.btn', { onclick: async () => {
+            const picked = await api.dialog?.open({ title: 'Save Received Files In', directory: true, folder: st.receiveDir }).catch(() => null);
+            if (picked?.[0]) { await api.kdc.setReceiveDir(picked[0]); refreshPhone(); }
+          } }, 'Change…')), 'Files you send from the phone (Send files, or Share › KDE Connect) are saved here.')),
+      ...(asking.length ? [h('div.group-title', 'Pairing Requests'), h('div.group', ...asking.map((d) => h('div.row.bt-dev', h('span.snd-ic.on', { html: deviceIcon(d) }),
+        h('div.label', `${d.name} wants to pair`, h('small', `Check that the phone shows the key ${d.verificationKey}`)),
+        h('button.btn', { onclick: () => run(d, 'reject') }, 'Decline'), h('button.btn.primary', { onclick: () => run(d, 'accept') }, 'Accept'))))] : []),
+      h('div.group-title', 'My Devices'),
+      h('div.group', ...(mine.length ? mine.flatMap((d) => [devRow(d)]) : [row(h('span.muted', 'No devices yet. Open KDE Connect on your phone and pair it with this computer below.'), null)])),
+      ...(sel ? [h('div.group-title', sel.name), ...detail(sel)] : []),
+      h('div.group-title.bt-near', 'Available Devices', h('button.btn.small.ph-again', { onclick: () => api.kdc.refresh() }, 'Look Again')),
+      h('div.group', ...(near.length ? near.map(devRow) : [row(h('span.muted', 'Looking for devices… Open KDE Connect on your phone, on the same Wi-Fi as this computer.'), null)])),
+      ...(near.some((d) => d.requested) ? [h('p.muted.ph-hint', `Accept the request on your phone. It shows the key ${near.find((d) => d.requested).verificationKey}.`)] : []));
+  }
+  draw();
+  onPhone(root, draw);
   return [root];
 }
 

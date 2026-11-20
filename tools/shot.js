@@ -2,11 +2,13 @@
 //   electron tools/shot.js <outdir> [steps.json]
 // steps: [{ "js": "...", "wait": 800, "shot": "name" }, ...]
 const { app, BrowserWindow } = require('electron');
-// SHOT_SIZE=2560x1600 (the window, in pixels) and SHOT_SCALE=1.5 (fractional scaling: CSS pixels = size / scale)
+// SHOT_PROFILE=<dir> (see below), SHOT_SIZE=2560x1600 (the window, in pixels) and SHOT_SCALE=1.5 (fractional scaling: CSS pixels = size / scale)
 const [shotW, shotH] = (process.env.SHOT_SIZE || '1440x900').split('x').map(Number);
 if (process.env.SHOT_SCALE) app.commandLine.appendSwitch('force-device-scale-factor', process.env.SHOT_SCALE);
 const path = require('path');
 const fs = require('fs');
+// SHOT_PROFILE=<dir>: a separate profile (settings, widgets), so a test run doesn't change your own
+if (process.env.SHOT_PROFILE) app.setPath('userData', path.resolve(process.env.SHOT_PROFILE));
 const system = require('../main/system');
 
 const out = process.argv[2] || 'shots';
@@ -32,6 +34,8 @@ app.whenReady().then(async () => {
   require('../main/appstore').register();
   require('../main/sddm').register();
   require('../main/bluetooth').register();
+  require('../main/kdeconnect').register();
+  require('../main/appmenu').register({});
   require('../main/audio').register(require('electron').ipcMain);
   require('../main/defaultapps').register({ mode: 'windowed' });
   require('../main/android').register();

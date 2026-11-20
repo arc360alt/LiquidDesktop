@@ -10,6 +10,7 @@ import { catalog } from './catalog.js';
 import { api } from './sys.js';
 import { isSession, session as S } from './layer.js';
 import { recordingIndicator } from './recording.js';
+import { HALVES, QUARTERS, ARRANGE, layoutIcon } from './tiling.js';
 
 let bar, appArea, statusArea, clockEl, battEl, wifiEl, openTitle = null;
 
@@ -26,7 +27,7 @@ function editItems() {
     { label: 'Undo', shortcut: '⌃Z', action: ex('undo') }, { label: 'Redo', shortcut: '⇧⌃Z', action: ex('redo') }, '-',
     { label: 'Cut', shortcut: '⌃X', action: ex('cut') }, { label: 'Copy', shortcut: '⌃C', action: ex('copy') },
     { label: 'Paste', shortcut: '⌃V', action: ex('paste') }, { label: 'Select All', shortcut: '⌃A', action: ex('selectAll') }, '-',
-    { label: 'Emoji & Symbols', disabled: true },
+    { label: 'Emoji & Symbols', shortcut: '⌃⌘Space', action: () => import('./emoji.js').then((m) => { const r = $('#menubar')?.getBoundingClientRect(); m.openEmoji({ x: 120, y: r ? r.bottom - 10 : 20 }); }) },
   ];
 }
 
@@ -37,9 +38,10 @@ function windowItems(win) {
     { label: 'Fill', shortcut: '⌥⇧F', disabled: !win, action: () => win.tileTo('fill') },
     { label: 'Center', disabled: !win, action: () => win.tileTo('center') },
     { label: 'Move & Resize', disabled: !win, submenu: win ? [
-      { label: 'Left', action: () => win.tileTo('left') }, { label: 'Right', action: () => win.tileTo('right') },
-      { label: 'Top Left', action: () => win.tileTo('tl') }, { label: 'Top Right', action: () => win.tileTo('tr') },
-      { label: 'Bottom Left', action: () => win.tileTo('bl') }, { label: 'Bottom Right', action: () => win.tileTo('br') }] : [] },
+      ...HALVES.map(([k, l]) => ({ label: l, icon: layoutIcon([k]), action: () => win.tileTo(k) })), '-',
+      ...QUARTERS.map(([k, l]) => ({ label: l, icon: layoutIcon([k]), action: () => win.tileTo(k) })), '-',
+      ...Object.entries(ARRANGE).map(([k, a]) => ({ label: a.name, icon: layoutIcon(a.places), action: () => win.arrange?.(k) })),
+      ...(win.maximized || win.tile ? ['-', { label: 'Return to Previous Size', action: () => win.tileTo('restore') }] : [])] : [] },
     { label: 'Full Screen', shortcut: '⌃⌘F', disabled: !win, action: () => win.toggleFullscreen() },
     '-', { label: 'Mission Control', shortcut: 'F3', action: () => wm.mission() },
     { label: 'Bring All to Front', action: () => win && wm.activate(win.app.id) }, '-',
@@ -48,9 +50,57 @@ function windowItems(win) {
   return items;
 }
 
+/* ---------------------------------------------- apps' own menus (Linux apps, through main/appmenu.js) */
+const globalMenus = new Map();   // window id → its menu bar (top-level items, each with its menu)
+const fetching = new Map();
+function fetchGlobal(win) {
+  if (!api.appmenu?.layout || fetching.has(win.id)) return;
+  const id = win.id;
+  fetching.set(id, api.appmenu.layout(id).then((list) => {
+    globalMenus.set(id, Array.isArray(list) ? list.filter((m) => !m.sep && m.label) : []);
+  }).catch(() => globalMenus.set(id, [])).finally(() => { fetching.delete(id); if (wm.focused?.id === id) renderAppMenus(); }));
+}
+const dbusItems = (winId, list) => list.map((m) => (m.sep ? '-' : {
+  label: m.label, shortcut: m.shortcut, disabled: !m.enabled, checked: m.toggle ? m.checked : undefined,
+  icon: m.icon ? `<img src="${m.icon}" alt="">` : undefined,
+  submenu: m.children?.length ? dbusItems(winId, m.children) : undefined,
+  action: m.children?.length ? undefined : () => api.appmenu.event(winId, m.id).catch(() => {}),
+}));
+// the app's own menus, or null when it has none (it keeps them in its window, or isn't sharing them)
+function nativeMenus(win) {
+  if (!win || win.kind !== 'native' || !win.appmenu) return null;
+  if (!globalMenus.has(win.id)) { fetchGlobal(win); return null; }
+  const list = globalMenus.get(win.id);
+  return list.length ? list : null;
+}
+
 function appMenus() {
   const win = wm.focused;
   const app = win ? win.app : { id: 'files', name: 'Files', builtin: true };
+  const own = nativeMenus(win);
+  if (own) {
+    // a Linux app with its own menus: the app's name menu, then exactly its menus (File, Edit, View…), then
+    // Window and Help (merged with the app's own Window / Help, if it has them)
+    const titled = (t) => own.find((m) => m.label.replace(/[^\p{L}]/gu, '').toLowerCase() === t);
+    const menus = [{ title: app.name, bold: true, items: [
+      { label: `About ${app.name}`, action: () => shell.aboutApp(app) }, '-',
+      { label: 'System Settings…', action: () => wm.open('settings') }, '-',
+      { label: `Hide ${app.name}`, shortcut: '⌘H', action: () => wm.appWindows(app.id).forEach((w) => w.minimize()) },
+      { label: 'Hide Others', shortcut: '⌥⌘H', action: () => wm.hideOthers() }, '-',
+      { label: `Quit ${app.name}`, shortcut: '⌘Q', action: () => wm.quitApp(app.id) },
+    ] }];
+    const appWin = titled('window'), appHelp = titled('help');
+    for (const m of own) {
+      if (m === appWin || m === appHelp) continue;
+      // like on a Mac, every app's Edit menu ends with Emoji & Symbols
+      const edit = m === titled('edit') ? ['-', editItems().at(-1)] : [];
+      menus.push({ title: m.label, menuId: m.id, items: () => [...dbusItems(win.id, m.children || []), ...edit], disabledTitle: !m.enabled });
+    }
+    menus.push({ title: 'Window', items: () => [...windowItems(win), ...(appWin?.children?.length ? ['-', ...dbusItems(win.id, appWin.children)] : [])] });
+    menus.push({ title: 'Help', items: () => [...(appHelp?.children?.length ? [...dbusItems(win.id, appHelp.children), '-'] : []),
+      { label: 'Keyboard Shortcuts', action: () => wm.open('settings', { pane: 'keyboard' }) }, { label: 'About LiquidDesktop', action: () => wm.open('about') }] });
+    return menus;
+  }
   const custom = app.menus ? app.menus(win) : [];
   const has = (t) => custom.some((m) => m.title === t);
   const menus = [{
@@ -133,9 +183,17 @@ function bindMenuTitle(item, getItems) {
 
 function renderAppMenus() {
   appArea.innerHTML = '';
+  const win = wm.focused;
   for (const m of appMenus()) {
     const it = h('div.mb-item' + (m.bold ? '.bold' : ''), m.title);
-    bindMenuTitle(it, () => m.items);
+    bindMenuTitle(it, () => {
+      // an app's own menu: ask it to bring the menu up to date (enabled items, recent files…) as it opens
+      if (m.menuId != null && win) api.appmenu.layout(win.id, m.menuId).then((kids) => {
+        const top = globalMenus.get(win.id)?.find((x) => x.id === m.menuId);
+        if (top && Array.isArray(kids) && JSON.stringify(kids) !== JSON.stringify(top.children)) { top.children = kids; if (openTitle === it) { closeMenu(); openDropdown(it, m.items()); } }
+      }).catch(() => {});
+      return typeof m.items === 'function' ? m.items() : m.items;
+    });
     appArea.append(it);
   }
 }
@@ -199,6 +257,10 @@ export function initMenubar() {
   tick();
   setInterval(tick, 1000);
   renderAppMenus();
+  // an app changed its menus (or registered them): read them again
+  // (the old ones stay until the new ones arrive, so the menu bar doesn't flicker)
+  api.appmenu?.onChanged?.((id) => { if (globalMenus.has(id) || wm.focused?.id === id) { const w = wm.windows.find((x) => x.id === id); if (w) fetchGlobal(w); } });
+  bus.on('windows', () => { for (const id of globalMenus.keys()) if (!wm.windows.some((w) => w.id === id)) globalMenus.delete(id); });
   bus.on('focus', renderAppMenus);
   bus.on('focus', applyMenubar);
   bar.addEventListener('mouseenter', () => clearTimeout(mbTimer));

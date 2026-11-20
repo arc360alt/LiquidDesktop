@@ -3,7 +3,7 @@ import { h, $, bus, timeAgo } from './util.js';
 import { appIcon, sym } from './icons.js';
 import { api } from './sys.js';
 import { store } from './store.js';
-import { buildWidget, WIDGETS, SIZE_GROUPS, sizeItems } from './widgets.js';
+import { buildWidget, WIDGETS, SIZE_GROUPS, sizeItems, isOtherSize } from './widgets.js';
 import { showMenu } from './menus.js';
 import { customWidgets } from './customwidget.js';
 import { catalog } from './catalog.js';
@@ -88,7 +88,7 @@ function renderNC() {
     return;
   }
   // edit mode: every widget, drawn as it is, to add (desktop ones and your own desktop-sized ones)
-  const types = [...Object.entries(WIDGETS).filter(([t]) => !SIZE_GROUPS.some((g) => g.m === t)).map(([t, d]) => [t, d.name]), ...Object.values(customWidgets()).filter((c) => !/^c/.test(c.size)).map((c) => ['custom:' + c.id, c.name])];
+  const types = [...Object.entries(WIDGETS).filter(([t]) => !isOtherSize(t)).map(([t, d]) => [t, d.name]), ...Object.values(customWidgets()).filter((c) => !/^c/.test(c.size)).map((c) => ['custom:' + c.id, c.name])];
   nc.append(h('div.nc-head', { style: { marginTop: '6px' } }, h('span', 'Add Widgets'), h('button.glass.panel', { onclick: (e) => { e.stopPropagation(); ncEditing = false; renderNC(); } }, 'Done')));
   const gallery = h('div.nc-widgets.nc-gallery');
   for (const [type, name] of types) {

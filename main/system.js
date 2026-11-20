@@ -320,7 +320,14 @@ function battery() {
 
 // every battery: the computer's and its devices' (wireless mice and keyboards, controllers, Bluetooth headsets…).
 // UPower knows all of them (Bluetooth ones too); without it, the kernel's list (USB / 2.4 GHz devices).
+// Then phones and tablets connected through KDE Connect (main/kdeconnect.js).
 async function batteries() {
+  const list = await localBatteries();
+  let phones = [];
+  try { phones = require('./kdeconnect').batteries(); } catch { /* no KDE Connect */ }
+  return [...list, ...phones];
+}
+async function localBatteries() {
   const out = [];
   if (which('upower')) {
     const paths = (await run('upower', ['-e'])).out.split('\n').map((l) => l.trim()).filter((l) => l && !/DisplayDevice|line_power/.test(l));

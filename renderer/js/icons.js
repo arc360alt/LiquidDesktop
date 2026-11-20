@@ -163,6 +163,20 @@ const APP_ICONS = {
       return `<defs><radialGradient id="lglow" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#fff" stop-opacity=".95"/><stop offset=".45" stop-color="#e3c8ff" stop-opacity=".55"/><stop offset="1" stop-color="#bf5af2" stop-opacity="0"/></radialGradient></defs>
         <circle cx="50" cy="50" r="20" fill="url(#lglow)"/>${arcs}`;
     } },
+  // Messages: a white speech bubble on green (an original take on the classic texting icon)
+  messages: { bg: ['#6be36f', '#1ab83a'], tone: '#30d158', c: { fg: '#fff', ac: '#ffffff', ac2: '#d9ffe0', paper: '#fff', ink: '#1ab83a' },
+    draw: (c) => `<path d="M50 22c-17.7 0-32 11.4-32 25.4 0 8 4.7 15.1 12 19.8-.6 4.6-3 8.8-6.4 11.8 6.4-.3 12.1-2.8 16.4-6.6 3.2.8 6.5 1.2 10 1.2 17.7 0 32-11.4 32-25.4S67.7 22 50 22z" fill="${c.fg}"/>` },
+  // Contacts: an address-book card with a person
+  contacts: { bg: ['#d8d0c4', '#a3988a'], tone: '#a2845e', c: { fg: '#fff', ac: '#8e7a62', ac2: '#c9bba7', paper: '#fbf8f3', ink: '#8e7a62' },
+    draw: (c) => `<rect x="22" y="18" width="56" height="64" rx="9" fill="${c.paper}"/>
+      <rect x="16" y="28" width="9" height="7" rx="2.5" fill="${c.ac2}"/><rect x="16" y="46" width="9" height="7" rx="2.5" fill="${c.ac2}"/><rect x="16" y="64" width="9" height="7" rx="2.5" fill="${c.ac2}"/>
+      <circle cx="52" cy="43" r="10" fill="${c.ac}"/><path d="M34 70c1.6-9.4 9-14.6 18-14.6S68.4 60.6 70 70z" fill="${c.ac}"/>` },
+  // Phone: a phone with signal waves (your phone, connected)
+  phone: { bg: ['#5ee3a0', '#11a873'], tone: '#30d158', c: { fg: '#fff', ac: '#11a873', ac2: '#d6fff0', paper: '#fff', ink: '#11a873' },
+    draw: (c) => `<rect x="35" y="20" width="30" height="60" rx="7" fill="${c.fg}"/><rect x="39" y="27" width="22" height="42" rx="2.5" fill="${c.ac}" opacity=".9"/>
+      <circle cx="50" cy="74" r="2.4" fill="${c.ac}"/>
+      <path d="M26 38a20 20 0 0 0 0 24M74 38a20 20 0 0 1 0 24" stroke="${c.ac2}" stroke-width="4" fill="none" stroke-linecap="round"/>
+      <path d="M18 31a30 30 0 0 0 0 38M82 31a30 30 0 0 1 0 38" stroke="${c.ac2}" stroke-width="4" fill="none" stroke-linecap="round" opacity=".6"/>` },
   weather: { bg: ['#5ab8ff', '#1f63e0'], tone: '#4aa8ff', c: { fg: '#fff', ac: '#ffd60a', ac2: '#ffb000', paper: '#fff', ink: '#fff' },
     draw: (c) => `<circle cx="40" cy="40" r="15" fill="${c.ac}"/>
       <path d="M36 74h32a12 12 0 0 0 1.5-23.9A15 15 0 0 0 41 53.6 10.3 10.3 0 0 0 36 74z" fill="${c.fg}" opacity=".97"/>` },

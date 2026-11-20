@@ -5,6 +5,7 @@ import { store, dockReserve } from './store.js';
 import { showMenu } from './menus.js';
 import { wallpaperFor } from './theme.js';
 import { layer, session as S } from './layer.js';
+import { tileMenuItems, ARRANGE, zoneAt } from './tiling.js';
 
 // In session mode each built-in app is its own real window; the X11 WM moves/resizes it.
 const EMBED = layer === 'app';
@@ -190,22 +191,25 @@ class Win extends Emitter {
 
   tileTo(kind) {
     if (EMBED) return S.send('appwin:self', 'tile', kind);
+    // Return to Previous Size
+    if (kind === 'restore') { if (this.maximized || this.tile) this.toggleMaximize(); return; }
     if (!this.maximized && !this.tile) this.restoreFrame = { x: this.x, y: this.y, w: this.w, h: this.h };
-    const a = wm.workArea(), g = 6;
-    const half = (a.w - g * 3) / 2, vh = (a.h - g * 3) / 2;
-    const frames = {
-      fill: [a.x + g, a.y + g, a.w - g * 2, a.h - g * 2],
-      left: [a.x + g, a.y + g, half, a.h - g * 2], right: [a.x + g * 2 + half, a.y + g, half, a.h - g * 2],
-      tl: [a.x + g, a.y + g, half, vh], tr: [a.x + g * 2 + half, a.y + g, half, vh],
-      bl: [a.x + g, a.y + g * 2 + vh, half, vh], br: [a.x + g * 2 + half, a.y + g * 2 + vh, half, vh],
-      center: [a.x + a.w * 0.15, a.y + a.h * 0.1, a.w * 0.7, a.h * 0.8],
-      'fill-nodock': [0, MENUBAR, innerWidth, innerHeight - MENUBAR],
-    };
-    const f = frames[kind];
     this.tile = kind === 'center' ? null : kind;
     this.maximized = kind === 'fill' || kind === 'fill-nodock';
-    this.animateFrame(...f);
+    this.animateFrame(...tileFrame(kind));
     bus.emit('windows');
+  }
+
+  /** Arrange: this window takes the layout's first place, the ones behind it (most recent first) the others. */
+  arrange(layout) {
+    if (EMBED) return;
+    const places = ARRANGE[layout]?.places;
+    if (!places) return;
+    const others = wm.mru.filter((w) => w !== this && w.space === this.space && !w.minimized && w.app.resizable !== false);
+    const wins = [this, ...others].slice(0, places.length);
+    wins.forEach((w, i) => { if (w.fullscreen) w.toggleFullscreen(); w.tileTo(places[i]); });
+    for (const w of wins.slice(1).reverse()) w.el.style.zIndex = ++zTop;
+    this.focus();
   }
 
   toggleFullscreen() {
@@ -227,22 +231,9 @@ class Win extends Emitter {
 
   tileMenu(anchor) {
     const r = anchor.getBoundingClientRect();
-    const tileIcon = (rects) => `<svg viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="3" fill="none" stroke="currentColor" stroke-width="1.5"/>${rects}</svg>`;
-    showMenu([
-      { header: 'Move & Resize' },
-      { label: 'Fill', icon: tileIcon('<rect x="4" y="6" width="16" height="12" rx="1.5" fill="currentColor"/>'), shortcut: '⌥⇧F', action: () => this.tileTo('fill') },
-      { label: 'Center', icon: tileIcon('<rect x="7" y="7" width="10" height="10" rx="1.5" fill="currentColor"/>'), action: () => this.tileTo('center') },
-      '-',
-      { label: 'Left', icon: tileIcon('<rect x="4" y="6" width="7.5" height="12" rx="1.5" fill="currentColor"/>'), shortcut: '⌥⇧←', action: () => this.tileTo('left') },
-      { label: 'Right', icon: tileIcon('<rect x="12.5" y="6" width="7.5" height="12" rx="1.5" fill="currentColor"/>'), shortcut: '⌥⇧→', action: () => this.tileTo('right') },
-      { label: 'Top Left', icon: tileIcon('<rect x="4" y="6" width="7.5" height="5.5" rx="1" fill="currentColor"/>'), action: () => this.tileTo('tl') },
-      { label: 'Top Right', icon: tileIcon('<rect x="12.5" y="6" width="7.5" height="5.5" rx="1" fill="currentColor"/>'), action: () => this.tileTo('tr') },
-      { label: 'Bottom Left', icon: tileIcon('<rect x="4" y="12.5" width="7.5" height="5.5" rx="1" fill="currentColor"/>'), action: () => this.tileTo('bl') },
-      { label: 'Bottom Right', icon: tileIcon('<rect x="12.5" y="12.5" width="7.5" height="5.5" rx="1" fill="currentColor"/>'), action: () => this.tileTo('br') },
-      '-',
-      { label: this.fullscreen ? 'Exit Full Screen' : 'Enter Full Screen', shortcut: '⌃⌘F', action: () => this.toggleFullscreen() },
-      { label: 'Move to Desktop', submenu: wm.spaceNames().map((n, i) => ({ label: n, checked: i === this.space, action: () => wm.moveToSpace(this, i) })) },
-    ], r.left - 6, r.bottom + 6);
+    showMenu(tileMenuItems({ tile: (k) => this.tileTo(k), arrange: (a) => this.arrange(a), fullscreen: () => this.toggleFullscreen(), isFullscreen: this.fullscreen,
+      canRestore: !!(this.maximized || this.tile), restore: () => this.tileTo('restore'),
+      spaces: wm.spaceNames().map((n, i) => [n, i === this.space, () => wm.moveToSpace(this, i)]) }), r.left - 6, r.bottom + 6, { className: 'tile-menu' });
   }
 
   windowMenu(x, y) {
@@ -280,16 +271,16 @@ class Win extends Emitter {
         }
       }
       this.setFrame(ox + dx, Math.max(MENUBAR, oy + dy), this.w, this.h);
-      if (!store.get('windowTiling')) return;
       const W = innerWidth, H = innerHeight, edge = 3, corner = H * 0.18;
       snap = null;
-      if (ev.clientY <= MENUBAR + 2) snap = 'fill';
+      // holding Alt (⌥): tile wherever the pointer is; otherwise only at the screen edges (when that's on)
+      if (ev.altKey && this.app.resizable !== false) snap = zoneAt(ev.clientX / W, ev.clientY / H);
+      else if (!store.get('windowTiling') || this.app.resizable === false) snap = null;
+      else if (ev.clientY <= MENUBAR + 2) snap = 'fill';
       else if (ev.clientX <= edge) snap = ev.clientY < corner + MENUBAR ? 'tl' : ev.clientY > H - corner ? 'bl' : 'left';
       else if (ev.clientX >= W - edge) snap = ev.clientY < corner + MENUBAR ? 'tr' : ev.clientY > H - corner ? 'br' : 'right';
       if (snap) {
-        const a = wm.workArea(), g = 6, hw = (a.w - g * 3) / 2, hh = (a.h - g * 3) / 2;
-        const f = { fill: [a.x + g, a.y + g, a.w - g * 2, a.h - g * 2], left: [a.x + g, a.y + g, hw, a.h - g * 2], right: [a.x + g * 2 + hw, a.y + g, hw, a.h - g * 2],
-          tl: [a.x + g, a.y + g, hw, hh], tr: [a.x + g * 2 + hw, a.y + g, hw, hh], bl: [a.x + g, a.y + g * 2 + hh, hw, hh], br: [a.x + g * 2 + hw, a.y + g * 2 + hh, hw, hh] }[snap];
+        const f = tileFrame(snap);
         preview.hidden = false;
         Object.assign(preview.style, { left: f[0] + 'px', top: f[1] + 'px', width: f[2] + 'px', height: f[3] + 'px', zIndex: zTop - 1 });
       } else preview.hidden = true;
@@ -324,6 +315,21 @@ class Win extends Emitter {
     const up = () => { removeEventListener('mousemove', move); removeEventListener('mouseup', up); document.body.classList.remove('resizing-win'); document.body.style.cursor = ''; };
     addEventListener('mousemove', move); addEventListener('mouseup', up);
   }
+}
+
+/** Where a tiled window goes in the work area: [x, y, w, h]. */
+function tileFrame(kind) {
+  const a = wm.workArea(), g = store.get('tileMargins') === false ? 0 : 6;
+  const half = (a.w - g * 3) / 2, vh = (a.h - g * 3) / 2;
+  return {
+    fill: [a.x + g, a.y + g, a.w - g * 2, a.h - g * 2],
+    left: [a.x + g, a.y + g, half, a.h - g * 2], right: [a.x + g * 2 + half, a.y + g, half, a.h - g * 2],
+    top: [a.x + g, a.y + g, a.w - g * 2, vh], bottom: [a.x + g, a.y + g * 2 + vh, a.w - g * 2, vh],
+    tl: [a.x + g, a.y + g, half, vh], tr: [a.x + g * 2 + half, a.y + g, half, vh],
+    bl: [a.x + g, a.y + g * 2 + vh, half, vh], br: [a.x + g * 2 + half, a.y + g * 2 + vh, half, vh],
+    center: [a.x + a.w * 0.15, a.y + a.h * 0.1, a.w * 0.7, a.h * 0.8],
+    'fill-nodock': [0, MENUBAR, innerWidth, innerHeight - MENUBAR],
+  }[kind] || [a.x + g, a.y + g, a.w - g * 2, a.h - g * 2];
 }
 
 /* ------------------------------------------------------------------ the manager */

@@ -80,11 +80,16 @@ fi
 #                         unrefreshed (the same symptoms); a whole frame costs a discrete GPU next to nothing
 # (glx-no-stencil is gone in picom 11+, and vsync works with NVIDIA's GLX, so those stay as they are.) Both are
 # added to LIQUID_PICOM_ARGS unless it already says otherwise, so a distro's own flags win and nothing doubles up.
+# Without glxinfo (it's in an optional package) the RandR providers tell: "NVIDIA-0" is NVIDIA's driver driving
+# the screen; "NVIDIA-G0" is only a render-offload GPU on a hybrid laptop (the screen is the other chip's).
+LIQUID_NVIDIA=""
 if [ "$LIQUID_SOFTWARE_RENDERING" != 1 ] && { [ "$__GLX_VENDOR_LIBRARY_NAME" = nvidia ] \
-    || printf '%s\n' "$GLXINFO" | grep -qiE "(server glx vendor string|client glx vendor string|OpenGL vendor string):[[:space:]]*NVIDIA"; }; then
+    || printf '%s\n' "$GLXINFO" | grep -qiE "(server glx vendor string|client glx vendor string|OpenGL vendor string):[[:space:]]*NVIDIA" \
+    || { [ -z "$GLXINFO" ] && command -v xrandr >/dev/null && xrandr --listproviders 2>/dev/null | grep -q 'name:NVIDIA-0'; }; }; then
+  LIQUID_NVIDIA=1
   case " $LIQUID_PICOM_ARGS " in *" --xrender-sync-fence "*) ;; *) LIQUID_PICOM_ARGS="${LIQUID_PICOM_ARGS:+$LIQUID_PICOM_ARGS }--xrender-sync-fence" ;; esac
   case " $LIQUID_PICOM_ARGS " in *" --use-damage "*|*" --no-use-damage "*) ;; *) LIQUID_PICOM_ARGS="$LIQUID_PICOM_ARGS --no-use-damage" ;; esac
-  export LIQUID_PICOM_ARGS
+  export LIQUID_PICOM_ARGS LIQUID_NVIDIA
   echo "liquid-desktop: NVIDIA driver: picom $LIQUID_PICOM_ARGS" >&2
   # Several monitors: NVIDIA's GLX syncs to whichever monitor it picks first (often not the main one, or a slower
   # one), and the whole desktop then stutters. Sync to the main monitor instead (unless you set it yourself).
@@ -104,8 +109,76 @@ case " $LIQUID_PICOM_ARGS " in
   *" --backend "*|*" --backend="*) PICOM_CONF="$HERE/session/picom-software.conf" ;;
 esac
 [ "$LIQUID_SOFTWARE_RENDERING" = 1 ] && PICOM_CONF="$HERE/session/picom-software.conf"
+# picom is started and watched by a small loop below. When it can't start with a configuration (GLX features the
+# driver lacks, an NVIDIA option that driver version doesn't take…) the next one is tried, ending with software
+# rendering — before, the session simply ran without a compositor, and the transparent shell layers then covered
+# every monitor in black. When it crashes later (a display change can do that) it's started again; if one
+# configuration keeps crashing, the next one is used. LiquidDesktop also cuts its layers down to what they show
+# while no compositor runs (main/wm.js), so a monitor never goes black in the meantime.
+# Its pid is kept in a file: after the monitors are rearranged LiquidDesktop resets it (SIGUSR1, main/session.js).
+picom_log() {
+  echo "liquid-desktop: $*" >&2
+  { mkdir -p "${XDG_CONFIG_HOME:-$HOME/.config}/LiquidDesktop" \
+    && echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) [picom] $*" >> "${XDG_CONFIG_HOME:-$HOME/.config}/LiquidDesktop/crashes.log"; } 2>/dev/null
+}
+no_backend() { printf ' %s ' "$1" | sed 's/ --backend[ =][^ ]* / /g; s/^ *//; s/ *$//'; }
+no_nvidia() { printf ' %s ' "$1" | sed 's/ --xrender-sync-fence / /g; s/ --no-use-damage / /g; s/^ *//; s/ *$//'; }
+# configuration N to try, as "config file|arguments"; nothing when there's no such step
+GPU_CONF="$HERE/session/picom.conf"
+picom_variant() {
+  case "$1" in
+    0) echo "$PICOM_CONF|$LIQUID_PICOM_ARGS" ;;
+    # NVIDIA: the GPU config without the extra NVIDIA options (some driver/picom versions refuse the sync fence)
+    1) [ -n "$LIQUID_NVIDIA" ] && [ "$PICOM_CONF" = "$GPU_CONF" ] && echo "$PICOM_CONF|$(no_nvidia "$LIQUID_PICOM_ARGS")" ;;
+    # GPU config, explicitly GLX, without any backend someone asked for
+    2) [ "$PICOM_CONF" = "$GPU_CONF" ] && echo "$PICOM_CONF|$(no_backend "$LIQUID_PICOM_ARGS") --backend glx" ;;
+    # software rendering: no blur, but a working desktop. NVIDIA keeps its sync fence (xrender uses it too), not
+    # --no-use-damage (a GLX workaround). Not tried, as measured on NVIDIA under Xwayland (the nested session):
+    #  - Mesa's GLX/EGL through Zink: picom starts but draws only black (or, with Kopper off, becomes llvmpipe)
+    #  - blur on xrender: the X server does it on the CPU (glamor doesn't accelerate it): 2–6 cores at a few fps
+    3) echo "$HERE/session/picom-software.conf|$(no_backend "$(printf ' %s ' "$LIQUID_PICOM_ARGS" | sed 's/ --no-use-damage / /g')") --backend xrender" ;;
+  esac
+}
+PICOM_PIDFILE="${XDG_RUNTIME_DIR:-/tmp}/liquid-desktop-picom-$(printf '%s' "$DISPLAY" | tr -c 'A-Za-z0-9' _).pid"
+export LIQUID_PICOM_PIDFILE="$PICOM_PIDFILE"
+picom_supervise() {
+  CUR=""
+  trap '[ -n "$CUR" ] && kill "$CUR" 2>/dev/null; rm -f "$PICOM_PIDFILE"; exit 0' TERM INT HUP
+  V=0; CRASHES=0; TRIED="|"
+  while [ "$V" -le 3 ]; do
+    SPEC="$(picom_variant "$V")"
+    case "$TRIED" in *"|$SPEC|"*) SPEC="" ;; esac   # nothing new to try at this step
+    if [ -z "$SPEC" ]; then V=$((V + 1)); continue; fi
+    CONF="${SPEC%%|*}"; ARGS="${SPEC#*|}"
+    T0=$(date +%s)
+    # shellcheck disable=SC2086
+    picom --config "$CONF" $ARGS &
+    CUR=$!
+    echo "$CUR" > "$PICOM_PIDFILE"
+    wait "$CUR"
+    CODE=$?
+    CUR=""
+    RAN=$(( $(date +%s) - T0 ))
+    if [ "$RAN" -lt 8 ]; then
+      picom_log "picom could not start ($(basename "$CONF") $ARGS, exit $CODE): trying the next configuration"
+      TRIED="$TRIED$SPEC|"; V=$((V + 1)); CRASHES=0
+      continue
+    fi
+    [ "$RAN" -gt 600 ] && CRASHES=0
+    CRASHES=$((CRASHES + 1))
+    if [ "$CRASHES" -ge 4 ]; then
+      picom_log "picom keeps exiting ($(basename "$CONF") $ARGS, exit $CODE): trying the next configuration"
+      TRIED="$TRIED$SPEC|"; V=$((V + 1)); CRASHES=0
+    else
+      picom_log "picom exited after ${RAN}s (exit $CODE): starting it again"
+      sleep 1
+    fi
+  done
+  rm -f "$PICOM_PIDFILE"
+  picom_log "no picom configuration works here: running without a compositor (no blur or shadows)"
+}
 if command -v picom >/dev/null; then
-  picom --config "$PICOM_CONF" $LIQUID_PICOM_ARGS &
+  picom_supervise &
   PICOM=$!
   sleep 0.5
 else
@@ -158,6 +231,16 @@ if [ -e /usr/share/xdg-desktop-portal/portals/liquiddesktop.portal ]; then
   export GTK_USE_PORTAL=1 GDK_DEBUG="${GDK_DEBUG:+$GDK_DEBUG,}portals"
   for D in /usr/lib/qt6/plugins/platformthemes /usr/lib/x86_64-linux-gnu/qt6/plugins/platformthemes /usr/lib64/qt6/plugins/platformthemes; do
     [ -e "$D/libqxdgdesktopportal.so" ] && { export QT_QPA_PLATFORMTHEME=xdgdesktopportal; break; }
+  done
+fi
+# Apps' menus in the menu bar (main/appmenu.js): Qt, KDE, Chromium and Electron apps do it on their own; GTK 2/3
+# apps need appmenu-gtk-module. Off when turned off in Settings › Menu Bar (they keep menus in their windows).
+if [ ! -e "${XDG_CONFIG_HOME:-$HOME/.config}/LiquidDesktop/global-menu-off" ]; then
+  for M in /usr/lib/gtk-3.0/modules /usr/lib/x86_64-linux-gnu/gtk-3.0/modules /usr/lib64/gtk-3.0/modules; do
+    if [ -e "$M/libappmenu-gtk-module.so" ]; then
+      case ":$GTK_MODULES:" in *:appmenu-gtk-module:*) ;; *) export GTK_MODULES="${GTK_MODULES:+$GTK_MODULES:}appmenu-gtk-module" ;; esac
+      break
+    fi
   done
 fi
 # Folders open in LiquidDesktop's Files: a default that only applies in this session (the

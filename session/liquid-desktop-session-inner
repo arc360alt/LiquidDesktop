@@ -6,8 +6,37 @@ HERE="$1"
 # services it starts, such as the desktop portal used by Flatpak apps
 command -v dbus-update-activation-environment >/dev/null && dbus-update-activation-environment \
   DISPLAY XAUTHORITY XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP XDG_SESSION_TYPE XCURSOR_THEME XCURSOR_SIZE XCURSOR_PATH GDK_BACKEND QT_QPA_PLATFORM >/dev/null 2>&1
+ELECTRON=""
 for E in "$LIQUID_ELECTRON" "$HERE/node_modules/electron/dist/electron" "$(command -v electron43)" "$(command -v electron)"; do
-  [ -n "$E" ] && [ -x "$E" ] && exec "$E" "$HERE" --session
+  [ -n "$E" ] && [ -x "$E" ] && { ELECTRON="$E"; break; }
 done
-echo "liquid-desktop: Electron not found (install electron43)" >&2
-exit 1
+[ -n "$ELECTRON" ] || { echo "liquid-desktop: Electron not found (install electron43)" >&2; exit 1; }
+
+# LiquidDesktop is the window manager and the whole interface: when it crashed (the GPU driver taking it down
+# during a display change, say) the session used to end on the spot. It's started again instead — a few times,
+# not forever. Apps keep running: X hands their windows back and the new window manager takes them in again.
+# Not restarted: a normal quit / log out (0), "another window manager is running" (3), a session that is being
+# ended (killed by SIGHUP/SIGINT/SIGTERM), or an X server that is gone.
+LOG="${XDG_CONFIG_HOME:-$HOME/.config}/LiquidDesktop/crashes.log"
+XSOCK="/tmp/.X11-unix/X$(printf '%s' "${DISPLAY#*:}" | cut -d. -f1)"
+CRASHES=0
+while :; do
+  T0=$(date +%s)
+  "$ELECTRON" "$HERE" --session
+  CODE=$?
+  case "$CODE" in 0|3|129|130|143) exit "$CODE" ;; esac
+  [ -S "$XSOCK" ] || exit "$CODE"
+  [ $(( $(date +%s) - T0 )) -gt 120 ] && CRASHES=0
+  CRASHES=$((CRASHES + 1))
+  MSG="$(date -u +%Y-%m-%dT%H:%M:%SZ) [session] LiquidDesktop exited unexpectedly (code $CODE)"
+  if [ "$CRASHES" -gt 3 ]; then
+    echo "$MSG: crashed too often, giving up" >&2
+    { mkdir -p "$(dirname "$LOG")" && echo "$MSG: crashed too often, giving up" >> "$LOG"; } 2>/dev/null
+    exit "$CODE"
+  fi
+  echo "$MSG: starting it again" >&2
+  { mkdir -p "$(dirname "$LOG")" && echo "$MSG: starting it again" >> "$LOG"; } 2>/dev/null
+  # the start-up animation is skipped the next time (the login screen isn't: a crash must not unlock anything)
+  export LIQUID_RECOVERED=1
+  sleep 1
+done

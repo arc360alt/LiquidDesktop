@@ -6,7 +6,7 @@
 //   shell layer    — the web UI's menu bar, Dock and popovers, on top, shaped to just those parts
 //
 // All of it is the same web app (renderer/index.html) loaded with a different ?layer=.
-const { BrowserWindow, ipcMain, screen, desktopCapturer, app } = require('electron');
+const { BrowserWindow, ipcMain, screen, desktopCapturer, app, nativeImage } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { WindowManager, TB, EDGE } = require('./wm');
@@ -21,6 +21,8 @@ async function startSession({ preload }) {
   require('./input').watchDevices().catch(() => {});
   const wm = new WindowManager();
   await wm.start();
+  // apps' own menus in the menu bar: the registrar has to be there before apps start (they look for it then)
+  require('./appmenu').register({ wm, resolveIcon: require('./system').resolveIcon });
   const { width: sw, height: sh } = screen.getPrimaryDisplay().bounds;
   const prefs = { preload, contextIsolation: true, nodeIntegration: false, sandbox: false, webviewTag: true, spellcheck: false };
   const appWindows = new Map();   // session id → BrowserWindow
@@ -41,12 +43,22 @@ async function startSession({ preload }) {
   fixedTitle(shell, 'LiquidDesktop Shell');
   wm.registerOwn(xidOf(shell), { role: 'shell', primary: true });
   const extra = new Map();   // display id → { desktop, bar } on monitors other than the main one
+  // Our layer windows are shown at their first paint (ready-to-show). NVIDIA's driver can deliver that late or
+  // never for a hidden window (the same thing that made apps need a second click), which left a monitor black
+  // with nothing on it: so they're also shown once the page has loaded, and after a few seconds at the latest.
+  const showLayer = (bw, after) => {
+    let done = false;
+    const show = () => { if (done || bw.isDestroyed()) return; done = true; clearTimeout(late); bw.showInactive(); after?.(); };
+    const late = setTimeout(show, 4000);
+    bw.once('ready-to-show', show);
+    bw.webContents.once('did-finish-load', () => setTimeout(show, 150));
+  };
   // The start-up screen (inside the shell page) is shown once per session. Whether it's done is kept here, in
   // the main process: a reload of the shell (after a crash) asks for it not to be shown at all, and if start-up
   // never reports back, it's taken down anyway, so it can't come back or stay up for good.
   let bootDone = false;
   const loadShell = () => shell.loadFile(INDEX, { query: { mode: 'session', layer: 'shell',
-    login: bootDone || process.env.LIQUID_SKIP_LOGIN ? '0' : '1', boot: bootDone ? '0' : '1' } });
+    login: bootDone || process.env.LIQUID_SKIP_LOGIN ? '0' : '1', boot: bootDone || process.env.LIQUID_RECOVERED ? '0' : '1' } });
   ipcMain.on('shell:bootDone', (e) => { if (e.sender === shell.webContents) bootDone = true; });
   setTimeout(() => { if (!bootDone && !shell.isDestroyed()) { console.warn('[session] start-up screen still up after 25s: taking it down'); bootDone = true; shell.webContents.send('session:hideBoot'); } }, 25000);
   loadShell();
@@ -55,8 +67,8 @@ async function startSession({ preload }) {
   const openLink = (url) => { if (!require('./defaultapps').openUrlExternally(url)) openApp('browser', { url }); };
   shell.webContents.setWindowOpenHandler(({ url }) => { openLink(url); return { action: 'deny' }; });
 
-  desktop.once('ready-to-show', () => desktop.showInactive());
-  shell.once('ready-to-show', () => { shell.showInactive(); setTimeout(() => wm.setShellInput([], false), 50); });
+  showLayer(desktop);
+  showLayer(shell, () => setTimeout(() => wm.setShellInput([], false), 50));
 
   // A page of ours crashed (common without a GPU): log it and reload, the shell without its start-up screen.
   // A few times only: a page that keeps crashing isn't reloaded forever.
@@ -195,6 +207,7 @@ async function startSession({ preload }) {
     }
   });
   wm.on('quit-app', (w) => toShell('session:shortcut', 'quit', w.id));
+
   wm.on('close-app-window', (w) => { const bw = appWindows.get(w.id); if (bw && !bw.isDestroyed()) bw.webContents.send('appwin:close'); });
 
   /* ------------------------------------------------------------ web UI → WM */
@@ -204,6 +217,60 @@ async function startSession({ preload }) {
   const handle = (ch, fn) => ipcMain.handle(ch, (e, ...a) => fn(...a, e));
   const idOfSender = (e) => { for (const [id, bw] of appWindows) if (!bw.isDestroyed() && bw.webContents === e.sender) return id; return null; };
 
+  /* ------------------------------------------------------------ minimize: Genie / Scale into the Dock */
+  // The shell draws the window's picture flying into the Dock (renderer/js/genie.js); the window itself is
+  // unmapped once the first frame is up, and on restore it's mapped once the picture has flown back out.
+  let minimizeEffect = 'genie', genieSeq = 0;
+  const genieWait = new Map();
+  on('wm:setMinimizeEffect', (fx) => { minimizeEffect = ['genie', 'scale', 'none'].includes(fx) ? fx : 'genie'; });
+  on('shell:genie', (req) => { genieWait.get(req)?.(); genieWait.delete(req); });
+  // the window's picture, at most 900 px wide (it only has to look right while it's moving)
+  const grab = async (w) => {
+    const bw = w.kind === 'app' ? appWindows.get(w.id) : null;
+    let img = null;
+    if (bw && !bw.isDestroyed()) img = await bw.webContents.capturePage().catch(() => null);
+    else {
+      const X = wm.X, W = w.w, H = w.h;
+      if (!W || !H || W * H > 16e6) return null;
+      const out = Buffer.alloc(W * H * 4);
+      const rows = Math.max(1, Math.floor(262144 / W));
+      for (let y = 0; y < H; y += rows) {
+        const hh = Math.min(rows, H - y);
+        const part = await new Promise((res) => X.GetImage(2, w.frame, 0, y, W, hh, 0xffffffff, (e, im) => res(e ? null : im)));
+        if (!part || part.data.length < W * hh * 4) return null;
+        part.data.copy(out, y * W * 4, 0, W * hh * 4);
+        // a window without an alpha channel: the fourth byte is padding, not transparency
+        if (part.depth !== 32) for (let i = y * W * 4 + 3; i < (y + hh) * W * 4; i += 4) out[i] = 255;
+      }
+      // a 24-bit app inside a 32-bit frame: its part of the picture has no real alpha either
+      if (w.frame !== w.client) {
+        const g = await wm.geometry(w.client).catch(() => null);
+        if (g && g.depth !== 32) {
+          const x0 = Math.max(0, g.xPos), y0 = Math.max(0, g.yPos), x1 = Math.min(W, g.xPos + g.width), y1 = Math.min(H, g.yPos + g.height);
+          for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) out[(y * W + x) * 4 + 3] = 255;
+        }
+      }
+      img = nativeImage.createFromBitmap(out, { width: W, height: H });
+    }
+    if (!img || img.isEmpty()) return null;
+    const sz = img.getSize();
+    if (sz.width > 900) img = img.resize({ width: 900, quality: 'good' });
+    const fin = img.getSize();
+    return { w: fin.width, h: fin.height, data: img.toBitmap() };
+  };
+  wm.animateMinimize = async (w, restoring) => {
+    if (minimizeEffect === 'none' || shell.isDestroyed()) return;
+    const img = restoring ? null : await grab(w).catch(() => null);
+    if (!restoring && !img) return;
+    const k = screen.getPrimaryDisplay().scaleFactor || 1, p = wm.prim();
+    const rect = { x: (w.x - p.x) / k, y: (w.y - p.y) / k, w: w.w / k, h: w.h / k };
+    const req = ++genieSeq;
+    toShell('session:genie', { req, id: w.id, rect, img, restore: restoring, effect: minimizeEffect });
+    // minimizing: until the first frame is drawn; restoring: until the picture is back where the window goes
+    await new Promise((res) => { genieWait.set(req, res); setTimeout(res, restoring ? 1000 : 300); });
+    genieWait.delete(req);
+  };
+
   handle('wm:state', () => wm.state());
   on('wm:activate', (id) => wm.activate(id));
   on('wm:close', (id) => wm.close(id));
@@ -211,6 +278,9 @@ async function startSession({ preload }) {
   on('wm:restore', (id) => wm.restore(id));
   on('wm:toggleMaximize', (id) => wm.toggleMaximize(id));
   on('wm:tile', (id, kind) => wm.tile(id, kind));
+  on('wm:arrange', (id, places) => wm.arrange(id, places));
+  // Settings › Desktop & Dock: tile by dragging to the edges, margins around tiled windows
+  on('wm:setTiling', (o) => { wm.edgeTiling = o?.edges !== false; wm.tileMargins = o?.margins !== false; });
   on('wm:fullscreen', (id, onOff) => { const w = wm.windows.get(id); if (w) wm.setFullscreen(id, onOff ?? !w.fullscreen); });
   on('wm:beginMove', (id) => wm.beginMove(id));
   on('wm:beginResize', (id, dir) => wm.beginResize(id, dir));
@@ -226,6 +296,7 @@ async function startSession({ preload }) {
     const bw = w && appWindows.get(w.id);
     if (bw && ['undo', 'redo', 'cut', 'copy', 'paste', 'selectAll'].includes(cmd)) bw.webContents[cmd]();
   });
+  handle('wm:typeText', (text) => wm.typeText(String(text).slice(0, 200)));
   handle('wm:pointer', async () => { const p = await wm.pointer(); return p ? { x: p.rootX, y: p.rootY, button: !!(p.keyMask & 0x100) } : null; });
   handle('wm:thumbnails', async () => {
     const sources = await desktopCapturer.getSources({ types: ['window'], thumbnailSize: { width: 640, height: 400 } });
@@ -283,32 +354,81 @@ async function startSession({ preload }) {
     fixedTitle(dk, 'LiquidDesktop Desktop');
     wm.registerOwn(xidOf(dk), { role: 'desktop', primary: false });
     dk.loadFile(INDEX, { query: { ...q, layer: 'desktop' } });
-    dk.once('ready-to-show', () => dk.showInactive());
+    showLayer(dk);
     const bar = new BrowserWindow({ ...b, frame: false, show: false, resizable: false, skipTaskbar: true, transparent: true, backgroundColor: '#00000000', hasShadow: false, type: 'dock', webPreferences: prefs });
     fixedTitle(bar, 'LiquidDesktop Shell');
     const bx = xidOf(bar);
     wm.registerOwn(bx, { role: 'shell', primary: false });
     bar.loadFile(INDEX, { query: { ...q, layer: 'shell', boot: '0', login: '0' } });
-    bar.once('ready-to-show', () => { bar.showInactive(); setTimeout(() => wm.setShellInput([], false, bx), 50); });
+    showLayer(bar, () => setTimeout(() => wm.setShellInput([], false, bx), 50));
     recover('desktop ' + d.id, dk, () => dk.loadFile(INDEX, { query: { ...q, layer: 'desktop' } }));
     recover('menu bar ' + d.id, bar, () => bar.loadFile(INDEX, { query: { ...q, layer: 'shell', boot: '0', login: '0' } }));
     return { desktop: dk, bar };
   };
-  const relayout = () => {
-    const all = screen.getAllDisplays(), pd = screen.getPrimaryDisplay(), b = pd.bounds;
+  // A monitor that went away keeps its windows for a while, hidden: a mode set (NVIDIA's especially) often drops a
+  // monitor and brings it back a moment later, and making and loading two new windows right then — while the
+  // driver was busiest — is what took the whole desktop down. They're reused for the next monitor that appears.
+  const spares = [];
+  const retire = (x) => {
+    for (const bw of [x.desktop, x.bar]) if (!bw.isDestroyed()) bw.hide();
+    if (!x.bar.isDestroyed()) { const bx = xidOf(x.bar); wm.setBlurRegions([], bx); wm.setShellGeometry(bx, { ox: -100000, oy: -100000 }); }
+    x.until = Date.now() + 20000;
+    spares.push(x);
+    setTimeout(() => {
+      const i = spares.indexOf(x);
+      if (i < 0 || Date.now() < x.until) return;
+      spares.splice(i, 1);
+      for (const bw of [x.desktop, x.bar]) if (!bw.isDestroyed()) bw.destroy();
+    }, 20500);
+  };
+  const reuse = () => {
+    while (spares.length) {
+      const x = spares.pop();
+      if (x.desktop.isDestroyed() || x.bar.isDestroyed()) { for (const bw of [x.desktop, x.bar]) if (!bw.isDestroyed()) bw.destroy(); continue; }
+      for (const bw of [x.desktop, x.bar]) bw.showInactive();
+      return x;
+    }
+    return null;
+  };
+  // After the monitors were rearranged or changed mode, the compositor is reset (picom: SIGUSR1) once things have
+  // settled: with NVIDIA's driver picom could keep drawing for the old layout, leaving a monitor (or the part of
+  // the screen that moved) black until the next login. The session script writes picom's pid to this file.
+  let compositorTimer;
+  const resetCompositor = () => {
+    clearTimeout(compositorTimer);
+    compositorTimer = setTimeout(() => {
+      try {
+        const pid = parseInt(fs.readFileSync(process.env.LIQUID_PICOM_PIDFILE || '', 'utf8'), 10);
+        if (pid > 1) { process.kill(pid, 'SIGUSR1'); console.log('[session] display layout changed: compositor reset'); }
+      } catch { /* no picom of ours */ }
+    }, 1500);
+  };
+
+  let lastLayout = '', lastGeom = '';
+  const relayoutNow = () => {
+    const all = screen.getAllDisplays(), pd = screen.getPrimaryDisplay();
+    // in the middle of a mode set the driver can report no monitor, or a 0×0 one, for a moment: wait for the real layout
+    if (!all.length || !pd || !pd.bounds.width || !pd.bounds.height || all.some((d) => !d.bounds.width || !d.bounds.height)) { scheduleRelayout(700); return; }
+    // Only the monitors' places, sizes and scale matter here. The same event also fires when just the work area
+    // changed (which our own _NET_WORKAREA does all the time): redoing everything then was pure load.
+    const key = JSON.stringify([pd.id, all.map((d) => [d.id, d.bounds, d.scaleFactor])]);
+    if (key === lastLayout) { wm.reapplyShellInput(); return; }
+    const first = !lastLayout;
+    lastLayout = key;
+    const b = pd.bounds;
+    console.log('[session] displays:', all.map((d) => `${d.id}${d.id === pd.id ? '*' : ''} ${d.bounds.width}x${d.bounds.height}+${d.bounds.x}+${d.bounds.y}@${d.scaleFactor}`).join(', '));
     for (const bw of [desktop, shell]) if (!bw.isDestroyed()) bw.setBounds(b);
-    const mons = all.map((d) => ({ ...pxOf(d), primary: d.id === pd.id }));
+    const mons = all.map((d) => ({ ...pxOf(d), id: d.id, primary: d.id === pd.id }));
     const rw = Math.max(...mons.map((m) => m.x + m.w)), rh = Math.max(...mons.map((m) => m.y + m.h));
-    // the other displays: add, move or remove their windows
-    const want = new Set();
+    // the other displays: move their windows, give windows to new ones, put away those of monitors that are gone
+    const want = new Set(all.filter((d) => d.id !== pd.id).map((d) => d.id));
+    for (const [id, x] of extra) if (!want.has(id)) { extra.delete(id); retire(x); }
     for (const d of all) {
       if (d.id === pd.id) continue;
-      want.add(d.id);
-      if (!extra.has(d.id)) extra.set(d.id, makeExtra(d));
+      if (!extra.has(d.id)) extra.set(d.id, reuse() || makeExtra(d));
       const x = extra.get(d.id);
       for (const bw of [x.desktop, x.bar]) if (!bw.isDestroyed()) bw.setBounds(d.bounds);
     }
-    for (const [id, x] of extra) if (!want.has(id)) { extra.delete(id); for (const bw of [x.desktop, x.bar]) if (!bw.isDestroyed()) bw.destroy(); }
     wm.setMonitors(mons, rw, rh);
     const pm = pxOf(pd);
     wm.setShellGeometry(xidOf(shell), { ox: pm.x, oy: pm.y, w: pm.w, h: pm.h });
@@ -316,12 +436,11 @@ async function startSession({ preload }) {
       const d = all.find((o) => o.id === id), m = pxOf(d);
       if (!x.bar.isDestroyed()) wm.setShellGeometry(xidOf(x.bar), { ox: m.x, oy: m.y, w: m.w, h: m.h });
     }
-    // windows left on a monitor that's gone come back to one that's there; maximized / tiled / full-screen
-    // windows are fitted again to their monitor
+    // windows left on a monitor that's gone come back to one that's there; the others went along with their
+    // monitor (wm.setMonitors) and are fitted to it again — maximized / tiled / full-screen ones included
     for (const w of wm.windows.values()) {
-      if (!wm.monAt(w.x + w.w / 2, w.y + 20, true)) { w.x = null; w.y = null; w.maximized = false; w.tile = null; w.fullscreen = false; wm.placeIfNeeded(w); continue; }
-      if (w.fullscreen) { const m = wm.monOf(w); Object.assign(w, { x: m.x, y: m.y, w: m.w, h: m.h }); wm.applyGeometry(w); }
-      else if (w.maximized || w.tile) wm.tile(w.id, w.tile || 'fill');
+      if (w.x == null || !wm.monAt(w.x + w.w / 2, w.y + 20, true)) { w.x = null; w.y = null; w.maximized = false; w.tile = null; w.fullscreen = false; wm.placeIfNeeded(w); continue; }
+      wm.refit(w);
     }
     wm.restack();
     wm.changed();
@@ -332,11 +451,26 @@ async function startSession({ preload }) {
     // (shapes are cheap and re-sent a few times; the repaint is one, once the driver has settled — repainting
     // every window during a mode set added GPU load right when NVIDIA's driver could least take it)
     for (const ms of [0, 150, 600, 2000]) setTimeout(() => wm.reapplyShellInput(), ms);
+    if (first) return;
     setTimeout(() => { for (const bw of BrowserWindow.getAllWindows()) if (!bw.isDestroyed()) bw.webContents.invalidate(); }, 2500);
+    // the monitors themselves moved or changed size (not just the scale): the compositor starts over with them
+    const geom = JSON.stringify(mons.map((m) => [m.id, m.x, m.y, m.w, m.h]));
+    if (geom !== lastGeom) resetCompositor();
+    lastGeom = geom;
   };
+  // an error here must not take the session down with it: log it, and try once more when things have settled
+  let relayoutTimer, relayoutErrors = 0;
+  const relayout = () => {
+    try { relayoutNow(); relayoutErrors = 0; } catch (err) {
+      crashLog(`[session] display change failed: ${err && err.stack || err}`);
+      lastLayout = '';
+      if (++relayoutErrors <= 3) scheduleRelayout(1500);
+    }
+  };
+  const scheduleRelayout = (ms) => { clearTimeout(relayoutTimer); relayoutTimer = setTimeout(relayout, ms); };
   relayout();
-  let relayoutTimer;
-  for (const ev of ['display-metrics-changed', 'display-added', 'display-removed']) screen.on(ev, () => { clearTimeout(relayoutTimer); relayoutTimer = setTimeout(relayout, 300); });
+  lastGeom = JSON.stringify(wm.mons.map((m) => [m.id, m.x, m.y, m.w, m.h]));
+  for (const ev of ['display-metrics-changed', 'display-added', 'display-removed']) screen.on(ev, () => scheduleRelayout(400));
 
   app.on('liquid-cursor-changed', () => wm.reloadCursor());
 

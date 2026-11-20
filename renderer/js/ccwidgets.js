@@ -11,6 +11,7 @@ import { appIcon } from './icons.js';
 import { catalog } from './catalog.js';
 import { getWeather, describe } from './weatherdata.js';
 import { customWidgets, deleteCustom, renderCustom, toFile, isCC } from './customwidget.js';
+import { mainPhone, PHONE_ICONS, phoneAct, sendFiles, deviceIcon } from './phone.js';
 
 // sizes a control can be (right-click › Size on the ones with more than one)
 export const SIZE_NAMES = { s: 'Small (1×1)', w: 'Wide (2×1)', l: 'Large (2×2)' };
@@ -137,6 +138,26 @@ const INFO = [
   }],
 ];
 
+// 1×1 controls for your phone (KDE Connect): they show a dash until a phone is connected
+const phoneSq = (c, icon, label, run) => {
+  const d = mainPhone();
+  const el = c.sq(icon, label, false, () => { if (d?.reachable) { c.close(); setTimeout(() => run(d), 200); } else c.shell.openSettings('phone'); });
+  if (!d?.reachable) el.classList.add('cc-dim');
+  return el;
+};
+const PHONE_CONTROLS = [
+  { id: 'phone-find', name: 'Find My Phone', size: 's', build: (c) => phoneSq(c, PHONE_ICONS.ring, 'Find Phone', (d) => phoneAct(d, 'ring', null, c.shell.notify)) },
+  { id: 'phone-clip', name: 'Send Clipboard to Phone', size: 's', build: (c) => phoneSq(c, PHONE_ICONS.clipboard, 'Clipboard', (d) => phoneAct(d, 'clipboard', null, c.shell.notify).then((r) => r && c.shell.notify({ app: 'settings', title: d.name, body: 'Clipboard sent.' }))) },
+  { id: 'phone-send', name: 'Send Files to Phone', size: 's', build: (c) => phoneSq(c, PHONE_ICONS.send, 'Send Files', (d) => sendFiles(d, c.shell.notify)) },
+  { id: 'phone-battery', name: 'Phone Battery', size: 's', build: (c) => {
+    const d = mainPhone(), b = d?.reachable ? d.battery : null;
+    const el = h('div.cc-mod.cc-sq.cc-phone-batt', h('span', { html: b?.charging ? sym.bolt : deviceIcon(d) }), h('b', b ? b.percent + '%' : '—'));
+    el.title = d ? `${d.name}${b ? ` — ${b.percent}%` : ''}` : 'No phone';
+    el.addEventListener('click', () => c.render('phone'));
+    return el;
+  } },
+];
+
 const MENUS = {
   clock: (c, iid = 'info-clock') => [check(iid, 'seconds', 'Show Seconds', false, c), check(iid, 'date', 'Show Date', true, c)],
   system: (c, iid = 'info-system') => [{ header: 'Show' }, ...radio(iid, 'show', [['both', 'CPU & Memory'], ['cpu', 'CPU'], ['mem', 'Memory']], 'both', c)],
@@ -155,6 +176,7 @@ export const EXTRA_CONTROLS = [
   ...TOGGLES.map(([key, name, icon]) => ({ id: 'set-' + key, name, size: 's', build: (c) => c.sq(icon, name, !!store.get(key), () => { store.set(key, !store.get(key)); c.render(); }) })),
   ...ACTIONS.map(([id, name, icon, run]) => ({ id: 'act-' + id, name, size: 's', build: (c) => c.sq(icon, name, false, () => { c.close(); setTimeout(() => run(c), 300); }) })),
   ...INFO.map(([id, name, size, build, sizes]) => ({ id: 'info-' + id, name, size, sizes, build, menu: MENUS[id] })),
+  ...PHONE_CONTROLS,
 ];
 
 // Control Center widgets made in Widget Creator (size "cs" / "cw" / "cl"): shown like any control, with

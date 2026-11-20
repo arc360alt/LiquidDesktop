@@ -10,6 +10,7 @@ import { store, dockReserve } from './store.js';
 import { appIcon, sym } from './icons.js';
 import { showMenu } from './menus.js';
 import { wallpaperFor } from './theme.js';
+import { tileMenuItems, ARRANGE } from './tiling.js';
 
 /* ------------------------------------------------------------------ app identity of a native window */
 const synth = new Map();
@@ -65,6 +66,7 @@ class RemoteWin {
   restore() { S.send('wm:restore', this.id); }
   toggleMaximize() { S.send('wm:toggleMaximize', this.id); }
   tileTo(kind) { S.send('wm:tile', this.id, kind); }
+  arrange(layout) { if (ARRANGE[layout]) S.send('wm:arrange', this.id, ARRANGE[layout].places); }
   toggleFullscreen() { S.send('wm:fullscreen', this.id); }
   zoom(mode = store.get('zoomAction') || 'fill') { S.send('wm:zoom', this.id, mode); }
 }
@@ -148,7 +150,8 @@ export function windowMenu(id, x, y, kind) {
   const tiles = [['Fill', 'fill'], ['Center', 'center'], '-', ['Left', 'left'], ['Right', 'right'], ['Top Left', 'tl'], ['Top Right', 'tr'], ['Bottom Left', 'bl'], ['Bottom Right', 'br']]
     .map((t) => (t === '-' ? '-' : { label: t[0], action: () => w.tileTo(t[1]) }));
   const spaces = Array.from({ length: state.spaces }, (_, i) => ({ label: `Desktop ${i + 1}`, checked: i === w.space, action: () => S.send('wm:moveToSpace', w.id, i) }));
-  showMenu(kind === 'tile' ? [{ header: 'Move & Resize' }, ...tiles, '-', { label: w.fullscreen ? 'Exit Full Screen' : 'Enter Full Screen', action: () => w.toggleFullscreen() }, { label: 'Move to Desktop', submenu: spaces }]
+  showMenu(kind === 'tile' ? tileMenuItems({ tile: (k) => w.tileTo(k), arrange: (a) => w.arrange(a), fullscreen: () => w.toggleFullscreen(), isFullscreen: w.fullscreen,
+    canRestore: !!(w.maximized || w.tile), restore: () => w.tileTo('restore'), spaces: spaces.map((x, i) => [x.label, i === w.space, x.action]) })
     : [{ label: 'Minimize', action: () => w.minimize() }, { label: w.maximized ? 'Restore' : 'Zoom', action: () => w.toggleMaximize() },
       { label: 'Move & Resize', submenu: tiles.filter((t) => t !== '-') }, { label: 'Move to Desktop', submenu: spaces }, '-', { label: 'Close', action: () => w.close() }], x, y);
 }
@@ -194,6 +197,9 @@ export async function installSessionWM() {
   S.on('session:windows', apply);
   if (layer === 'shell' || layer === 'desktop') {
     S.send('wm:setSpaces', store.get('spaces') || 2);
+    const tiling = () => S.send('wm:setTiling', { edges: store.get('windowTiling') !== false, margins: store.get('tileMargins') !== false });
+    tiling();
+    store.on('change', (k) => { if (k === 'windowTiling' || k === 'tileMargins') tiling(); });
     try { apply(await S.invoke('wm:state')); } catch { /* WM not ready yet */ }
   }
 }

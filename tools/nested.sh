@@ -8,11 +8,13 @@ SIZE="${1:-1440x900}"
 N=7
 while [ -e /tmp/.X$N-lock ] || [ -e /tmp/.X11-unix/X$N ]; do N=$((N+1)); done
 D=:$N
+# -noreset: an X server resets when its last client disconnects, and rootful Xwayland crashes doing that. The
+# session restarts LiquidDesktop after a crash (session/liquid-desktop-session-inner); the display must outlive it.
 if [ -n "$WAYLAND_DISPLAY" ] && command -v Xwayland >/dev/null && [ "$LIQUID_NESTED" != xephyr ]; then
-  Xwayland $D -geometry "$SIZE" -decorate -ac &
+  Xwayland $D -geometry "$SIZE" -decorate -ac -noreset &
 else
   command -v Xephyr >/dev/null || { echo "Need Xwayland (on Wayland) or Xephyr to run a nested session"; exit 1; }
-  Xephyr $D -screen "$SIZE" -no-host-grab -title "LiquidDesktop (nested session)" -ac -glamor &
+  Xephyr $D -screen "$SIZE" -no-host-grab -title "LiquidDesktop (nested session)" -ac -glamor -noreset &
 fi
 XPID=$!
 sleep 1.5

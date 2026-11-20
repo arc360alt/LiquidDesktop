@@ -5,7 +5,7 @@ import { store } from './store.js';
 import { api } from './sys.js';
 import { contextMenu, prompt } from './menus.js';
 import { wm } from './wm.js';
-import { buildWidget, WIDGETS, widgetDef, CATEGORIES, SIZE_PX, SIZE_GROUPS, sizeItems } from './widgets.js';
+import { buildWidget, WIDGETS, widgetDef, CATEGORIES, SIZE_PX, SIZE_GROUPS, sizeItems, isOtherSize } from './widgets.js';
 import { customWidgets, validate, saveCustom, deleteCustom, toFile } from './customwidget.js';
 import { shell } from './shell.js';
 import { fileUrl } from './util.js';
@@ -168,7 +168,7 @@ function drawGallery() {
   gallery.innerHTML = '';
   const tabs = h('div.wg-tabs', ...CATEGORIES.map(([id, name]) => h('button' + (galleryCat === id ? '.on' : ''), { onclick: () => { galleryCat = id; drawGallery(); } }, name)));
   const row = h('div.wg-row');
-  const types = [...Object.entries(WIDGETS).filter(([t]) => !SIZE_GROUPS.some((g) => g.m === t)).map(([t, d]) => [t, d]), ...Object.values(customWidgets()).filter((c) => !/^c/.test(c.size)).map((c) => ['custom:' + c.id, { name: c.name, cat: 'mine', size: c.size }])]
+  const types = [...Object.entries(WIDGETS).filter(([t]) => !isOtherSize(t)).map(([t, d]) => [t, d]), ...Object.values(customWidgets()).filter((c) => !/^c/.test(c.size)).map((c) => ['custom:' + c.id, { name: c.name, cat: 'mine', size: c.size }])]
     .filter(([, d]) => galleryCat === 'all' || d.cat === galleryCat);
   for (const [type, def] of types) {
     const item = h('div.wg-item.' + (def.size || 's'), buildWidget(type), h('span', def.name));

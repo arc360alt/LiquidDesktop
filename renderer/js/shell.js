@@ -158,6 +158,7 @@ function onKey(e) {
   // app switcher
   if (cmd && k === 'Tab') { take(); switcherStep(e.shiftKey ? -1 : 1); return; }
   if (switcherOpen() && k === 'Escape') { take(); switcherCancel(); return; }
+  if (e.ctrlKey && cmd && (k === ' ' || e.code === 'Space')) { take(); import('./emoji.js').then((m) => m.openEmoji()); return; }
   if (cmd && (k === ' ' || e.code === 'Space')) { take(); spotlight(); return; }
   if (k === 'F3' || (e.ctrlKey && k === 'ArrowUp' && !inText(e))) { take(); wm.mission(); return; }
   if (k === 'F4') { take(); launchpad(); return; }
@@ -178,7 +179,9 @@ function onKey(e) {
   const win = wm.focused;
   // window tiling: Alt+Shift+arrows / Super+Ctrl+arrows
   if (win && ((e.altKey && e.shiftKey) || (e.metaKey && e.ctrlKey))) {
-    const map = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'fill', ArrowDown: 'center', F: 'fill', f: 'fill' };
+    // Ctrl+Super (like the Mac's Fn+Ctrl): halves, and R returns to the previous size; Alt+Shift: fill and centre
+    const map = e.metaKey && e.ctrlKey ? { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'top', ArrowDown: 'bottom', r: 'restore', R: 'restore', F: 'fill', f: 'fill' }
+      : { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'fill', ArrowDown: 'center', F: 'fill', f: 'fill' };
     if (map[k]) { take(); win.tileTo(map[k]); return; }
   }
   if (!cmd || e.ctrlKey || e.shiftKey) return;
@@ -240,6 +243,7 @@ export function initSessionShell({ windowMenu }) {
     if (shell.locked && name !== 'lock') return;
     switch (name) {
       case 'spotlight': return spotlight();
+      case 'emoji': return import('./emoji.js').then((m) => m.openEmoji());
       case 'launcher': return launchpad();
       case 'mission': return wm.mission();
       case 'lock': return shell.lock();

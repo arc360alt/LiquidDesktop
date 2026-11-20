@@ -7,6 +7,7 @@ import { customWidgets, renderCustom } from './customwidget.js';
 import { sym, folderIcon, docIcon, IMAGE_EXT } from './icons.js';
 import { fileUrl } from './util.js';
 import { wm } from './wm.js';
+import { mainPhone, onPhone, phoneReady, phoneState, deviceIcon, signalBars, batteryRing, PHONE_ICONS, phoneAct, has, phoneFor, canText, phoneContacts, contactFor, displayName, avatar, shortTime, isUnread } from './phone.js';
 
 const timers = new WeakMap();
 const every = (el, ms, fn) => { fn(); const t = setInterval(() => { if (!el.isConnected) return clearInterval(t); fn(); }, ms); };
@@ -171,22 +172,30 @@ Object.assign(WIDGETS, {
   battery: { name: 'Battery', cat: 'system', size: 's', build(el) {
     const pad = h('div.w-pad', { style: { alignItems: 'center', justifyContent: 'center', gap: '6px' } });
     el.append(pad);
-    every(el, 20_000, async () => {
-      const s = await api.sys.status().catch(() => null);
-      const b = s?.battery;
+    let comp = null;
+    // this computer's battery; your phone's below it (or instead of it, on a computer without one)
+    const draw = () => {
+      const d = mainPhone(), pb = d?.reachable ? d.battery : null;
       pad.innerHTML = '';
-      if (!b) { pad.append(label('Battery'), h('div', { style: { fontSize: '12px', opacity: 0.7, marginTop: '30px' } }, 'No battery')); return; }
-      const col = b.charging ? '#30d158' : b.percent <= 20 ? '#ff453a' : '#30d158';
-      pad.append(h('div.w-batt', { html: `<svg viewBox="0 0 36 36"><circle cx="18" cy="18" r="15" fill="none" stroke="rgba(128,128,128,.25)" stroke-width="3.5"/><circle cx="18" cy="18" r="15" fill="none" stroke="${col}" stroke-width="3.5" stroke-linecap="round" stroke-dasharray="94.25" stroke-dashoffset="${(94.25 * (1 - b.percent / 100)).toFixed(1)}" transform="rotate(-90 18 18)"/></svg>` },
-        h('span', { html: b.charging ? sym.bolt : '' })), h('b', { style: { fontSize: '20px' } }, b.percent + '%'), h('small', { style: { opacity: 0.7 } }, b.charging ? 'Charging' : 'On battery'));
-    });
+      const main = comp || pb;
+      if (!main) { pad.append(label('Battery'), h('div', { style: { fontSize: '12px', opacity: 0.7, marginTop: '30px' } }, 'No battery')); return; }
+      pad.append(batteryRing(main, comp ? '' : deviceIcon(d)), h('b', { style: { fontSize: '20px' } }, main.percent + '%'),
+        h('small', { style: { opacity: 0.7 } }, !comp ? d.name : main.charging ? 'Charging' : 'On battery'));
+      if (comp && pb) pad.append(h('div.w-batt-phone', { title: `${d.name} — ${pb.percent}%${pb.charging ? ' (charging)' : ''}` }, h('span', { html: pb.charging ? sym.bolt : deviceIcon(d) }), pb.percent + '%'));
+    };
+    every(el, 20_000, async () => { const s = await api.sys.status().catch(() => null); comp = s?.battery?.percent != null ? s.battery : null; draw(); });
+    onPhone(el, draw);
   } },
   // Battery, Medium: this computer and every device that reports a battery (mice, keyboards, controllers, headsets)
   batteries: { name: 'Batteries', cat: 'system', size: 'm', build(el) {
     const pad = h('div.w-pad.w-batts');
     el.append(pad);
-    const ICON = { computer: sym.battery, mouse: sym.hand, keyboard: sym.keyboard, headset: sym.speaker, headphones: sym.speaker, 'gaming-input': sym.controls, phone: sym.mirror };
-    every(el, 30_000, async () => {
+    const ICON = { computer: sym.battery, mouse: sym.hand, keyboard: sym.keyboard, headset: sym.speaker, headphones: sym.speaker, 'gaming-input': sym.controls, phone: PHONE_ICONS.phone, tablet: PHONE_ICONS.tablet };
+    let last = '';
+    // a phone's battery changes come from KDE Connect: look again then (only when the phone's numbers changed)
+    onPhone(el, (st) => { const k = JSON.stringify(st.devices.map((d) => d.battery)); if (k !== last) { last = k; refresh(); } });
+    const refresh = () => load();
+    const load = async () => {
       const list = await api.sys.batteries?.().catch(() => []) || [];
       pad.innerHTML = '';
       pad.append(label('Batteries'));
@@ -200,7 +209,8 @@ Object.assign(WIDGETS, {
           h('b', b.percent + '%'), h('small', b.name)));
       }
       pad.append(row);
-    });
+    };
+    every(el, 30_000, load);
   } },
   activity: { name: 'Activity', cat: 'system', size: 'm', build(el) {
     const cv = h('canvas.w-graph');
@@ -281,16 +291,130 @@ Object.assign(WIDGETS, {
   } },
 });
 
-export const CATEGORIES = [['all', 'All Widgets'], ['clock', 'Clock & Calendar'], ['weather', 'Weather'], ['system', 'System'], ['productivity', 'Productivity'], ['media', 'Media'], ['mine', 'My Widgets']];
+/* ---------------------------------------------- your phone (KDE Connect) */
+// shown until a phone is paired: what to do about it
+const noPhone = (pad, st) => pad.append(label('Phone'), h('div.w-ph-empty', h('span', { html: PHONE_ICONS.phone }),
+  h('small', !st.running ? (st.installed ? 'Turn on Phone in Settings' : 'Install KDE Connect in Settings › Phone') : 'Pair your phone in Settings › Phone')));
+const openPhoneSettings = () => wm.open('settings', { pane: 'phone' });
+Object.assign(WIDGETS, {
+  phone: { name: 'Phone', cat: 'phone', size: 's', build(el) {
+    el.classList.add('w-phone');
+    const pad = h('div.w-pad');
+    el.append(pad);
+    el.addEventListener('dblclick', openPhoneSettings);
+    const draw = () => {
+      const st = phoneState(), d = mainPhone(st);
+      pad.innerHTML = '';
+      if (!d) return noPhone(pad, st);
+      const b = d.reachable ? d.battery : null;
+      pad.append(h('div.w-ph-top', h('span.w-ph-ic' + (d.reachable ? '.on' : ''), { html: deviceIcon(d) }), d.reachable && d.signal ? signalBars(d.signal) : null),
+        h('div.spacer'),
+        h('div.w-big.w-ph-pct', b ? b.percent + '%' : '—'),
+        h('div.w-ph-bar', h('i', { style: { width: (b?.percent || 0) + '%', background: b && b.percent <= 20 && !b.charging ? '#ff453a' : '#30d158' } })),
+        h('div.w-ph-name', b?.charging ? '⚡︎ ' : '', d.name, h('small', d.reachable ? '' : ' · Not connected')));
+    };
+    phoneReady().then(draw);
+    onPhone(el, draw);
+  } },
+  phonemedium: { name: 'Phone', cat: 'phone', size: 'm', build(el) {
+    el.classList.add('w-phone');
+    const pad = h('div.w-pad.w-ph-m');
+    el.append(pad);
+    el.addEventListener('dblclick', openPhoneSettings);
+    let key = '';
+    const draw = () => {
+      const st = phoneState(), d = mainPhone(st);
+      // drawn again only when something shown changed (the media position ticks don't count)
+      const k = JSON.stringify(d && [d.name, d.reachable, d.battery, d.signal, d.media && [d.media.title, d.media.artist, d.media.playing, !!d.media.art], d.plugins.length]) + st.running;
+      if (k === key) return;
+      key = k;
+      pad.innerHTML = '';
+      if (!d) return noPhone(pad, st);
+      const b = d.reachable ? d.battery : null, m = d.reachable ? d.media : null;
+      const btn = (icon, title, enabled, fn) => h('button.w-ph-btn', { title, disabled: !enabled, html: icon, onclick: (e) => { e.stopPropagation(); fn(); } });
+      const left = h('div.w-ph-left', batteryRing(b, deviceIcon(d)),
+        h('b.w-ph-mname', d.name), h('small.w-ph-msub', !d.reachable ? 'Not connected' : b ? `${b.percent}%${b.charging ? ' · Charging' : ''}` : 'Connected'));
+      const right = h('div.w-ph-right',
+        h('div.w-ph-row', d.reachable && d.signal ? signalBars(d.signal) : h('span'),
+          h('div.w-ph-btns', btn(PHONE_ICONS.ring, 'Find My Phone', d.reachable && has(d, 'findmyphone'), () => phoneAct(d, 'ring')),
+            btn(PHONE_ICONS.clipboard, 'Send Clipboard', d.reachable && has(d, 'clipboard'), () => phoneAct(d, 'clipboard')))),
+        m && (m.title || m.players?.length)
+          ? h('div.w-ph-media', h('div.w-ph-art', m.art ? h('img', { src: m.art, draggable: false }) : h('span', { html: sym.music })),
+            h('div.w-ph-mt', h('b', m.title || 'Not Playing'), h('small', m.artist || m.player || ''),
+              h('div.w-np-btns', btn(sym.prev, 'Previous', true, () => phoneAct(d, 'media', 'Previous')), btn(m.playing ? sym.pause : sym.play, 'Play/Pause', true, () => phoneAct(d, 'media', 'PlayPause')), btn(sym.next, 'Next', true, () => phoneAct(d, 'media', 'Next')))))
+          : h('div.w-ph-idle', h('small', d.reachable ? (d.notifications?.length ? `${d.notifications.length} notification${d.notifications.length > 1 ? 's' : ''}` : 'Nothing playing') : 'Open KDE Connect on the phone to connect')));
+      pad.append(left, right);
+    };
+    phoneReady().then(draw);
+    onPhone(el, draw);
+  } },
+  phonenotifs: { name: 'Phone Notifications', cat: 'phone', size: 'm', build(el) {
+    el.classList.add('w-phone');
+    const list = h('div.w-ph-notifs');
+    const head = h('div.w-ph-nhead', label('Phone'), h('small'));
+    el.append(h('div.w-pad', head, list));
+    el.addEventListener('dblclick', openPhoneSettings);
+    const draw = () => {
+      const st = phoneState(), d = mainPhone(st);
+      list.innerHTML = '';
+      head.querySelector('small').textContent = d ? d.name : '';
+      if (!d) { list.append(h('small.muted', !st.running ? 'Set up your phone in Settings › Phone' : 'Pair your phone in Settings › Phone')); return; }
+      const ns = d.reachable ? d.notifications || [] : [];
+      if (!ns.length) { list.append(h('div.w-ph-nempty', h('span', { html: sym.bell }), h('small', d.reachable ? 'No notifications' : 'Not connected'))); return; }
+      const max = el.classList.contains('l') ? 6 : 2;
+      for (const n of ns.slice(0, max)) {
+        list.append(h('div.w-ph-n', n.icon ? h('img', { src: n.icon, draggable: false }) : h('span.w-ph-nic', { html: sym.bell }),
+          h('div.w-ph-nt', h('b', n.title || n.app), h('small', n.text)),
+          n.dismissable ? h('button.w-ph-x', { title: 'Dismiss', html: sym.close, onclick: (e) => { e.stopPropagation(); phoneAct(d, 'dismiss', n.id); e.currentTarget.parentNode.remove(); } }) : null));
+      }
+      if (ns.length > max) list.append(h('small.muted.w-ph-more', `${ns.length - max} more`));
+    };
+    phoneReady().then(draw);
+    onPhone(el, draw);
+  } },
+  // the latest text conversations (Messages): who, what, when; click one to open it
+  messagesw: { name: 'Messages', cat: 'phone', size: 'm', build(el) {
+    el.classList.add('w-phone');
+    const list = h('div.w-msgs');
+    el.append(h('div.w-pad', h('div.w-ph-nhead', label('Messages', '#30d158'), h('small')), list));
+    const draw = async () => {
+      const d = phoneFor(canText);
+      if (!d || !phoneState().running) { list.replaceChildren(h('small.muted', 'Set up your phone in Settings › Phone')); return; }
+      el.querySelector('.w-ph-nhead small').textContent = d.name;
+      await phoneContacts(d);
+      const threads = await api.kdc.conversations(d.id).catch(() => []) || [];
+      const max = el.classList.contains('l') ? 6 : 3;
+      list.replaceChildren(...(threads.length ? threads.slice(0, max).map((t) => {
+        const c = t.addresses.length === 1 ? contactFor(d, t.addresses[0]) : null;
+        const name = t.addresses.map((a) => displayName(d, a)).join(', ');
+        const row = h('div.w-msg' + (isUnread(d, t) ? '.unread' : ''), avatar(c?.name || name, c?.photo, 30, t.addresses.length > 1),
+          h('div.w-msg-t', h('div', h('b', name), h('time', shortTime(t.last.date))), h('small', (t.last.type === 2 ? 'You: ' : '') + (t.last.body || 'Attachment'))));
+        row.addEventListener('click', (e) => { e.stopPropagation(); wm.activate('messages', { thread: t.thread }); });
+        return row;
+      }) : [h('small.muted', d.reachable ? 'No conversations yet' : `${d.name} isn’t connected`)]));
+    };
+    el.addEventListener('dblclick', () => wm.activate('messages'));
+    phoneReady().then(draw);
+    api.kdc?.onSms?.(() => { if (el.isConnected) draw(); });
+    let was = null;
+    onPhone(el, () => { const d = phoneFor(canText); const k = d && d.id + d.reachable; if (k !== was) { was = k; draw(); } });
+  } },
+});
+WIDGETS.messageswl = { ...WIDGETS.messagesw, size: 'l', hidden: true };
+WIDGETS.phonenotifsl = { ...WIDGETS.phonenotifs, size: 'l', hidden: true };
+
+export const CATEGORIES = [['all', 'All Widgets'], ['clock', 'Clock & Calendar'], ['weather', 'Weather'], ['system', 'System'], ['productivity', 'Productivity'], ['media', 'Media'], ['phone', 'Phone'], ['mine', 'My Widgets']];
 export const SIZE_PX = { s: [164, 164], m: [340, 164], l: [340, 340] };
 // Widgets that are one widget at two sizes: the gallery shows the small one; right-click › Size switches
-export const SIZE_GROUPS = [{ s: 'battery', m: 'batteries' }, { s: 'weather', m: 'forecast' }, { s: 'clock', m: 'worldclock' }, { s: 'calendar', m: 'upcoming' }, { s: 'system', m: 'activity' }];
-export const sizeGroup = (type) => SIZE_GROUPS.find((g) => g.s === type || g.m === type);
+export const SIZE_GROUPS = [{ s: 'battery', m: 'batteries' }, { s: 'weather', m: 'forecast' }, { s: 'clock', m: 'worldclock' }, { s: 'calendar', m: 'upcoming' }, { s: 'system', m: 'activity' }, { s: 'phone', m: 'phonemedium' }, { m: 'phonenotifs', l: 'phonenotifsl' }, { m: 'messagesw', l: 'messageswl' }];
+export const sizeGroup = (type) => SIZE_GROUPS.find((g) => g.s === type || g.m === type || g.l === type);
+/** A widget the galleries leave out: the bigger size of one shown at its smallest (or a hidden one). */
+export const isOtherSize = (type) => { const g = sizeGroup(type); return !!WIDGETS[type]?.hidden || (!!g && type !== (g.s || g.m)); };
 /** Right-click › Size items for a widget of this type (none when it comes in one size). setType(newType) switches. */
 export function sizeItems(type, setType) {
   const g = sizeGroup(type);
   if (!g) return [];
-  return [{ header: 'Size' }, ...[['s', 'Small'], ['m', 'Medium']].map(([k, l]) => ({ label: l, checked: g[k] === type, action: () => { if (g[k] !== type) setType(g[k]); } })), '-'];
+  return [{ header: 'Size' }, ...[['s', 'Small'], ['m', 'Medium'], ['l', 'Large']].filter(([k]) => g[k]).map(([k, l]) => ({ label: l, checked: g[k] === type, action: () => { if (g[k] !== type) setType(g[k]); } })), '-'];
 }
 
 /** A widget's definition: built-in, or a custom one ("custom:<id>"). */

@@ -69,6 +69,8 @@ export const defaults = {
   windowTiling: true,
   cursorTheme: 'MacOS-Tahoe-Cursor',
   cursorSize: 32,
+  minimizeEffect: 'genie',
+  tileMargins: true,        // a small gap around tiled windows  // minimizing into the Dock: genie | scale
   zoomAction: 'fill',       // green button: fill | fill-nodock | fullscreen
 };
 

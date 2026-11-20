@@ -6,7 +6,8 @@ import { attachLens } from './theme.js';
 let openMenu = null;
 
 /**
- * items: [{ label, shortcut, icon, action, disabled, checked, danger, submenu: [...] } | '-' | { header }]
+ * items: [{ label, shortcut, icon, action, disabled, checked, danger, submenu: [...] } | '-' | { header }
+ *          | { grid: [{ title, icon, action }, …] } (a row of icon buttons, like the window tiling layouts)]
  * Returns a close() function.
  */
 export function showMenu(items, x, y, { onClose, anchor, minWidth, className } = {}) {
@@ -43,6 +44,10 @@ export function showMenu(items, x, y, { onClose, anchor, minWidth, className } =
   for (const it of items) {
     if (!it) continue;
     if (it === '-') { el.append(h('div.menu-sep')); continue; }
+    if (it.grid) {
+      el.append(h('div.menu-grid', ...it.grid.map((g) => h('button.menu-gbtn', { title: g.title, html: g.icon, onclick: (e) => { e.stopPropagation(); closeMenu(true); setTimeout(() => g.action?.(), 0); } }))));
+      continue;
+    }
     if (it.header) { el.append(h('div.menu-header', it.header)); continue; }
     if (it.element) { el.append(it.element); continue; }
     const row = h('div.menu-item' + (it.disabled ? '.disabled' : '') + (it.danger ? '.danger' : ''),

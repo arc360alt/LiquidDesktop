@@ -1,0 +1,1 @@
+echo "$(basename "$0") $*" >> "${FAKE_LOG:-/tmp/fake-bin.log}"

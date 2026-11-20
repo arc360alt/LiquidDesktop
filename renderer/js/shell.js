@@ -159,6 +159,7 @@ function onKey(e) {
   if (cmd && k === 'Tab') { take(); switcherStep(e.shiftKey ? -1 : 1); return; }
   if (switcherOpen() && k === 'Escape') { take(); switcherCancel(); return; }
   if (e.ctrlKey && cmd && (k === ' ' || e.code === 'Space')) { take(); import('./emoji.js').then((m) => m.openEmoji()); return; }
+  if (e.metaKey && !e.ctrlKey && !e.altKey && (k === 'v' || k === 'V')) { take(); import('./cliphistory.js').then((m) => m.openClipboard()); return; }
   if (cmd && (k === ' ' || e.code === 'Space')) { take(); spotlight(); return; }
   if (k === 'F3' || (e.ctrlKey && k === 'ArrowUp' && !inText(e))) { take(); wm.mission(); return; }
   if (k === 'F4') { take(); launchpad(); return; }
@@ -244,6 +245,7 @@ export function initSessionShell({ windowMenu }) {
     switch (name) {
       case 'spotlight': return spotlight();
       case 'emoji': return import('./emoji.js').then((m) => m.openEmoji());
+      case 'clipboard': return import('./cliphistory.js').then((m) => m.openClipboard());
       case 'launcher': return launchpad();
       case 'mission': return wm.mission();
       case 'lock': return shell.lock();

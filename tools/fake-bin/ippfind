@@ -1,0 +1,6 @@
+#!/bin/sh
+. "$(dirname "$0")/_log"
+sleep 1
+printf 'ipp://Brother-HL.local:631/ipp/print\tBrother HL-L2350DW\t_ipp._tcp\tlocal.\n'
+printf 'ipps://Brother-HL.local:631/ipp/print\tBrother HL-L2350DW\t_ipps._tcp\tlocal.\n'
+printf 'ipp://EPSON-ET.local:631/ipp/print\tEPSON ET-2850 Series\t_ipp._tcp\tlocal.\n'

@@ -1,0 +1,12 @@
+#!/bin/sh
+. "$(dirname "$0")/_log"
+[ "$1" = --version ] && { echo "scrcpy 3.1 <https://github.com/Genymobile/scrcpy>"; exit 0; }
+echo "INFO: scrcpy 3.1"
+# with an X display and xmessage: a window standing in for the phone (its instance name is the class scrcpy's
+# window gets from SDL_VIDEO_X11_WMCLASS), until stopped; without: fail like scrcpy does without a phone
+title=Phone; for a; do case "$a" in --window-title=*) title="${a#--window-title=}" ;; esac; done
+if [ -n "$DISPLAY" ] && command -v xmessage >/dev/null; then
+  exec xmessage -name "${SDL_VIDEO_X11_WMCLASS:-scrcpy}" -title "$title" -geometry 360x720 -center "  (fake phone screen: $title)  "
+fi
+sleep 2
+echo "ERROR: Could not find any ADB device (fake scrcpy: there's no phone)" >&2; exit 1

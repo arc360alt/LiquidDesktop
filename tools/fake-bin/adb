@@ -1,0 +1,10 @@
+#!/bin/sh
+. "$(dirname "$0")/_log"
+[ "$1" = -s ] && shift 2
+case "$*" in
+  "devices -l") printf 'List of devices attached\n192.168.1.42:37123    device product:husky model:Pixel_9_test device:husky transport_id:3\n' ;;
+  "shell settings get global device_name") echo "Pixel 9 test" ;;
+  "shell getprop ro.build.version.sdk") echo 35 ;;
+  "mdns services") printf 'List of discovered mdns services\n' ;;
+  "track-devices") sleep 100000 ;;
+esac

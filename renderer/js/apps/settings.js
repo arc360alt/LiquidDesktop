@@ -18,10 +18,10 @@ const ACCENTS = [['Multicolor', '#0a84ff'], ['Blue', '#007aff'], ['Purple', '#af
 const PANES = [
   ['general', 'General', '#8e8e93', sym.gear], ['defaults', 'Default Apps', '#30b0c7', sym.check], ['appearance', 'Appearance', '#1c1c1e', sym.contrast], ['wallpaper', 'Wallpaper', '#32ade6', sym.photo],
   ['dock', 'Desktop & Dock', '#1c1c1e', sym.dock], ['menubar', 'Menu Bar', '#0a84ff', sym.controls], ['display', 'Displays', '#0a84ff', sym.display],
-  ['energy', 'Battery', '#34c759', sym.bolt], ['sound', 'Sound', '#ff2d55', sym.speaker], ['network', 'Wi-Fi', '#0a84ff', sym.wifi], ['bluetooth', 'Bluetooth', '#0a84ff', sym.bluetooth],
+  ['energy', 'Battery', '#34c759', sym.bolt], ['sound', 'Sound', '#ff2d55', sym.speaker], ['network', 'Wi-Fi', '#0a84ff', sym.wifi], ['vpn', 'VPN', '#0a84ff', sym.vpn], ['bluetooth', 'Bluetooth', '#0a84ff', sym.bluetooth],
   ['phone', 'Phone', '#30d158', PHONE_ICONS.phone],
-  ['notifications', 'Notifications', '#ff3b30', sym.bell], ['focus', 'Focus', '#5e5ce6', sym.moon], ['lock', 'Lock Screen', '#1c1c1e', sym.lock],
-  ['mouse', 'Mouse & Trackpad', '#8e8e93', '<svg class="sym" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="6" y="3" width="12" height="18" rx="6"/><path d="M12 3v6"/></svg>'], ['keyboard', 'Keyboard', '#8e8e93', sym.keyboard], ['terminal', 'Terminal', '#1c1c1e', sym.terminal], ['apps', 'Apps', '#5e5ce6', sym.grid],
+  ['notifications', 'Notifications', '#ff3b30', sym.bell], ['focus', 'Focus', '#5e5ce6', sym.moon], ['screentime', 'Screen Time', '#5e5ce6', sym.hourglass], ['lock', 'Lock Screen', '#1c1c1e', sym.lock],
+  ['mouse', 'Mouse & Trackpad', '#8e8e93', '<svg class="sym" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="6" y="3" width="12" height="18" rx="6"/><path d="M12 3v6"/></svg>'], ['keyboard', 'Keyboard', '#8e8e93', sym.keyboard], ['printers', 'Printers & Scanners', '#8e8e93', sym.printer], ['terminal', 'Terminal', '#1c1c1e', sym.terminal], ['apps', 'Apps', '#5e5ce6', sym.grid],
   ['android', 'Android', '#30c06b', '<svg class="sym" viewBox="0 0 24 24" fill="currentColor"><path d="M5.5 11a6.5 6.5 0 0 1 13 0z"/><rect x="5.5" y="12" width="13" height="8" rx="2"/><path d="M8.6 5.6 7.2 3.5M15.4 5.6l1.4-2.1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="9.4" cy="8.6" r="1" fill="#30c06b"/><circle cx="14.6" cy="8.6" r="1" fill="#30c06b"/></svg>'],
   ['account', 'Users & Accounts', '#0a84ff', sym.user],
   ['developer', 'Developer', '#5e5ce6', sym.terminal],
@@ -58,7 +58,12 @@ const hero = (pane, title, text) => {
   return h('div.set-hero', h('div', { style: { width: '62px', height: '62px', borderRadius: '15px', background: p[2], color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 14px rgba(0,0,0,.2)' }, html: p[3].replace('class="sym"', 'style="width:34px;height:34px"') }), h('h2', title), h('p', text));
 };
 
+// the newer panes live in their own files (loaded when opened)
+const paneCtx = () => ({ row, toggle, hero, rerender, select, askSudo, prompt, confirmDialog, alertDialog });
 const render = {
+  screentime: () => import('./settings-screentime.js').then((m) => m.screenTimePane(paneCtx())),
+  printers: () => import('./settings-printers.js').then((m) => m.printersPane(paneCtx())),
+  vpn: () => import('./settings-vpn.js').then((m) => m.vpnPane(paneCtx())),
   async general() {
     const i = await api.sys.info().catch(() => ({}));
     return [
@@ -726,14 +731,27 @@ const render = {
         : 'In a window, the cursor applies inside LiquidDesktop. In the LiquidDesktop session it applies to every app.'),
     ];
   },
-  keyboard() {
+  async keyboard() {
+    // Clipboard History (main/clipboard.js)
+    const co = api.cliph ? await api.cliph.options().catch(() => null) : null;
+    const clipGroup = co ? [h('div.group-title', 'Clipboard History'), h('div.group',
+      row('Keep a history of what you copy', h('label.toggle', h('input', { type: 'checkbox', checked: co.enabled, onchange: (e) => api.cliph.options({ enabled: e.target.checked }) }), h('span')),
+        'Super+V shows it; pick an item to paste it. Passwords from password managers are never kept.'),
+      row('Remember', h('select.field.square', { style: { height: '26px', minWidth: '140px' }, onchange: (e) => api.cliph.options({ max: +e.target.value }) },
+        ...[25, 50, 100, 200, 500].map((n) => h('option', { value: n, selected: co.max === n }, `${n} items`)))),
+      row('Clear history', h('div', { style: { display: 'flex', gap: '6px' } },
+        h('button.btn', { onclick: async () => { await api.cliph.clear(true); alertDialog({ title: 'Clipboard history cleared', message: 'Pinned items were kept.' }); } }, 'Clear'),
+        h('button.btn', { onclick: async () => { if (await confirmDialog('Clear everything, pinned items too?', 'This can’t be undone.', 'Clear All', { danger: true })) api.cliph.clear(false); } }, 'Clear All…'))))] : [];
     const sc = [
+      ['Clipboard History', 'Super+V'], ['Emoji & Symbols', 'Ctrl+Super+Space  ·  Super+.'],
       ['Spotlight', 'Alt+Space  ·  Super+Space'], ['Switch apps', 'Alt+Tab'], ['Cycle windows of an app', 'Alt+`'], ['Mission Control', 'F3  ·  Ctrl+↑'], ['Apps (Launchpad)', 'F4'],
       ['Show Desktop', 'F11'], ['Switch Desktop', 'Ctrl+← / Ctrl+→'], ['Tile window', 'Alt+Shift+← → ↑ ↓'], ['New window', 'Alt+N'], ['Close window', 'Alt+W'],
       ['Minimize', 'Alt+M'], ['Hide app', 'Alt+H'], ['Quit app', 'Alt+Q'], ['Settings', 'Alt+,'], ['Screenshot', 'Alt+Shift+3  ·  PrtSc'], ['Lock Screen', 'Ctrl+Alt+Q'],
       ['Full screen (testing window)', 'Ctrl+Shift+F'], ['Developer tools', 'Ctrl+Shift+I'],
     ];
     return [hero('keyboard', 'Keyboard Shortcuts', 'Alt stands in for ⌘ (Super works too, when your compositor lets it through).'),
+      ...clipGroup,
+      h('div.group-title', 'Shortcuts'),
       h('div.group', ...sc.map(([a, k]) => row(a, h('span.kbd', k))))];
   },
   async terminal() {

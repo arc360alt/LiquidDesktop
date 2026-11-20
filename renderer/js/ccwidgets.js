@@ -83,7 +83,7 @@ function weatherControl(id) {
 const APPS = [
   ['files', 'Files', sym.folder], ['browser', 'Browser', sym.globe], ['terminal', 'Terminal', sym.terminal], ['notes', 'Notes', sym.compose],
   ['calculator', 'Calculator', sym.calc], ['calendar', 'Calendar', sym.clock], ['weather', 'Weather', sym.sun], ['monitor', 'Activity Monitor', sym.cpu],
-  ['appstore', 'App Store', sym.download], ['settings', 'Settings', sym.gear],
+  ['appstore', 'App Store', sym.download], ['settings', 'Settings', sym.gear], ['reminders', 'Reminders', sym.list], ['mirroring', 'Phone Mirroring', sym.mirror],
 ];
 // 1×1 on/off switches for a setting
 const TOGGLES = [
@@ -158,6 +158,35 @@ const PHONE_CONTROLS = [
   } },
 ];
 
+// VPN: on and off with a click (the first VPN, or the one that's on); right-click picks another
+let vpnCache = null;
+const vpnControl = { id: 'net-vpn', name: 'VPN', size: 's', build: (c) => {
+  const el = c.sq(sym.vpn, 'VPN', false, async () => {
+    const list = (await api.vpn?.list().catch(() => null))?.vpns || [];
+    const v = list.find((x) => x.uuid === cfg('net-vpn').uuid) || list.find((x) => x.state === 'on') || list[0];
+    if (!v) { c.close(); c.shell.openSettings('vpn'); return; }
+    el.classList.add('busy');
+    try {
+      if (v.state === 'on' || v.state === 'connecting') await api.vpn.disconnect(v.uuid);
+      else { const { vpnConnect } = await import('./apps/settings-vpn.js'); const { prompt } = await import('./menus.js'); await vpnConnect(v, prompt); }
+    } catch (e) { c.shell.notify({ app: 'settings', title: 'VPN', body: e.message }); }
+    vpnCache = null; c.render();
+  });
+  const paint = (list) => {
+    const v = list.find((x) => x.uuid === cfg('net-vpn').uuid) || list.find((x) => x.state === 'on') || list[0];
+    el.classList.toggle('on', v?.state === 'on');
+    const lab = el.lastChild;
+    if (lab?.nodeType === 3) lab.textContent = v ? (v.state === 'connecting' ? 'Connecting…' : v.name) : 'VPN';
+    el.title = v ? `${v.name} — ${v.state === 'on' ? 'Connected' : 'Not Connected'}` : 'No VPN set up — click to add one';
+    if (!v) el.classList.add('cc-dim');
+  };
+  if (vpnCache) paint(vpnCache);
+  api.vpn?.list().then((r) => { vpnCache = r.vpns || []; paint(vpnCache); }).catch(() => {});
+  return el;
+}, menu: (c) => (vpnCache || []).map((v) => ({ label: v.name, checked: v.uuid === (cfg('net-vpn').uuid || vpnCache.find((x) => x.state === 'on')?.uuid || vpnCache[0]?.uuid), action: () => { setCfg('net-vpn', { uuid: v.uuid }); c.render(); } }))
+  .concat(['-', { label: 'VPN Settings…', action: () => { c.close(); c.shell.openSettings('vpn'); } }]) };
+api.vpn?.onChanged?.(() => { vpnCache = null; });
+
 const MENUS = {
   clock: (c, iid = 'info-clock') => [check(iid, 'seconds', 'Show Seconds', false, c), check(iid, 'date', 'Show Date', true, c)],
   system: (c, iid = 'info-system') => [{ header: 'Show' }, ...radio(iid, 'show', [['both', 'CPU & Memory'], ['cpu', 'CPU'], ['mem', 'Memory']], 'both', c)],
@@ -177,6 +206,7 @@ export const EXTRA_CONTROLS = [
   ...ACTIONS.map(([id, name, icon, run]) => ({ id: 'act-' + id, name, size: 's', build: (c) => c.sq(icon, name, false, () => { c.close(); setTimeout(() => run(c), 300); }) })),
   ...INFO.map(([id, name, size, build, sizes]) => ({ id: 'info-' + id, name, size, sizes, build, menu: MENUS[id] })),
   ...PHONE_CONTROLS,
+  vpnControl,
 ];
 
 // Control Center widgets made in Widget Creator (size "cs" / "cw" / "cl"): shown like any control, with

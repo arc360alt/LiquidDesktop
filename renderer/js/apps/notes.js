@@ -19,7 +19,7 @@ registerApp({
   id: 'notes', name: 'Notes', size: [860, 540], minSize: [480, 300], overlayContent: true, hideTitle: true,
   keywords: ['memo', 'text', 'write'],
   about: 'Quick notes that stay with you.',
-  menus: (win) => [{ title: 'Format', items: [
+  menus: (win) => [{ title: 'File', items: [{ label: 'New Note', action: () => win?.state?.add() }, '-', { label: 'Print…', shortcut: '⌃P', action: () => win?.state?.print() }] }, { title: 'Format', items: [
     { label: 'Title', action: () => document.execCommand('formatBlock', false, 'h2') }, { label: 'Body', action: () => document.execCommand('formatBlock', false, 'div') }, '-',
     { label: 'Bold', shortcut: '⌃B', action: () => document.execCommand('bold') }, { label: 'Italic', shortcut: '⌃I', action: () => document.execCommand('italic') },
     { label: 'Underline', shortcut: '⌃U', action: () => document.execCommand('underline') }, { label: 'Strikethrough', action: () => document.execCommand('strikeThrough') }, '-',
@@ -73,11 +73,14 @@ registerApp({
       n.html = editor.innerHTML; n.t = Date.now();
       save(notes); draw();
     }, 300);
+    const printNote = () => import('../print.js').then(({ printDialog, printableHtml }) => { const n = notes.find((x) => x.id === cur); if (!n) return; const t = titleOf(n.html).title; printDialog({ title: t, html: printableHtml(t, n.html, 'input[type=checkbox]{margin-right:6px}') }, win.el); });
+    editor.addEventListener('keydown', (e) => { if (e.ctrlKey && e.key === 'p') { e.preventDefault(); printNote(); } });
     const add = () => { const n = { id: Date.now(), html: '', t: Date.now() }; notes.push(n); cur = n.id; save(notes); open(); };
     const del = async () => {
       if (!cur || !(await confirmDialog('Delete this note?', 'This can’t be undone.', 'Delete', { danger: true }, win.el))) return;
       notes = notes.filter((x) => x.id !== cur); save(notes); cur = notes.sort((a, b) => b.t - a.t)[0]?.id; open();
     };
+    win.state = { add: () => add(), print: () => printNote() };
     editor.addEventListener('input', persist);
     editor.addEventListener('change', persist);
     search.addEventListener('input', draw);

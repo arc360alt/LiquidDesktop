@@ -17,6 +17,7 @@ registerApp({
     { label: 'Open…', shortcut: '⌃O', action: () => win?.state?.openDialog() },
     { label: 'Save', shortcut: '⌃S', action: () => win?.state?.save() },
     { label: 'Save As…', shortcut: '⇧⌃S', action: () => win?.state?.save(true) }, '-',
+    { label: 'Print…', shortcut: '⌃P', action: () => win?.state?.print() }, '-',
     { label: 'Show in Files', action: () => win?.state?.path && wm.open('files', { path: dirname(win.state.path), select: win.state.path }) },
     { label: 'Close', shortcut: '⌘W', action: () => win?.close() }] },
     { title: 'Format', items: [{ label: 'Wrap Lines', checked: win?.state?.wrap, action: () => win?.state?.toggleWrap() }] }],
@@ -39,6 +40,7 @@ registerApp({
       pos.textContent = `Line ${before.length}, Column ${before[before.length - 1].length + 1}`;
       info.textContent = `${v.split('\n').length} lines · ${v.length} characters`;
     };
+    st.print = () => import('../print.js').then(({ printDialog, printableHtml, esc }) => { const t = st.path ? basename(st.path) : 'Untitled'; printDialog({ title: t, html: printableHtml(t, `<pre>${esc(ta.value)}</pre>`) }, win.el); });
     st.toggleWrap = () => { st.wrap = !st.wrap; ta.wrap = st.wrap ? 'soft' : 'off'; };
     st.load = async (p) => {
       try { ta.value = await api.fs.read(p); st.path = p; st.dirty = false; title(); upd(); }
@@ -72,6 +74,7 @@ registerApp({
       if (e.key === 'Tab') { e.preventDefault(); document.execCommand('insertText', false, ' '.repeat(store.get('textTabSize') || 4)); }
       if (e.ctrlKey && e.key === 's') { e.preventDefault(); st.save(e.shiftKey); }
       if (e.ctrlKey && e.key === 'o') { e.preventDefault(); st.openDialog(); }
+      if (e.ctrlKey && e.key === 'p') { e.preventDefault(); st.print(); }
     });
     win.on('focus', () => ta.focus());
     if (st.path) st.load(st.path); else { title(); upd(); }

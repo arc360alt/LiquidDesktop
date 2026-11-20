@@ -39,6 +39,8 @@ import './apps/lighting.js';
 import './apps/messages.js';
 import './apps/contacts.js';
 import './apps/phonehub.js';
+import './apps/reminders.js';
+import './apps/mirroring.js';
 
 const progress = (p) => { const b = $('#boot .bar i'); if (b) b.style.width = p + '%'; };
 const hideBoot = () => {
@@ -62,6 +64,8 @@ async function bootFull() {
   api.sys.onUpdated?.(() => shell.updatedPrompt());
   import('./notifications.js').then(({ notifyRemote, closeRemote }) => { api.notif?.onShow(notifyRemote); api.notif?.onClose(closeRemote); });
   import('./phone.js').then((m) => m.initPhoneNotices());   // files received from the phone
+  import('./reminders.js').then((m) => import('./notifications.js').then(({ notify }) => m.initReminderAlerts(notify)));   // reminders' alerts
+  import('./screentime.js').then((m) => m.initScreenTime());   // Screen Time: which app is in front, and for how long
   progress(35);
   wm.init();
   initMenubar();
@@ -102,6 +106,8 @@ async function bootShellSteps() {
   api.sys.onUpdated?.(() => shell.updatedPrompt());
   import('./notifications.js').then(({ notifyRemote, closeRemote }) => { api.notif?.onShow(notifyRemote); api.notif?.onClose(closeRemote); });
   import('./phone.js').then((m) => m.initPhoneNotices());   // files received from the phone
+  import('./reminders.js').then((m) => import('./notifications.js').then(({ notify }) => m.initReminderAlerts(notify)));   // reminders' alerts
+  import('./screentime.js').then((m) => m.initScreenTime());   // Screen Time: which app is in front, and for how long
   const { installSessionWM, windowMenu } = await import('./sessionwm.js');
   const { initShellShape } = await import('./shellshape.js');
   await catalog.load();

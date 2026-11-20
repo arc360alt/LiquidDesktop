@@ -1,0 +1,10 @@
+#!/bin/sh
+. "$(dirname "$0")/_log"
+case "$*" in
+  "-t -f NAME,UUID,TYPE,AUTOCONNECT,TIMESTAMP connection show") printf 'Wired connection 1:11111111-1111-1111-1111-111111111111:802-3-ethernet:yes:1795121551\nHome Server:22222222-2222-2222-2222-222222222222:wireguard:no:1795000000\nWork VPN:33333333-3333-3333-3333-333333333333:vpn:no:1794000000\n' ;;
+  "-t -f UUID,STATE,DEVICE connection show --active") printf '11111111-1111-1111-1111-111111111111:activated:enp3s0\n22222222-2222-2222-2222-222222222222:activated:wg0\n' ;;
+  "-t -g vpn.service-type,vpn.data connection show 33333333-3333-3333-3333-333333333333") printf 'org.freedesktop.NetworkManager.openvpn\nca = /home/x/ca.crt, connection-type = password, remote = vpn.example.com:1194, username = sam\n' ;;
+  "monitor") sleep 100000 ;;
+  *"connection up"*) echo "Error: Connection activation failed: Secrets were required, but not provided." >&2; exit 4 ;;
+  *) ;;
+esac

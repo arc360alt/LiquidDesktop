@@ -17,6 +17,8 @@ const synth = new Map();
 function nativeApp(info) {
   const [inst = '', cls = ''] = info.wmClass || [];
   const keys = [cls, inst].filter(Boolean).map((s) => s.toLowerCase());
+  // the phone's screen from Phone Mirroring (scrcpy, main/mirror.js) is part of that app
+  if (keys.includes('liquid-mirroring') && registry.get('mirroring')) return registry.get('mirroring');
   const found = catalog.native.find((a) => {
     const base = a.id.replace(/^desktop:/, '').replace(/\.desktop$/, '').toLowerCase();
     const exe = (a.exec || '').split(/\s+/)[0].split('/').pop().toLowerCase();

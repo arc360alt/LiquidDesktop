@@ -65,10 +65,19 @@ if [ -z "$LIQUID_SOFTWARE_RENDERING" ] && [ "$LIBGL_ALWAYS_SOFTWARE" = 1 ]; then
 # what OpenGL / GLX is here (asked once; used for the llvmpipe check and the NVIDIA settings below)
 GLXINFO=""
 [ -z "$LIQUID_SOFTWARE_RENDERING" ] && command -v glxinfo >/dev/null && GLXINFO="$(glxinfo -B 2>/dev/null)"
-if [ -z "$LIQUID_SOFTWARE_RENDERING" ] && [ -z "$LIQUID_RENDERING_FORCED" ] \
+if [ -z "$LIQUID_SOFTWARE_RENDERING" ] \
     && printf '%s\n' "$GLXINFO" | grep -i "renderer string" | grep -qiE "llvmpipe|softpipe|swrast"; then
   LIQUID_SOFTWARE_RENDERING=1
-  echo "liquid-desktop: OpenGL is software (llvmpipe): using software rendering" >&2
+  # "hardware" chosen in Settings, but there's no GPU OpenGL at all right now (a driver that didn't load: often an
+  # update that needs a restart, when the kernel module and the driver's libraries differ). GPU drawing would give
+  # a black desktop, so this session draws in software; the saved choice is kept for the next one.
+  if [ -n "$LIQUID_RENDERING_FORCED" ]; then
+    echo "liquid-desktop: Rendering is set to hardware, but OpenGL is software (llvmpipe) — no GPU driver is working (restart after a driver update?): using software rendering this time" >&2
+    echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) [session] hardware rendering chosen but OpenGL is llvmpipe: software rendering this session" >> "${XDG_CONFIG_HOME:-$HOME/.config}/LiquidDesktop/crashes.log" 2>/dev/null
+    export LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe
+  else
+    echo "liquid-desktop: OpenGL is software (llvmpipe): using software rendering" >&2
+  fi
 fi
 [ "$LIQUID_SOFTWARE_RENDERING" = 1 ] && export LIQUID_SOFTWARE_RENDERING || unset LIQUID_SOFTWARE_RENDERING
 

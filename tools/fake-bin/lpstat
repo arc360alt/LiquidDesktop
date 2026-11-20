@@ -1,0 +1,28 @@
+#!/bin/sh
+. "$(dirname "$0")/_log"
+case "$*" in
+  -r) echo "scheduler is running" ;;
+  "-l -p") cat <<'X'
+printer Office_LaserJet now printing Office_LaserJet-41.  enabled since Thu 19 Nov 2026 09:12:03 AM
+	Rendering page 2 of 3
+	Form mounted:
+	Content types: any
+	Printer types: unknown
+	Description: HP LaserJet Pro M404
+	Alerts: none
+	Location: Upstairs office
+	Connection: direct
+	Interface: /etc/cups/ppd/Office_LaserJet.ppd
+printer Kitchen_Inkjet disabled since Wed 18 Nov 2026 06:40:11 PM -
+	Out of paper
+	Form mounted:
+	Description: Canon PIXMA TS6420
+	Alerts: media-empty-error
+	Location: Kitchen
+X
+  ;;
+  -d) echo "system default destination: Office_LaserJet" ;;
+  -v) printf 'device for Office_LaserJet: ipp://HP-LaserJet.local:631/ipp/print\ndevice for Kitchen_Inkjet: usb://Canon/TS6400%%20series?serial=123\n' ;;
+  -o) printf 'Office_LaserJet-41       nyx             1823744   Thu 19 Nov 2026 10:02:11 AM\nOffice_LaserJet-42       nyx               52224   Thu 19 Nov 2026 10:03:40 AM\n' ;;
+  -a) printf 'Office_LaserJet accepting requests since Thu 19 Nov 2026 09:12:03 AM\nKitchen_Inkjet accepting requests since Wed 18 Nov 2026 06:40:11 PM\n' ;;
+esac

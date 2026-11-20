@@ -43,6 +43,10 @@ app.whenReady().then(async () => {
   require('../main/power').register();
   require('../main/openrgb').register();
   require('../main/appthemes').register({ mode: 'windowed' });
+  require('../main/clipboard').register({});
+  require('../main/printing').register();
+  require('../main/vpn').register();
+  require('../main/mirror').register();
   require('../main/portal').register({});
   require('../main/notifications').register({ resolveIcon: require('../main/system').resolveIcon });
   require('../main/tray').register({ resolveIcon: require('../main/system').resolveIcon });

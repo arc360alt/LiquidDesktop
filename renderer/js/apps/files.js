@@ -6,6 +6,7 @@ import { api } from '../sys.js';
 import { contextMenu, prompt, confirmDialog, showMenu, alertDialog } from '../menus.js';
 import { shell } from '../shell.js';
 import { store } from '../store.js';
+import { sendToPhoneItem } from '../phone.js';
 
 let clipboard = null; // { op: 'copy'|'cut', paths }
 
@@ -620,7 +621,9 @@ class FilesView {
       { label: this.isTrash ? 'Delete Immediately' : 'Move to Trash', danger: this.isTrash, action: () => this.trashSel() }, '-',
       { label: 'Get Info', action: () => this.info(f) },
       { label: 'Rename', disabled: many, action: () => this.renameInline(f.path) },
-      { label: 'Quick Look', action: () => this.quickLook() }, '-',
+      { label: 'Quick Look', action: () => this.quickLook() },
+      // Share: to your phone (KDE Connect), when one is paired
+      sendToPhoneItem(sel.map((x) => x.path), (p) => sel.find((x) => x.path === p)?.isDir, shell.notify), '-',
       { label: 'Copy', action: () => this.copySel('copy') }, { label: 'Cut', action: () => this.copySel('cut') },
       { label: 'Copy Path', action: () => api.clip.write(sel.map((x) => x.path).join('\n')) }, '-',
       { label: 'Duplicate', action: async () => { for (const x of sel) await api.fs.copy(x.path, this.path).catch(() => {}); bus.emit('fs-changed'); } },

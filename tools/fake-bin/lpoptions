@@ -1,0 +1,9 @@
+#!/bin/sh
+. "$(dirname "$0")/_log"
+case "$*" in
+  "-p Office_LaserJet") echo "copies=1 device-uri=ipp://HP-LaserJet.local:631/ipp/print printer-info='HP LaserJet Pro M404' printer-make-and-model='HP LaserJet Pro M404-M405 IPP Everywhere' sides=one-sided" ;;
+  "-p Kitchen_Inkjet") echo "printer-info='Canon PIXMA TS6420' printer-make-and-model='Canon TS6400 series'" ;;
+  "-p Office_LaserJet -l") printf 'PageSize/Media Size: *Letter A4 Legal\nDuplex/2-Sided Printing: *None DuplexNoTumble DuplexTumble\nColorModel/Output Mode: *Gray\n' ;;
+  -p*-l) printf 'PageSize/Media Size: *Letter A4\nColorModel/Output Mode: *RGB Gray\n' ;;
+esac
+exit 0

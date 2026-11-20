@@ -28,6 +28,7 @@ function editItems() {
     { label: 'Cut', shortcut: '⌃X', action: ex('cut') }, { label: 'Copy', shortcut: '⌃C', action: ex('copy') },
     { label: 'Paste', shortcut: '⌃V', action: ex('paste') }, { label: 'Select All', shortcut: '⌃A', action: ex('selectAll') }, '-',
     { label: 'Emoji & Symbols', shortcut: '⌃⌘Space', action: () => import('./emoji.js').then((m) => { const r = $('#menubar')?.getBoundingClientRect(); m.openEmoji({ x: 120, y: r ? r.bottom - 10 : 20 }); }) },
+    { label: 'Clipboard History', shortcut: 'Super+V', action: () => import('./cliphistory.js').then((m) => { const r = $('#menubar')?.getBoundingClientRect(); m.openClipboard({ x: 120, y: r ? r.bottom - 10 : 20 }); }) },
   ];
 }
 

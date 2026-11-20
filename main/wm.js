@@ -35,7 +35,7 @@ const HANDLE = 6;
 const DEBUG = !!process.env.LIQUID_WM_DEBUG;       // width of the invisible resize handles along a native window's sides and bottom
 
 // keysyms used for global shortcuts
-const KS = { space: 0x20, period: 0x2e, s: 0x73, r: 0x72, Tab: 0xff09, F3: 0xffc0, F4: 0xffc1, F11: 0xffc8, q: 0x71, w: 0x77, m: 0x6d, f: 0x66, 3: 0x33, Print: 0xff61,
+const KS = { space: 0x20, period: 0x2e, s: 0x73, v: 0x76, r: 0x72, Tab: 0xff09, F3: 0xffc0, F4: 0xffc1, F11: 0xffc8, q: 0x71, w: 0x77, m: 0x6d, f: 0x66, 3: 0x33, Print: 0xff61,
   Left: 0xff51, Up: 0xff52, Right: 0xff53, Down: 0xff54, F4alt: 0xffc1, Alt_L: 0xffe9, Alt_R: 0xffea, Super_L: 0xffeb, Super_R: 0xffec,
   VolUp: 0x1008ff13, VolDown: 0x1008ff11, Mute: 0x1008ff12, BrightUp: 0x1008ff02, BrightDown: 0x1008ff03, Play: 0x1008ff14, Next: 0x1008ff17, Prev: 0x1008ff16 };
 
@@ -43,6 +43,8 @@ const SHORTCUTS = [
   ['spotlight', ALT, 'space'], ['spotlight', SUPER, 'space'],
   // Emoji & Symbols: Ctrl+Cmd+Space like on a Mac (Cmd is Alt or Super here), or Super+. like on Windows
   ['emoji', CTRL | ALT, 'space'], ['emoji', CTRL | SUPER, 'space'], ['emoji', SUPER, 'period'],
+  // Clipboard History: Super+V, like Windows (the Mac has none built in)
+  ['clipboard', SUPER, 'v'],
   ['switcher-next', ALT, 'Tab'], ['switcher-prev', ALT | SHIFT, 'Tab'], ['switcher-next', SUPER, 'Tab'],
   ['mission', 0, 'F3'], ['mission', CTRL, 'Up'], ['launcher', 0, 'F4'], ['desktop', 0, 'F11'],
   ['lock', CTRL | ALT, 'q'], ['lock', CTRL | SUPER, 'q'], ['screenshot', 0, 'Print'], ['screenshot', ALT | SHIFT, '3'], ['screenshot-tool', SUPER | SHIFT, 's'], ['screen-record', SUPER | SHIFT, 'r'],
@@ -663,7 +665,20 @@ class WindowManager extends EventEmitter {
     this.updateWorkarea();
   }
   shellEntry(xid) {
-    if (!this.shells.has(xid)) this.shells.set(xid, { ox: 0, oy: 0, w: this.sw, h: this.sh, work: null, blurPool: [], primary: xid === this.shell });
+    if (!this.shells.has(xid)) {
+      const entry = { ox: 0, oy: 0, w: this.sw, h: this.sh, work: null, blurPool: [], primary: xid === this.shell, opaque: false };
+      this.shells.set(xid, entry);
+      // Chromium only makes a window see-through (a 32-bit ARGB visual) when a compositor is already running as
+      // it's created. A shell made while there was none (picom still starting, or restarting after a crash) is
+      // opaque for good: shown whole under a compositor that comes later, it would cover the monitor in black
+      // except for the menu bar and Dock. Such a shell stays cut to what it shows, compositor or not.
+      this.X.GetGeometry(xid, (err, g) => {
+        if (err || !g || g.depth === 32) return;
+        entry.opaque = true;
+        console.log(`[wm] shell window 0x${xid.toString(16)} isn't see-through (depth ${g.depth}): kept cut to its visible parts`);
+        this.applyShellBounding(xid);
+      });
+    }
     return this.shells.get(xid);
   }
   /**
@@ -1156,7 +1171,7 @@ class WindowManager extends EventEmitter {
   applyShellBounding(xid) {
     const s = this.shells.get(xid);
     if (!s || !this.Shape) return;
-    if (this.composited !== false) {
+    if (this.composited !== false && !s.opaque) {
       if (s.bounded) { s.bounded = false; this.Shape.Mask(this.Shape.Op.Set, this.Shape.Kind.Bounding, xid, 0, 0, 0); }
       return;
     }
@@ -1165,6 +1180,20 @@ class WindowManager extends EventEmitter {
     const r = full ? [[0, 0, s.w, s.h]] : [...(s.input?.rects || []), ...(s.blurLocal || []).map((g) => [g.x, g.y, g.w, g.h])]
       .filter((q) => q[2] > 0 && q[3] > 0).map((q) => q.map(Math.round));
     this.Shape.Rectangles(this.Shape.Op.Set, this.Shape.Kind.Bounding, xid, 0, 0, r.length ? r : [[0, 0, 1, 1]]);
+  }
+
+  /** Resolves true once a compositor owns _NET_WM_CM_S0, or false after `ms`. */
+  waitForCompositor(ms) {
+    return new Promise((resolve) => {
+      if (!this.A._NET_WM_CM_S0) return resolve(false);
+      const t0 = Date.now();
+      const ask = () => this.X.GetSelectionOwner(this.A._NET_WM_CM_S0, (err, owner) => {
+        if (!err && owner) return resolve(true);
+        if (Date.now() - t0 >= ms) return resolve(false);
+        setTimeout(ask, 100);
+      });
+      ask();
+    });
   }
 
   /** Is a compositor running (it owns the _NET_WM_CM_S0 selection)? Checked now and every couple of seconds. */
@@ -1325,6 +1354,25 @@ class WindowManager extends EventEmitter {
     }
     await pause(60);
     setKey(0);   // and the key is unused again
+    return true;
+  }
+
+  /** Clipboard History: give the keyboard back to the app and press Ctrl+V in it (Ctrl+Shift+V for terminals). */
+  async pasteKeys(shift = false) {
+    const X = this.X;
+    if (!this.xtest) this.xtest = await new Promise((res) => X.require('xtest', (e, t) => res(e ? null : t)));
+    if (!this.xtest || !this.keycodeOf) return false;
+    const ctrl = this.keycodeOf[0xffe3], sh = this.keycodeOf[0xffe1], v = this.keycodeOf[0x76];
+    if (!ctrl || !v || (shift && !sh)) return false;
+    const pause = (ms) => new Promise((r) => setTimeout(r, ms));
+    if (this.focused) this.focusClient(this.focused);
+    await pause(90);
+    const { KeyPress, KeyRelease } = this.xtest;
+    const fake = (t, k) => this.xtest.FakeInput(t, k, 0, this.root, 0, 0);
+    fake(KeyPress, ctrl); if (shift) fake(KeyPress, sh);
+    fake(KeyPress, v); fake(KeyRelease, v);
+    if (shift) fake(KeyRelease, sh); fake(KeyRelease, ctrl);
+    X.pack_stream.flush?.();
     return true;
   }
 

@@ -298,3 +298,30 @@ select option, select optgroup { background: var(--win-bg); color: var(--text); 
 .menu-gbtn svg { display: block; }
 .menu.tile-menu { min-width: 220px; }
 .mi-icon img { width: 16px; height: 16px; display: block; }
+
+/* ---------------------------------------------------------------- the Print dialog (print.js) */
+.pd-layer .pd-box { width: 620px; max-width: calc(100% - 32px); padding: 16px; text-align: left; }
+.pd-main { display: flex; gap: 18px; }
+.pd-preview { width: 250px; height: 310px; flex: none; display: flex; align-items: center; justify-content: center; border-radius: 10px; background: rgba(128, 128, 128, 0.12); }
+.pd-page { position: relative; background: #fff; box-shadow: 0 1px 6px rgba(0, 0, 0, 0.25); overflow: hidden; display: flex; align-items: center; justify-content: center; }
+.pd-page iframe { position: absolute; left: 0; top: 0; border: 0; transform-origin: 0 0; pointer-events: none; background: #fff; }
+.pd-page img { max-width: 92%; max-height: 92%; object-fit: contain; }
+.pd-doc { display: flex; flex-direction: column; align-items: center; gap: 4px; color: #8e8e93; }
+.pd-doc b { font-size: 22px; color: #ff3b30; }
+.pd-doc small { font-size: 10px; max-width: 160px; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pd-opts { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 9px; padding-top: 4px; }
+.pd-row { display: flex; align-items: center; gap: 8px; font-size: 13px; min-height: 28px; }
+.pd-row > span:first-child { width: 86px; flex: none; text-align: right; color: var(--text-2); }
+.pd-row select.field { flex: 1; min-width: 0; height: 28px; }
+.pd-row .field { height: 28px; }
+.pd-sep { border-top: 0.5px solid var(--separator); margin: 2px 0; }
+.pd-none { display: flex; align-items: center; gap: 8px; color: var(--text-2); }
+.pd-orient { display: flex; gap: 4px; }
+.pd-orient button { width: 34px; height: 30px; border-radius: 7px; border: 0; padding: 4px; background: rgba(128, 128, 128, 0.12); color: inherit; opacity: 0.65; }
+.pd-orient button svg { width: 100%; height: 100%; }
+.pd-orient button.on { background: var(--accent); color: #fff; opacity: 1; }
+.pd-seg button { font-size: 12px; }
+.pd-foot { display: flex; align-items: center; gap: 8px; margin-top: 16px; }
+.pd-status { font-size: 11.5px; color: var(--text-2); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pd-box input.field { margin: 0; width: auto; }
+.pd-box .pd-row input.field[placeholder] { width: 100px !important; }

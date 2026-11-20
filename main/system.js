@@ -939,6 +939,8 @@ function register({ getWindow, mode }) {
 
   h('clip:write', (t) => { clipboard.writeText(String(t)); return true; });
   h('clip:read', () => clipboard.readText());
+  // Screen Time: seconds since the last key press or mouse move (it stops counting while you're away)
+  h('sys:idleTime', () => require('electron').powerMonitor.getSystemIdleTime());
 
   // the terminal's output goes back to the window that asked for it (in a session every app is its own window)
   ipcMain.handle('pty:create', (e, opts) => { try { return createPty(e.sender, opts); } catch (err) { return { __error: String(err.message || err) }; } });

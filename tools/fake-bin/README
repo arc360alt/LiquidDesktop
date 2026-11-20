@@ -1,0 +1,5 @@
+Stand-in commands for testing Printers, VPN and Phone Mirroring without real printers, VPNs or a phone:
+put this folder first in PATH, e.g.
+  PATH=$PWD/tools/fake-bin:$PATH env -u ELECTRON_RUN_AS_NODE electron tools/shot.js out steps.json
+They print what the real tools print (CUPS lpstat/lp/lpoptions/cancel/ippfind, NetworkManager nmcli, adb, scrcpy)
+and log every call to $FAKE_LOG (default /tmp/fake-bin.log). Nothing on the system is changed.

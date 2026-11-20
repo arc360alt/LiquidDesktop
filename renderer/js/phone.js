@@ -78,6 +78,24 @@ export async function sendFiles(d, notify) {
   if (await phoneAct(d, 'share', files, notify)) notify?.({ app: 'files', title: `Sending to ${d.name}`, body: files.length === 1 ? files[0].split('/').pop() : `${files.length} files` });
 }
 
+/**
+ * The "Send to Phone" item for a right-click menu on files (Files, the desktop): one item for one phone, a submenu
+ * for several. null when no paired device takes files (Phone off, nothing paired, sharing off), so the menu stays
+ * as it was. Folders can't be sent (KDE Connect sends files), so they're left out.
+ */
+export function sendToPhoneItem(paths, isDir = () => false, notify) {
+  const devs = state.running === false ? [] : pairedDevices().filter((d) => d.supported?.includes('share') || has(d, 'share'));
+  if (!devs.length) return null;
+  const files = paths.filter((p) => !isDir(p));
+  const send = async (d) => {
+    if (await phoneAct(d, 'share', files, notify)) notify?.({ app: 'phone', title: `Sending to ${d.name}`, body: files.length === 1 ? files[0].split('/').pop() : `${files.length} files` });
+  };
+  const usable = (d) => d.reachable && has(d, 'share') && files.length > 0;
+  const label = (d) => `${d.name}${d.reachable ? '' : ' (not connected)'}`;
+  if (devs.length === 1) return { label: `Send to ${devs[0].name}`, icon: PHONE_ICONS.send, disabled: !usable(devs[0]), action: () => send(devs[0]) };
+  return { label: 'Send to Device', icon: PHONE_ICONS.send, disabled: !files.length, submenu: devs.map((d) => ({ label: label(d), icon: deviceIcon(d), disabled: !usable(d), action: () => send(d) })) };
+}
+
 /** Browse Files: mount the phone's storage and open it in Files. */
 export async function browsePhone(d, notify, openFiles) {
   notify?.({ app: 'files', title: d.name, body: 'Opening the phone’s files… Unlock the phone if it asks.' });

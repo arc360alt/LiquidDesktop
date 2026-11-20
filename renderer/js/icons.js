@@ -88,6 +88,10 @@ export const sym = {
   tag: S('<path d="M3 12.6V4a1 1 0 0 1 1-1h8.6l8.4 8.4a1.5 1.5 0 0 1 0 2.1l-7.5 7.5a1.5 1.5 0 0 1-2.1 0z"/><circle cx="7.5" cy="7.5" r="1.3" fill="currentColor"/>'),
   location: F('<path d="M21 3L3 10.5l7.6 2.9L13.5 21z"/>'),
   cpu: S('<rect x="6" y="6" width="12" height="12" rx="2"/><rect x="9.5" y="9.5" width="5" height="5" rx="1"/><path d="M9 2.5V6M15 2.5V6M9 18v3.5M15 18v3.5M2.5 9H6M2.5 15H6M18 9h3.5M18 15h3.5"/>'),
+  hourglass: S('<path d="M6.5 3h11M6.5 21h11"/><path d="M7.5 3c0 5 4.5 6.4 4.5 9s-4.5 4-4.5 9M16.5 3c0 5-4.5 6.4-4.5 9s4.5 4 4.5 9"/>'),
+  printer: S('<path d="M7 8V3.5h10V8"/><rect x="3" y="8" width="18" height="9" rx="2"/><path d="M7 14h10v6.5H7z"/><circle cx="17.5" cy="11" r=".6" fill="currentColor"/>'),
+  vpn: S('<path d="M12 2.8 4.5 5.6v5.6c0 4.6 3.1 8.4 7.5 10 4.4-1.6 7.5-5.4 7.5-10V5.6z"/><path d="M9.2 11.6V10a2.8 2.8 0 0 1 5.6 0v1.6"/><rect x="8.4" y="11.6" width="7.2" height="5.2" rx="1.2"/>'),
+  mirror: S('<rect x="7.5" y="2.5" width="9" height="16" rx="2.2"/><path d="M3 21.5h18M10.8 4.8h2.4"/>'),
 };
 
 /* ------------------------------------------------------------------ weather glyphs (colored) */
@@ -171,6 +175,24 @@ const APP_ICONS = {
     draw: (c) => `<rect x="22" y="18" width="56" height="64" rx="9" fill="${c.paper}"/>
       <rect x="16" y="28" width="9" height="7" rx="2.5" fill="${c.ac2}"/><rect x="16" y="46" width="9" height="7" rx="2.5" fill="${c.ac2}"/><rect x="16" y="64" width="9" height="7" rx="2.5" fill="${c.ac2}"/>
       <circle cx="52" cy="43" r="10" fill="${c.ac}"/><path d="M34 70c1.6-9.4 9-14.6 18-14.6S68.4 60.6 70 70z" fill="${c.ac}"/>` },
+  // Reminders: three colored dots with lines on white
+  reminders: { bg: ['#ffffff', '#f1f1f4'], tone: '#ff9500', paper: true, c: { fg: '#fff', ac: '#0a84ff', ac2: '#ff9500', paper: '#fff', ink: '#c7c7cc' },
+    draw: (c) => `<g><circle cx="27" cy="31" r="7" fill="none" stroke="${c.ac}" stroke-width="3.2"/><circle cx="27" cy="31" r="3.6" fill="${c.ac}"/>
+      <circle cx="27" cy="50" r="7" fill="none" stroke="#ff3b30" stroke-width="3.2"/><circle cx="27" cy="50" r="3.6" fill="#ff3b30"/>
+      <circle cx="27" cy="69" r="7" fill="none" stroke="${c.ac2}" stroke-width="3.2"/><circle cx="27" cy="69" r="3.6" fill="${c.ac2}"/></g>
+      <g stroke="${c.ink}" stroke-width="2.6" stroke-linecap="round"><path d="M41 31h36M41 50h36M41 69h30"/></g>` },
+  // Screen Time: an hourglass on purple
+  screentime: { bg: ['#8e7bff', '#4b2fd6'], tone: '#7d6bff', c: { fg: '#fff', ac: '#ffd60a', ac2: '#e8e2ff', paper: '#fff', ink: '#4b2fd6' },
+    draw: (c) => `<path d="M32 20h36M32 80h36" stroke="${c.fg}" stroke-width="5" stroke-linecap="round"/>
+      <path d="M36 22c0 14 12 18 12 28S36 64 36 78h28c0-14-12-18-12-28s12-14 12-28z" fill="none" stroke="${c.fg}" stroke-width="4" stroke-linejoin="round"/>
+      <path d="M41 30h18c-1.5 6-9 9-9 13-.1-4-7.5-7-9-13zM39 74c1-7 11-11 11-16 0 5 10 9 11 16z" fill="${c.ac}"/>` },
+  // Phone Mirroring: a phone screen inside a window
+  mirroring: { bg: ['#4b4b52', '#1d1d21'], tone: '#64d2ff', c: { fg: '#fff', ac: '#64d2ff', ac2: '#5e5ce6', paper: '#111', ink: '#fff' },
+    draw: (c) => `<defs><linearGradient id="mrg${uid}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${c.ac}"/><stop offset="1" stop-color="${c.ac2}"/></linearGradient></defs>
+      <rect x="33" y="16" width="34" height="68" rx="9" fill="${c.paper}" stroke="${c.fg}" stroke-opacity=".9" stroke-width="3"/>
+      <rect x="37" y="23" width="26" height="54" rx="5" fill="url(#mrg${uid})"/>
+      <rect x="45" y="19.5" width="10" height="2.4" rx="1.2" fill="${c.fg}" opacity=".8"/>
+      <g fill="${c.fg}" opacity=".9"><rect x="41" y="30" width="7" height="7" rx="2"/><rect x="52" y="30" width="7" height="7" rx="2"/><rect x="41" y="41" width="7" height="7" rx="2"/><rect x="52" y="41" width="7" height="7" rx="2"/></g>` },
   // Phone: a phone with signal waves (your phone, connected)
   phone: { bg: ['#5ee3a0', '#11a873'], tone: '#30d158', c: { fg: '#fff', ac: '#11a873', ac2: '#d6fff0', paper: '#fff', ink: '#11a873' },
     draw: (c) => `<rect x="35" y="20" width="30" height="60" rx="7" fill="${c.fg}"/><rect x="39" y="27" width="22" height="42" rx="2.5" fill="${c.ac}" opacity=".9"/>

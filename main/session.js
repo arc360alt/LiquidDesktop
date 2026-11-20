@@ -21,8 +21,15 @@ async function startSession({ preload }) {
   require('./input').watchDevices().catch(() => {});
   const wm = new WindowManager();
   await wm.start();
+  // the session script starts picom alongside us: give it a moment, so the shell windows are made see-through
+  // (Chromium only does that while a compositor runs; see shellEntry in main/wm.js for when it still isn't)
+  if (process.env.LIQUID_PICOM_PIDFILE) {
+    const on = await wm.waitForCompositor(3000);
+    if (!on) console.log('[session] no compositor after 3 s: starting without one');
+  }
   // apps' own menus in the menu bar: the registrar has to be there before apps start (they look for it then)
   require('./appmenu').register({ wm, resolveIcon: require('./system').resolveIcon });
+  require('./clipboard').register({ wm });   // Clipboard History hears about copies from the X server
   const { width: sw, height: sh } = screen.getPrimaryDisplay().bounds;
   const prefs = { preload, contextIsolation: true, nodeIntegration: false, sandbox: false, webviewTag: true, spellcheck: false };
   const appWindows = new Map();   // session id → BrowserWindow
@@ -175,7 +182,7 @@ async function startSession({ preload }) {
   function sendFrame(w) {
     const fb = frames.get(w.id);
     if (fb && !fb.isDestroyed()) {
-      fb.webContents.send('frame:update', { title: w.title, focused: wm.focused === w, maximized: !!w.maximized || !!w.tile, fullscreen: !!w.fullscreen });
+      fb.webContents.send('frame:update', { title: w.title, wmClass: w.wmClass || null, focused: wm.focused === w, maximized: !!w.maximized || !!w.tile, fullscreen: !!w.fullscreen });
       if (fb.getTitle() !== w.title) fb.setTitle(w.title);
       wm.raiseClient(w);   // the frame repaints after an update: keep the app's content on top
     }

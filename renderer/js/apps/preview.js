@@ -8,6 +8,7 @@ import { store } from '../store.js';
 registerApp({
   id: 'preview', name: 'Preview', size: [820, 600], minSize: [320, 240], overlayContent: true,
   keywords: ['image', 'photo', 'viewer', 'pictures'],
+  menus: (win) => [{ title: 'File', items: [{ label: 'Print…', shortcut: '⌃P', disabled: !win?.state?.printable, action: () => win?.state?.print() }] }],
   open(win, args) {
     const box = h('div.preview');
     win.body.append(box);
@@ -18,6 +19,10 @@ registerApp({
       h('div.tb-group', h('button.tb-btn', { html: sym.minus, title: 'Zoom Out', onclick: () => setZoom(zoom / 1.25) }), h('button.tb-btn', { html: sym.plus, title: 'Zoom In', onclick: () => setZoom(zoom * 1.25) })),
       h('div.tb-group', h('button.tb-btn', { html: sym.desktop, title: 'Set as Wallpaper', onclick: () => path && store.set('customWallpaper', fileUrl(path)) }),
         h('button.tb-btn', { html: sym.folder, title: 'Show in Files', onclick: () => path && wm.open('files', { path: dirname(path), select: path }) })));
+    // File › Print… for pictures and PDFs (videos and songs don't print)
+    const printable = () => path && /\.(png|jpe?g|gif|webp|bmp|svg|tiff?|pdf)$/i.test(path);
+    win.state = { print: () => printable() && import('../print.js').then(({ printDialog }) => printDialog({ title: basename(path), file: path }, win.el)), get printable() { return printable(); } };
+    win.el.addEventListener('keydown', (e) => { if (e.ctrlKey && e.key === 'p') { e.preventDefault(); win.state.print(); } });
     // what this file can't be shown as: its icon, and a way to open it elsewhere
     const cantShow = (p, why) => box.append(h('div.pv-none', h('div.pv-none-ic', { html: docIcon(extOf(p)) }), h('b', basename(p)), h('small.muted', why),
       h('button.btn', { onclick: () => api.fs.open(p) }, 'Open With System App')));

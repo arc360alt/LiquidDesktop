@@ -10,6 +10,7 @@ import { customWidgets, validate, saveCustom, deleteCustom, toFile } from './cus
 import { shell } from './shell.js';
 import { fileUrl } from './util.js';
 import { layer } from './layer.js';
+import { sendToPhoneItem } from './phone.js';
 
 let iconsEl, places, lastSig = '', renderGen = 0;
 
@@ -38,7 +39,7 @@ async function renderIcons(force = true) {
     else ic.innerHTML = docIcon(f.ext);
     const el = h('div.desk-icon', { draggable: true }, ic, h('span', f.name.replace(/\.desktop$/, '')));
     el.dataset.path = f.path;
-    el.addEventListener('mousedown', (e) => { e.stopPropagation(); if (!e.shiftKey && !e.ctrlKey) $$('.desk-icon.sel').forEach((x) => x.classList.remove('sel')); el.classList.add('sel'); });
+    el.addEventListener('mousedown', (e) => { e.stopPropagation(); if (e.button === 2 && el.classList.contains('sel')) return; /* right-click keeps the selection */ if (!e.shiftKey && !e.ctrlKey) $$('.desk-icon.sel').forEach((x) => x.classList.remove('sel')); el.classList.add('sel'); });
     el.addEventListener('dblclick', () => shell.openPath(f.path, f.isDir));
     el.addEventListener('dragstart', (e) => e.dataTransfer.setData('text/liquid-paths', JSON.stringify($$('.desk-icon.sel').map((x) => x.dataset.path))));
     el.addEventListener('contextmenu', (e) => contextMenu(e, [
@@ -46,9 +47,14 @@ async function renderIcons(force = true) {
       { label: 'Open With System App', action: () => api.fs.open(f.path) }, '-',
       { label: 'Rename…', action: async () => { const n = await prompt('Rename', f.name, { select: 'stem' }); if (n && n !== f.name) { await api.fs.rename(f.path, n).catch((err) => shell.notify({ title: 'Rename failed', body: err.message })); renderIcons(); } } },
       { label: 'Copy Path', action: () => api.clip.write(f.path) },
-      { label: 'Show in Files', action: () => wm.open('files', { path: places.desktop, select: f.path }) }, '-',
+      { label: 'Show in Files', action: () => wm.open('files', { path: places.desktop, select: f.path }) },
+      // the selected icons (or just this one) to your phone
+      (() => {
+        const picked = el.classList.contains('sel') ? $$('.desk-icon.sel', iconsEl).map((x) => x.dataset.path) : [f.path];
+        return sendToPhoneItem(picked, (p) => items.find((x) => x.path === p)?.isDir, shell.notify);
+      })(), '-',
       { label: 'Move to Trash', danger: true, action: async () => { await api.fs.trash(f.path); renderIcons(); bus.emit('fs-changed'); } },
-    ]));
+    ].filter(Boolean)));
     if (selected.has(f.path)) el.classList.add('sel');
     out.push(el);
   }

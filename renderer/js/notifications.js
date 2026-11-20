@@ -37,6 +37,7 @@ export function closeRemote(rid) { remoteToasts.get(rid)?.(true); const i = hist
 
 export function notify(n) {
   n = { time: Date.now(), ...n };
+  bus.emit('notified', n);   // Screen Time counts them per app
   history.unshift(n);
   if (history.length > 50) history.pop();
   bus.emit('notifications');

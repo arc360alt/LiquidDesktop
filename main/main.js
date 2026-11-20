@@ -101,6 +101,9 @@ app.whenReady().then(async () => {
   require('./openrgb').register();
   require('./recorder').register({ mode });
   require('./appthemes').register({ mode });   // before any app starts: Qt apps need QT_STYLE_OVERRIDE
+  require('./printing').register();   // Printers & Scanners, the Print dialog (CUPS)
+  require('./vpn').register();        // VPN (NetworkManager)
+  require('./mirror').register();     // iPhone-Mirroring-style phone mirroring (scrcpy)
   if (mode === 'session') {
     try {
       const { startSession } = require('./session');
@@ -117,6 +120,7 @@ app.whenReady().then(async () => {
     system.register({ getWindow: () => win, mode });
     require('./portal').register({});   // Open / Save dialogs for LiquidDesktop's own apps
     require('./appmenu').register({});   // (only the setting: no app menus in a window)
+    require('./clipboard').register({});
     createWindowed();
   }
 });

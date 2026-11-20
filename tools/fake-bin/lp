@@ -1,0 +1,6 @@
+#!/bin/sh
+. "$(dirname "$0")/_log"
+for a; do last="$a"; done
+[ -r "$last" ] || { echo "lp: Unable to access \"$last\"" >&2; exit 1; }
+cp "$last" "${FAKE_LOG:-/tmp/fake-bin.log}.lastjob" 2>/dev/null
+echo "request id is Office_LaserJet-43 (1 file(s))"

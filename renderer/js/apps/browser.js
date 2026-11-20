@@ -75,6 +75,7 @@ registerApp({
       { title: 'File', items: [
         { label: 'New Tab', shortcut: '⌃T', action: () => b?.newTab() }, { label: 'New Window', shortcut: '⌘N', action: () => wm.open('browser') },
         { label: 'Open Location…', shortcut: '⌃L', action: () => b?.focusUrl() }, '-',
+        { label: 'Print…', shortcut: '⌃P', action: () => b?.print() }, '-',
         { label: 'Close Tab', shortcut: '⌃W', action: () => b?.closeTab() }, { label: 'Reopen Closed Tab', shortcut: '⇧⌃T', disabled: !closedTabs.length, action: () => b?.reopenTab() }] },
       { title: 'View', items: [
         { label: 'Reload Page', shortcut: '⌃R', action: () => b?.reload() }, '-',
@@ -168,7 +169,7 @@ class BrowserView {
     const k = e.key.toLowerCase();
     const map = {
       t: () => (e.shiftKey ? this.reopenTab() : this.newTab()), w: () => this.closeTab(), l: () => this.focusUrl(), r: () => this.reload(), d: () => this.toggleFavorite(),
-      f: () => this.find(), h: () => this.openPage('history'), j: () => this.openPage('downloads'), ',': () => this.openPage('settings'),
+      f: () => this.find(), p: () => this.print(), h: () => this.openPage('history'), j: () => this.openPage('downloads'), ',': () => this.openPage('settings'),
       '=': () => this.zoom(0.5), '+': () => this.zoom(0.5), '-': () => this.zoom(-0.5), 0: () => this.zoom(0),
       tab: () => this.select((this.active + (e.shiftKey ? -1 : 1) + this.tabs.length) % this.tabs.length),
     };
@@ -346,6 +347,13 @@ class BrowserView {
   back() { const w = this.cur()?.wv; if (w && this.cur().page) { this.cur().page.remove(); this.cur().page = null; this.cur().pageName = null; w.style.visibility = 'visible'; this.syncUrl(); return; } try { w?.goBack(); } catch { /* not ready */ } }
   forward() { try { this.cur()?.wv?.goForward(); } catch { /* not ready */ } }
   reload() { const t = this.cur(); if (t?.page) return this.showPage(t, t.pageName); try { t?.wv?.isLoading() ? t.wv.stop() : t?.wv?.reload(); } catch { /* not ready */ } }
+  /** File › Print…: the page as a PDF (Chromium lays it out with the page's own print styles), in the Print dialog. */
+  print() {
+    const t = this.cur();
+    if (!t?.wv || t.page) return;
+    const title = (() => { try { return t.wv.getTitle() || 'Web Page'; } catch { return 'Web Page'; } })();
+    import('../print.js').then(({ printDialog }) => printDialog({ title, pdf: (o) => t.wv.printToPDF({ landscape: !!o.landscape, pageSize: o.pageSize === 'A4' ? 'A4' : o.pageSize === 'Legal' ? 'Legal' : o.pageSize === 'A5' ? 'A5' : 'Letter', printBackground: true }) }, this.win.el));
+  }
   zoom(d) { const w = this.cur()?.wv; if (!w || !this.cur().ready) return; w.setZoomLevel(d === 0 ? 0 : clamp(w.getZoomLevel() + d, -5, 7)); }
 
   syncUrl() {

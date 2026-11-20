@@ -400,13 +400,67 @@ Object.assign(WIDGETS, {
     onPhone(el, () => { const d = phoneFor(canText); const k = d && d.id + d.reachable; if (k !== was) { was = k; draw(); } });
   } },
 });
+/* ---------------------------------------------- Reminders and Screen Time */
+function remindersWidget(el, size) {
+  el.classList.add('w-rem');
+  const pad = h('div.w-pad');
+  el.append(pad);
+  el.addEventListener('dblclick', () => wm.activate('reminders', { view: 'today' }));
+  const max = size === 's' ? 3 : size === 'm' ? 4 : 10;
+  const draw = async () => {
+    const R = await import('./reminders.js');
+    const d = R.loadReminders();
+    let items = R.sortItems(d.items.filter(R.SMART.today.test)), title = 'Today', color = R.SMART.today.color;
+    // nothing due: what's coming up, else everything open
+    if (!items.length) { items = R.sortItems(d.items.filter(R.SMART.scheduled.test)); title = 'Scheduled'; color = R.SMART.scheduled.color; }
+    if (!items.length) { items = R.sortItems(d.items.filter(R.SMART.all.test)); title = d.lists[0]?.name || 'Reminders'; color = d.lists[0]?.color || color; }
+    const colorOf = (it) => d.lists.find((l) => l.id === it.list)?.color || color;
+    const rows = items.slice(0, max).map((it) => h('div.w-rem-item',
+      h('button.w-rem-check', { style: { '--c': colorOf(it) }, title: 'Mark as Completed', onmousedown: (e) => e.stopPropagation(),
+        onclick: (e) => { e.stopPropagation(); e.currentTarget.classList.add('done'); setTimeout(() => { R.toggleDone(it.id); draw(); }, 350); } }),
+      h('div.w-rem-t', h('span', it.title), size !== 's' && it.due ? h('small' + (R.isOverdue(it) ? '.late' : ''), R.dueText(it)) : null)));
+    pad.replaceChildren(
+      h('div.w-rem-head', h('span.w-rem-title', { style: { color } }, title), h('b', { style: { color } }, items.length)),
+      h('div.w-rem-list' + (size === 'm' ? '.two' : ''), ...rows, !items.length ? h('div.w-rem-none', 'No Reminders') : null,
+        items.length > max ? h('div.w-rem-more', `+${items.length - max} more`) : null));
+  };
+  draw();
+  const off = bus.on('reminders', () => { if (!el.isConnected) return off(); draw(); });
+  every(el, 60_000, draw);   // "Today" moves on at midnight; overdue turns red
+}
+function screenTimeWidget(el, size) {
+  el.classList.add('w-st');
+  const pad = h('div.w-pad');
+  el.append(pad);
+  el.addEventListener('dblclick', () => import('./shell.js').then(({ shell }) => shell.openSettings('screentime')));
+  every(el, 60_000, async () => {
+    const ST = await import('./screentime.js');
+    const { appIcon } = await import('./icons.js');
+    const st = ST.loadScreenTime(), rec = st.days[ST.dayKey()] || { apps: {}, hours: Array(24).fill(0) };
+    const ranked = Object.entries(rec.apps).sort((a, b) => b[1] - a[1]);
+    const total = ranked.reduce((a, [, s]) => a + s, 0);
+    const apps = ranked.slice(0, size === 's' ? 3 : 4).map(([id, s]) => { const a = ST.appFor(id, st.names); return h('div.w-st-app', appIcon(a, 'w-st-ic'), h('span', a.name), h('small', ST.fmtDur(s, true))); });
+    const maxH = Math.max(1800, ...rec.hours);
+    const chart = size === 's' ? null : h('div.w-st-chart', ...rec.hours.map((s, i) => h('i' + (i === new Date().getHours() ? '.now' : ''), { style: { height: Math.max(s ? 3 : 0, (s / maxH) * 100) + '%' } })));
+    pad.replaceChildren(h('div.w-st-head', h('span', 'Screen Time'), h('small', 'Today')), h('div.w-st-total', ST.fmtDur(total)),
+      size === 's' ? h('div.w-st-apps', ...apps) : h('div.w-st-row', chart, h('div.w-st-apps', ...apps)),
+      ...(!ranked.length ? [h('small.w-st-none', ST.stEnabled() ? 'No apps used yet today' : 'Screen Time is off')] : []));
+  });
+}
+Object.assign(WIDGETS, {
+  reminders: { name: 'Reminders', cat: 'productivity', size: 's', build: (el) => remindersWidget(el, 's') },
+  remindersm: { name: 'Reminders', cat: 'productivity', size: 'm', build: (el) => remindersWidget(el, 'm') },
+  remindersl: { name: 'Reminders', cat: 'productivity', size: 'l', hidden: true, build: (el) => remindersWidget(el, 'l') },
+  screentime: { name: 'Screen Time', cat: 'system', size: 's', build: (el) => screenTimeWidget(el, 's') },
+  screentimem: { name: 'Screen Time', cat: 'system', size: 'm', build: (el) => screenTimeWidget(el, 'm') },
+});
 WIDGETS.messageswl = { ...WIDGETS.messagesw, size: 'l', hidden: true };
 WIDGETS.phonenotifsl = { ...WIDGETS.phonenotifs, size: 'l', hidden: true };
 
 export const CATEGORIES = [['all', 'All Widgets'], ['clock', 'Clock & Calendar'], ['weather', 'Weather'], ['system', 'System'], ['productivity', 'Productivity'], ['media', 'Media'], ['phone', 'Phone'], ['mine', 'My Widgets']];
 export const SIZE_PX = { s: [164, 164], m: [340, 164], l: [340, 340] };
 // Widgets that are one widget at two sizes: the gallery shows the small one; right-click › Size switches
-export const SIZE_GROUPS = [{ s: 'battery', m: 'batteries' }, { s: 'weather', m: 'forecast' }, { s: 'clock', m: 'worldclock' }, { s: 'calendar', m: 'upcoming' }, { s: 'system', m: 'activity' }, { s: 'phone', m: 'phonemedium' }, { m: 'phonenotifs', l: 'phonenotifsl' }, { m: 'messagesw', l: 'messageswl' }];
+export const SIZE_GROUPS = [{ s: 'battery', m: 'batteries' }, { s: 'weather', m: 'forecast' }, { s: 'clock', m: 'worldclock' }, { s: 'calendar', m: 'upcoming' }, { s: 'system', m: 'activity' }, { s: 'phone', m: 'phonemedium' }, { m: 'phonenotifs', l: 'phonenotifsl' }, { m: 'messagesw', l: 'messageswl' }, { s: 'reminders', m: 'remindersm', l: 'remindersl' }, { s: 'screentime', m: 'screentimem' }];
 export const sizeGroup = (type) => SIZE_GROUPS.find((g) => g.s === type || g.m === type || g.l === type);
 /** A widget the galleries leave out: the bigger size of one shown at its smallest (or a hidden one). */
 export const isOtherSize = (type) => { const g = sizeGroup(type); return !!WIDGETS[type]?.hidden || (!!g && type !== (g.s || g.m)); };

@@ -12,7 +12,11 @@ const names = ['sys:info', 'sys:status', 'sys:rendering', 'sys:setRendering', 's
   'shell:toggleFullscreen', 'shell:devtools', 'shell:quit',
   'bt:state', 'bt:scan', 'bt:pair', 'bt:connect', 'bt:forget', 'bt:power', 'audio:devices', 'audio:setDefault', 'audio:setVolume', 'audio:setMute', 'defaults:list', 'defaults:apply', 'defaults:get', 'apps:openWith', 'wall:list', 'wall:add', 'wall:remove',
   'android:status', 'android:install', 'android:uninstall', 'android:setOn', 'android:open', 'android:stop', 'android:forceQuit', 'android:playId', 'android:setMultiWindow', 'android:resizeApp', 'android:setArm', 'android:zoomApp', 'android:captions', 'android:hideCaptions', 'android:back', 'drives:list', 'drives:mount', 'drives:eject', 'rec:start', 'rec:stop', 'rec:status', 'rec:folder',
-  'kdc:state', 'kdc:act', 'kdc:rename', 'kdc:refresh', 'kdc:setEnabled', 'kdc:settings', 'kdc:setReceiveDir', 'kdc:conversations', 'kdc:conversation', 'kdc:sendText', 'kdc:fetchLatest', 'kdc:attachment', 'kdc:contacts', 'kdc:syncContacts', 'kdc:calls', 'kdc:clearCalls', 'appmenu:layout', 'appmenu:event', 'appmenu:enabled', 'appmenu:setEnabled'];
+  'kdc:state', 'kdc:act', 'kdc:rename', 'kdc:refresh', 'kdc:setEnabled', 'kdc:settings', 'kdc:setReceiveDir', 'kdc:conversations', 'kdc:conversation', 'kdc:sendText', 'kdc:fetchLatest', 'kdc:attachment', 'kdc:contacts', 'kdc:syncContacts', 'kdc:calls', 'kdc:clearCalls', 'appmenu:layout', 'appmenu:event', 'appmenu:enabled', 'appmenu:setEnabled',
+  'cliph:list', 'cliph:use', 'cliph:remove', 'cliph:pin', 'cliph:clear', 'cliph:options', 'sys:idleTime',
+  'print:status', 'print:install', 'print:start', 'print:discover', 'print:add', 'print:remove', 'print:setDefault', 'print:pause', 'print:cancel', 'print:testPage', 'print:options', 'print:doc', 'print:savePdf',
+  'vpn:list', 'vpn:connect', 'vpn:disconnect', 'vpn:import', 'vpn:remove', 'vpn:install', 'vpn:setAuto', 'vpn:rename',
+  'mirror:status', 'mirror:install', 'mirror:nearby', 'mirror:pair', 'mirror:connect', 'mirror:start', 'mirror:stop', 'mirror:key', 'mirror:disconnect'];
 const api = {};
 for (const n of names) {
   const [ns, fn] = n.split(':');
@@ -41,6 +45,12 @@ api.kdc.onSms = (fn) => ipcRenderer.on('kdc:sms', (_e, list) => fn(list));
 api.kdc.onCall = (fn) => ipcRenderer.on('kdc:call', (_e, c) => fn(c));
 api.kdc.onContacts = (fn) => ipcRenderer.on('kdc:contacts', (_e, d) => fn(d));
 api.appmenu.onChanged = (fn) => ipcRenderer.on('appmenu:changed', (_e, id) => fn(id));
+api.cliph.onChanged = (fn) => ipcRenderer.on('clip:changed', () => fn());
+api.print.onChanged = (fn) => ipcRenderer.on('print:changed', () => fn());
+api.print.onProgress = (fn) => ipcRenderer.on('print:progress', (_e, m) => fn(m));
+api.vpn.onChanged = (fn) => ipcRenderer.on('vpn:changed', () => fn());
+api.mirror.onChanged = (fn) => ipcRenderer.on('mirror:changed', (_e, s) => fn(s));
+api.mirror.watch = () => ipcRenderer.send('mirror:watch');
 api.bt.onChanged = (fn) => ipcRenderer.on('bt:changed', () => fn());
 api.bt.onCode = (fn) => ipcRenderer.on('bt:code', (_e, c) => fn(c));
 api.android.onProgress = (fn) => ipcRenderer.on('android:progress', (_e, m) => fn(m));

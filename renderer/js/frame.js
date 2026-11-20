@@ -34,3 +34,28 @@ S.on('frame:update', (u) => {
   document.body.classList.toggle('focused', !!u.focused);
   document.body.classList.toggle('fullscreen', !!u.fullscreen);
 });
+
+// Phone Mirroring (main/mirror.js): the phone's own buttons in the title bar — Back, Home, App Switcher, and a
+// screenshot — like the controls that show over the Mac's iPhone Mirroring window
+const PHONE_BTNS = [
+  ['back', 'Back', '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg>'],
+  ['home', 'Home', '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="6.5"/></svg>'],
+  ['recents', 'App Switcher', '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><rect x="6" y="5" width="12" height="14" rx="2.5"/></svg>'],
+  ['screenshot', 'Take Screenshot', '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M4 8.5A1.5 1.5 0 0 1 5.5 7h2.2l1.5-2h5.6l1.5 2h2.2A1.5 1.5 0 0 1 20 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 17.5z"/><circle cx="12" cy="12.6" r="3.3"/></svg>'],
+];
+let phoneBar = null;
+S.on('frame:update', (u) => {
+  const isPhone = (u.wmClass || []).some((c) => c === 'liquid-mirroring');
+  document.body.classList.toggle('mirror', isPhone);
+  if (!isPhone || phoneBar) return;
+  phoneBar = document.createElement('div');
+  phoneBar.className = 'fr-phone';
+  for (const [k, label, icon] of PHONE_BTNS) {
+    const b = document.createElement('button');
+    b.title = label; b.innerHTML = icon;
+    b.addEventListener('mousedown', (e) => e.stopPropagation());
+    b.addEventListener('click', (e) => { e.stopPropagation(); window.sys?.mirror?.key(k, title.textContent).catch(() => {}); });
+    phoneBar.append(b);
+  }
+  bar.append(phoneBar);
+});

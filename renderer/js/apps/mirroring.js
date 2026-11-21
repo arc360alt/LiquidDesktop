@@ -20,6 +20,9 @@ registerApp({
     const root = h('div.mr');
     win.body.append(root);
     let st = null, busy = false, showPair = false, nearbyList = { pairing: [], connect: [] };
+    // what's typed into the pairing fields: kept across redraws (the page is rebuilt when phones come and go)
+    const typed = { addr: '', code: '' };
+    let lastSig = '';
     api.mirror?.watch?.();
     const fail = (e) => alertDialog({ title: 'Phone Mirroring', message: e.message || String(e) }, win.el);
     async function askSudo(why) {
@@ -32,10 +35,14 @@ registerApp({
       }
       return false;
     }
-    async function refresh() {
+    // quiet: from the timer — only redraw when something changed, and never while you're typing in this window
+    async function refresh(quiet = false) {
       if (!api.mirror) { st = { unavailable: true }; return draw(); }
       st = await api.mirror.status().catch((e) => ({ error: e.message, devices: [], sessions: [] }));
       if (st.adb && (showPair || !st.devices.some((d) => d.state === 'device'))) nearbyList = await api.mirror.nearby().catch(() => nearbyList);
+      const sig = JSON.stringify([st, nearbyList]);
+      if (quiet && (sig === lastSig || root.contains(document.activeElement) && document.activeElement.matches('input, select'))) return;
+      lastSig = sig;
       draw();
     }
     const hero = (title, text, ...rest) => h('div.mr-hero', h('div.mr-phone', { html: PHONE }), h('h1', title), text ? h('p', text) : null, ...rest);
@@ -75,15 +82,15 @@ registerApp({
 
     // first time: how to let this computer in (USB debugging / Wireless debugging), and pairing with a code
     function setupGuide(waiting) {
-      const addr = h('input.field.square', { placeholder: '192.168.1.20:37045', style: { flex: 1.4 } });
-      const code = h('input.field.square', { placeholder: '6-digit code', inputmode: 'numeric', maxlength: 6, style: { flex: 1 } });
+      const addr = h('input.field.square', { placeholder: '192.168.1.20:37045', value: typed.addr, style: { flex: 1.4 }, oninput: (e) => { typed.addr = e.target.value; } });
+      const code = h('input.field.square', { placeholder: '6-digit code', inputmode: 'numeric', maxlength: 6, value: typed.code, style: { flex: 1 }, oninput: (e) => { typed.code = e.target.value; } });
       const pairBtn = h('button.btn.primary', { onclick: async () => {
         pairBtn.disabled = true; pairBtn.textContent = 'Pairing…';
-        try { await api.mirror.pair(addr.value.trim(), code.value.trim()); showPair = false; } catch (e) { fail(e); }
+        try { await api.mirror.pair(addr.value.trim(), code.value.trim()); showPair = false; typed.code = ''; } catch (e) { fail(e); }
         pairBtn.disabled = false; pairBtn.textContent = 'Pair'; refresh();
       } }, 'Pair');
       const found = nearbyList.pairing[0];
-      if (found && !addr.value) addr.value = found.addr;
+      if (found && !addr.value) { addr.value = found.addr; typed.addr = found.addr; }
       const step = (n, title, body) => h('div.mr-step', h('b.mr-n', n), h('div', h('b', title), h('p', ...[].concat(body))));
       return h('div.mr-setup',
         hero(waiting.some((d) => d.state === 'unauthorized') ? 'Allow this computer on your phone' : 'Connect your phone',
@@ -128,7 +135,7 @@ registerApp({
       refresh();
     });
     // a phone being paired or plugged in: look again now and then while the setup is showing
-    const t = setInterval(() => { if (!win.el.isConnected) return clearInterval(t); if (!st?.devices?.some((d) => d.state === 'device') || showPair) refresh(); }, 4000);
+    const t = setInterval(() => { if (!win.el.isConnected) return clearInterval(t); if (!st?.devices?.some((d) => d.state === 'device') || showPair) refresh(true); }, 4000);
     draw();
     refresh();
   },

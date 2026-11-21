@@ -48,7 +48,13 @@ function normalize(q) {
   if (!q) return null;
   if (/^liquid:\/\//i.test(q)) return q.toLowerCase();
   if (/^(https?|file|about|data|chrome-extension):/i.test(q)) return q;
-  if (/^localhost(:\d+)?(\/|$)/.test(q) || /^[\w-]+(\.[\w-]+)+(:\d+)?(\/.*)?$/.test(q)) return 'https://' + q;
+  // this computer and the local network (dev servers, routers, printers…) almost never have HTTPS: plain http
+  // there — localhost, *.localhost, *.local, 127.x / 10.x / 192.168.x / 172.16–31.x, 0.0.0.0, [::1], or a bare
+  // host name with a port (myserver:8080)
+  if (/^(localhost|[\w.-]+\.localhost|[\w.-]+\.local|127(\.\d{1,3}){3}|10(\.\d{1,3}){3}|192\.168(\.\d{1,3}){2}|172\.(1[6-9]|2\d|3[01])(\.\d{1,3}){2}|0\.0\.0\.0|\[[0-9a-f:]+\]|[\w-]+:\d+)(:\d+)?([/?#]|$)/i.test(q)) return 'http://' + q;
+  // any other bare IPv4 address: http too (HTTPS on an IP address almost never has a valid certificate)
+  if (/^\d{1,3}(\.\d{1,3}){3}(:\d+)?([/?#]|$)/.test(q)) return 'http://' + q;
+  if (/^[\w-]+(\.[\w-]+)+(:\d+)?([/?#].*)?$/.test(q)) return 'https://' + q;
   return ENGINES[opt('browserSearch', 'duckduckgo')][1] + encodeURIComponent(q);
 }
 
@@ -360,7 +366,8 @@ class BrowserView {
     const t = this.cur();
     if (!t) return;
     const ready = t.wv && t.ready;
-    const shown = t.page ? `liquid://${t.pageName}` : t.url;
+    // an internal page shows its liquid:// name; the "Can't open this page" page keeps the address that failed
+    const shown = t.page && t.pageName ? `liquid://${t.pageName}` : t.url;
     if (!this.typing) this.url.value = t.pageName === 'start' ? '' : (shown || '').replace(/^https:\/\/(www\.)?/, '').replace(/\/$/, '');
     this.lock.innerHTML = t.url.startsWith('https://') && !t.page ? sym.lock : '';
     let canBack = false, canFwd = false, loading = false;
@@ -590,10 +597,15 @@ class BrowserView {
     t.page?.remove();
     t.pageName = null;
     t.page = h('div.br-page', h('div.br-error', h('div', { html: sym.globe, style: { width: '48px', height: '48px', opacity: 0.4 } }),
-      h('h2', 'Can’t open this page'), h('p', `${hostOf(e.validatedURL)} — ${e.errorDescription || 'the page could not be loaded'}`),
+      h('h2', 'Can’t open this page'),
+      h('p', /CONNECTION_REFUSED/.test(e.errorDescription || '') && /^https?:\/\/(localhost|127\.|\[::1\]|0\.0\.0\.0)/.test(e.validatedURL || '')
+        ? `Nothing is running at ${(e.validatedURL || '').replace(/^https?:\/\//, '').replace(/\/$/, '')}. Start your server, then Try Again.`
+        : `${hostOf(e.validatedURL)} — ${e.errorDescription || 'the page could not be loaded'}`),
       h('button.btn.primary', { onclick: () => { t.page.remove(); t.page = null; t.wv.style.visibility = 'visible'; t.wv.reload(); } }, 'Try Again')));
     this.views.append(t.page);
     t.wv.style.visibility = 'hidden';
+    if (e.validatedURL) t.url = e.validatedURL;
+    this.syncUrl();
   }
 
   /* ---------------------------------------------- favorites */

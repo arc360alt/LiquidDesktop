@@ -19,6 +19,7 @@ const routedNotify = (n) => {
   notify(n);
 };
 
+let fpHooked = false, fpListener = null;   // the lock screen's fingerprint events
 export const shell = {
   info: null,
   home: '/',
@@ -129,11 +130,13 @@ export const shell = {
         h('button.glass', { html: sym.restart, title: 'Restart', onclick: () => api.sys.power('restart') }),
         h('button.glass', { html: sym.power, title: 'Shut Down', onclick: () => api.sys.power('shutdown') })));
     lockEl.addEventListener('mousedown', () => setTimeout(() => input.focus()));
-    const submit = async () => {
-      if (needPw) {
+    const submit = async (byFinger = false) => {
+      if (needPw && !byFinger) {
         const r = await api.sys.checkPassword(input.value).catch(() => ({ ok: false }));
         if (!r.ok) { pw.classList.remove('shake'); void pw.offsetWidth; pw.classList.add('shake'); input.value = ''; hint.textContent = 'Incorrect password'; return; }
       }
+      if (!shell.locked) return;
+      api.fp?.verifyStop?.().catch(() => {});
       clearInterval(t);
       lockEl.classList.add('out');
       setTimeout(() => lockEl.remove(), 650);
@@ -142,6 +145,25 @@ export const shell = {
       bus.emit('lock', false);
     };
     input.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); e.stopPropagation(); });
+    // fingerprint unlock (main/fingerprint.js): the sensor is armed while the lock screen shows
+    if (needPw && api.fp?.verifyStart && store.get('fpUnlock') !== false) {
+      const FP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M6.5 6.6A7.5 7.5 0 0 1 19.4 11M4.6 10a7.6 7.6 0 0 1 .9-2M5 15.5c.6-1.3.9-2.7.9-4.2A6.1 6.1 0 0 1 12 5.3M18.6 15.2c.3-1.3.5-2.6.5-4M8.3 19a12 12 0 0 0 1.5-6.9 2.3 2.3 0 0 1 4.5-.2M15.7 13.3a17 17 0 0 1-2 7M11.9 13.1c.1 2.7-.5 5.2-1.9 7.5"/></svg>';
+      const fp = h('div.l-fp', { html: FP, title: 'Touch the fingerprint sensor' });
+      api.fp.verifyStart().then((on) => {
+        if (!on || !shell.locked) return;
+        pw.after(fp);
+        if (!hint.textContent || /Welcome/.test(hint.textContent)) hint.textContent = 'Touch the sensor or enter your password';
+      }).catch(() => {});
+      if (!fpHooked) { fpHooked = true; api.fp.onVerify((v) => fpListener?.(v)); }
+      fpListener = (v) => {
+        if (!shell.locked) return;
+        if (v.state === 'match') { fp.classList.add('ok'); setTimeout(() => submit(true), 250); }
+        else if (v.state === 'no-match') { fp.classList.remove('bad'); void fp.offsetWidth; fp.classList.add('bad'); hint.textContent = 'Not recognized. Try again.'; }
+        else if (v.state === 'retry') hint.textContent = 'Try again — keep your finger still on the sensor.';
+        else if (v.state === 'locked-out') { fp.remove(); hint.textContent = 'Enter your password to unlock.'; }
+        else if (v.state === 'error') fp.remove();
+      };
+    }
     document.body.append(lockEl);
     attachLens(pw, { strength: 20, edge: 12 });
     setTimeout(() => input.focus(), 100);

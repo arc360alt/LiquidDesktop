@@ -967,6 +967,7 @@ function register({ getWindow, mode }) {
   h('sys:displays', () => displays.list());
   h('sys:setDisplay', (name, cfg) => displays.apply(name, cfg));
   h('sys:setDisplays', (list) => displays.applyAll(list));
+  h('sys:displayOptions', (o) => (o ? displays.setOptions(o) : displays.options()));
   // Software Update: which commit is installed, and is GitHub ahead of it?
   h('sys:updateCheck', async () => {
     const { net } = require('electron');
@@ -1016,4 +1017,4 @@ function register({ getWindow, mode }) {
   app.on('before-quit', () => { for (const c of ptys.values()) c.kill(); });
 }
 
-module.exports = { register, resolveIcon, listApps, launchEnv };
+module.exports = { register, resolveIcon, listApps, launchEnv, launchExec, parseDesktopFile };

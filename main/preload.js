@@ -6,7 +6,7 @@ const call = (name) => async (...args) => {
   return r;
 };
 const names = ['sys:info', 'sys:status', 'sys:rendering', 'sys:setRendering', 'sys:uiScale', 'sys:setUiScale', 'sys:batteries', 'power:state', 'power:set', 'rgb:status', 'rgb:refresh', 'rgb:setColors', 'rgb:setMode', 'rgb:customMode', 'rgb:saveMode', 'rgb:install', 'sys:media', 'sys:mediaCmd', 'sys:setVolume', 'sys:setMute', 'sys:setBrightness', 'sys:wifiPower',
-  'sys:wifiList', 'sys:wifiConnect', 'sys:airplane', 'sys:bluetoothPower', 'sys:stats', 'sys:kill', 'sys:checkPassword', 'sys:power', 'sys:screenshot', 'sys:shells', 'sys:monoFonts', 'sys:updateCheck', 'sys:inputDevices', 'sys:inputApply', 'sys:cursorThemes', 'sys:cursorCss', 'sys:cursorApply', 'sys:displays', 'sys:setDisplay', 'sys:setDisplays', 'dialogs:status', 'dialogs:fix', 'dialogs:test', 'picker:done', 'appchooser:done', 'net:fetch', 'fs:readDataUrl', 'fs:thumb', 'dialog:open', 'dialog:save', 'apptheme:status', 'apptheme:set', 'apptheme:install', 'sddm:status', 'sddm:apply', 'sddm:sudoStatus', 'sddm:sudoCheck', 'tray:list', 'tray:activate', 'tray:contextMenu', 'tray:menu', 'tray:event', 'sys:capture', 'sys:saveScreenshot', 'sys:account', 'sys:setRealName', 'sys:setAvatar', 'sys:changePassword',
+  'sys:wifiList', 'sys:wifiConnect', 'sys:airplane', 'sys:bluetoothPower', 'sys:stats', 'sys:kill', 'sys:checkPassword', 'sys:power', 'sys:screenshot', 'sys:shells', 'sys:monoFonts', 'sys:updateCheck', 'sys:inputDevices', 'sys:inputApply', 'sys:cursorThemes', 'sys:cursorCss', 'sys:cursorApply', 'sys:displays', 'sys:setDisplay', 'sys:setDisplays', 'sys:displayOptions', 'power:idleSettings', 'battery:status', 'battery:setLimit', 'battery:setLowPower', 'fp:status', 'fp:install', 'fp:verifyStart', 'fp:verifyStop', 'fp:enroll', 'fp:enrollCancel', 'fp:remove', 'fp:setLogin', 'autostart:list', 'autostart:set', 'autostart:add', 'autostart:remove', 'autostart:isOn', 'dialogs:status', 'dialogs:fix', 'dialogs:test', 'picker:done', 'appchooser:done', 'net:fetch', 'fs:readDataUrl', 'fs:thumb', 'dialog:open', 'dialog:save', 'apptheme:status', 'apptheme:set', 'apptheme:install', 'sddm:status', 'sddm:apply', 'sddm:sudoStatus', 'sddm:sudoCheck', 'tray:list', 'tray:activate', 'tray:contextMenu', 'tray:menu', 'tray:event', 'sys:capture', 'sys:saveScreenshot', 'sys:account', 'sys:setRealName', 'sys:setAvatar', 'sys:changePassword',
   'fs:home', 'fs:list', 'fs:stat', 'fs:read', 'fs:write', 'fs:mkdir', 'fs:newFile', 'fs:rename', 'fs:move', 'fs:copy', 'fs:trash', 'fs:remove', 'fs:emptyTrash',
   'fs:open', 'fs:reveal', 'fs:search', 'fs:exists', 'fs:places', 'apps:list', 'apps:info', 'apps:folders', 'apps:setFolders', 'apps:iconFor', 'apps:byId', 'apps:launch', 'apps:run', 'clip:write', 'clip:read', 'pty:create',
   'shell:toggleFullscreen', 'shell:devtools', 'shell:quit',
@@ -45,6 +45,8 @@ api.kdc.onSms = (fn) => ipcRenderer.on('kdc:sms', (_e, list) => fn(list));
 api.kdc.onCall = (fn) => ipcRenderer.on('kdc:call', (_e, c) => fn(c));
 api.kdc.onContacts = (fn) => ipcRenderer.on('kdc:contacts', (_e, d) => fn(d));
 api.appmenu.onChanged = (fn) => ipcRenderer.on('appmenu:changed', (_e, id) => fn(id));
+api.fp.onVerify = (fn) => ipcRenderer.on('fp:verify', (_e, v) => fn(v));
+api.fp.onEnroll = (fn) => ipcRenderer.on('fp:enroll', (_e, v) => fn(v));
 api.cliph.onChanged = (fn) => ipcRenderer.on('clip:changed', () => fn());
 api.print.onChanged = (fn) => ipcRenderer.on('print:changed', () => fn());
 api.print.onProgress = (fn) => ipcRenderer.on('print:progress', (_e, m) => fn(m));

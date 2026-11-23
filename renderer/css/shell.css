@@ -889,3 +889,82 @@
 .w-st-app small { opacity: 0.6; font-size: 11px; }
 .w-st-ic { width: 18px; height: 18px; flex: none; }
 .w-st-none { font-size: 11.5px; opacity: 0.6; }
+
+/* ---------------------------------------------------------------- the admin password sheet (polkit.js) */
+.pk-layer { z-index: 30500; }
+.pk-box { width: 300px; }
+.pk-box.shake { animation: shake 0.45s; }
+.pk-icon { width: 58px; height: 58px; margin: 0 auto 6px; }
+.pk-icon svg { width: 100%; height: 100%; }
+.pk-box h3 { font-size: 14px; }
+.pk-box p { font-size: 12px; margin-bottom: 10px; }
+.pk-user, .pk-pw { width: 100%; box-sizing: border-box; height: 30px; margin-top: 6px; }
+.pk-err { color: #ff453a; font-size: 11.5px; min-height: 15px; margin-top: 5px; }
+.pk-more { border: 0; background: none; color: var(--accent); font: inherit; font-size: 11.5px; padding: 2px 0; }
+.pk-details { text-align: left; font-size: 11px; color: var(--on-glass-2); background: rgba(128, 128, 128, 0.12); border-radius: 8px; padding: 6px 8px; margin: 4px 0; word-break: break-all; max-height: 120px; overflow-y: auto; }
+.pk-details b { color: var(--on-glass); font-weight: 600; }
+.cc-mod.cc-lowpower.on span { color: #ffcc00; }
+/* fingerprint unlock on the lock screen */
+#lock .l-fp { width: 34px; height: 34px; margin: 12px auto 0; color: rgba(255, 255, 255, 0.85); transition: color 0.2s; }
+#lock .l-fp svg { width: 100%; height: 100%; }
+#lock .l-fp.ok { color: #30d158; }
+#lock .l-fp.bad { color: #ff453a; animation: shake 0.45s; }
+
+/* ---------------------------------------------------------------- Setup Assistant (setup.js) */
+#setup { position: fixed; inset: 0; z-index: 40000; display: flex; flex-direction: column; align-items: center; justify-content: center; background-size: cover; background-position: center; transition: opacity 0.6s; }
+#setup.out { opacity: 0; pointer-events: none; }
+#setup .su-veil { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.28); backdrop-filter: blur(30px) saturate(1.4); }
+.su-card { position: relative; width: min(560px, calc(100vw - 40px)); min-height: 440px; max-height: calc(100vh - 120px); overflow-y: auto; border-radius: 28px; padding: 40px 44px 26px; display: flex; flex-direction: column; align-items: center; text-align: center; color: var(--on-glass); box-sizing: border-box; }
+.su-card.in { animation: suIn 0.5s var(--spring); }
+@keyframes suIn { from { opacity: 0; transform: translateY(14px) scale(0.98); } }
+.su-card h1 { margin: 4px 0 6px; font-size: 26px; font-weight: 700; letter-spacing: -0.3px; }
+.su-sub { margin: 0 0 18px; color: var(--on-glass-2); font-size: 13.5px; line-height: 1.45; max-width: 420px; }
+.su-logo { width: 84px; height: 84px; margin-top: 30px; filter: drop-shadow(0 10px 24px rgba(0, 0, 0, 0.3)); }
+.su-logo svg { width: 100%; height: 100%; }
+.su-hello { font-size: 64px; font-weight: 300; letter-spacing: -1px; margin: 24px 0 10px; min-height: 80px; background: linear-gradient(90deg, #5ac8fa, #af52de, #ff2d55, #ff9500); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.su-hello.show { animation: suHello 2.2s ease both; }
+@keyframes suHello { 0% { opacity: 0; transform: translateY(8px); filter: blur(6px); } 18%, 82% { opacity: 1; transform: none; filter: none; } 100% { opacity: 0; transform: translateY(-6px); filter: blur(6px); } }
+.su-icon { width: 46px; height: 46px; color: var(--accent); margin-bottom: 6px; }
+.su-icon svg { width: 100%; height: 100%; }
+.su-nav { display: flex; align-items: center; gap: 8px; width: 100%; margin-top: auto; padding-top: 20px; }
+.su-nav.center { justify-content: center; }
+.su-nav .btn { height: 32px; padding: 0 18px; font-size: 13px; }
+.su-big { height: 38px !important; padding: 0 28px !important; font-size: 14px !important; border-radius: 19px !important; }
+.su-list { width: 100%; max-height: 220px; overflow-y: auto; border-radius: 14px; background: rgba(128, 128, 128, 0.12); text-align: left; }
+.su-row { display: flex; align-items: center; gap: 10px; padding: 9px 14px; font-size: 13.5px; border-bottom: 0.5px solid rgba(128, 128, 128, 0.2); cursor: default; }
+.su-row:last-child { border: 0; }
+.su-row:hover { background: rgba(128, 128, 128, 0.14); }
+.su-row.on { font-weight: 600; }
+.su-ic, .su-lock, .su-check { width: 17px; height: 17px; display: flex; flex: none; }
+.su-ic svg, .su-lock svg, .su-check svg { width: 100%; height: 100%; }
+.su-ic { color: var(--accent); }
+.su-lock { opacity: 0.45; width: 13px; }
+.su-check { color: var(--accent); }
+.su-name { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.su-name small { font-size: 11px; color: var(--on-glass-2); font-weight: 400; }
+.su-empty { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 30px 20px; color: var(--on-glass-2); font-size: 13px; text-align: center; }
+.su-empty.col { flex-direction: column; gap: 4px; }
+.su-empty.col b { color: var(--on-glass); }
+.su-pw { display: flex; gap: 8px; width: 100%; margin-top: 10px; }
+.su-account { display: flex; flex-direction: column; align-items: center; gap: 10px; margin-bottom: 16px; }
+.su-avatar { width: 96px; height: 96px; border-radius: 50%; background: linear-gradient(135deg, #a1a1aa, #6b6b73); color: #fff; font-size: 36px; font-weight: 600; display: flex; align-items: center; justify-content: center; overflow: hidden; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25); }
+.su-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.su-input { width: 280px; height: 34px; text-align: center; font-size: 14px; }
+.su-themes { display: flex; gap: 16px; margin-bottom: 18px; }
+.su-theme { border: 0; background: none; color: inherit; font: inherit; font-size: 12.5px; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 0; }
+.su-theme .pv { width: 112px; height: 72px; border-radius: 12px; position: relative; box-shadow: 0 0 0 1px rgba(128, 128, 128, 0.3); }
+.su-theme .pv i { position: absolute; left: 14px; right: 26px; top: 14px; bottom: 14px; border-radius: 6px; }
+.su-theme.on .pv { box-shadow: 0 0 0 3px var(--accent); }
+.su-opt { display: flex; align-items: center; justify-content: space-between; width: 100%; max-width: 400px; padding: 8px 0; font-size: 13px; }
+.su-accents { display: flex; gap: 7px; }
+.su-accents button { width: 20px; height: 20px; border-radius: 50%; border: 0; padding: 0; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.15); }
+.su-accents button.on { box-shadow: 0 0 0 2px var(--glass-bg, #fff), 0 0 0 4px currentColor; }
+.su-tips { display: flex; flex-direction: column; gap: 12px; width: 100%; max-width: 400px; text-align: left; }
+.su-tip { display: flex; gap: 12px; align-items: flex-start; }
+.su-tip-ic { width: 32px; height: 32px; border-radius: 9px; background: var(--accent); color: #fff; display: flex; align-items: center; justify-content: center; flex: none; }
+.su-tip-ic svg { width: 18px; height: 18px; }
+.su-tip div { display: flex; flex-direction: column; font-size: 13px; }
+.su-tip small { color: var(--on-glass-2); font-size: 12px; }
+.su-dots { position: relative; display: flex; gap: 7px; margin-top: 18px; }
+.su-dots i { width: 7px; height: 7px; border-radius: 50%; background: rgba(255, 255, 255, 0.4); transition: background 0.3s, width 0.3s; }
+.su-dots i.on { background: #fff; width: 18px; border-radius: 4px; }

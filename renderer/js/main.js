@@ -108,6 +108,8 @@ async function bootShellSteps() {
   import('./phone.js').then((m) => m.initPhoneNotices());   // files received from the phone
   import('./reminders.js').then((m) => import('./notifications.js').then(({ notify }) => m.initReminderAlerts(notify)));   // reminders' alerts
   import('./screentime.js').then((m) => m.initScreenTime());   // Screen Time: which app is in front, and for how long
+  import('./polkit.js').then((m) => m.initPolkit());   // the password sheet for apps asking for admin rights
+  S.on('session:runSetup', () => import('./setup.js').then((m) => m.runSetup()));
   const { installSessionWM, windowMenu } = await import('./sessionwm.js');
   const { initShellShape } = await import('./shellshape.js');
   await catalog.load();
@@ -266,7 +268,9 @@ function softwareRenderingNotice() {
 }
 
 function welcome() {
-  if (store.get('welcomed')) return;
+  if (store.get('welcomed')) { if (!store.get('setupDone')) store.set('setupDone', true); return; }
+  // a first start: the Setup Assistant (it marks LiquidDesktop as welcomed when it's done)
+  if (!store.get('setupDone') && !params.get('secondary')) { import('./setup.js').then((m) => m.maybeRunSetup()); return; }
   store.set('welcomed', true);
   setTimeout(() => notify({ app: 'about', appName: 'LiquidDesktop', title: 'Welcome to LiquidDesktop', body: 'Alt+Space for Spotlight · F4 for Apps · F3 for Mission Control · click the clock for widgets.', timeout: 9000 }), 1500);
 }

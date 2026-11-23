@@ -51,6 +51,7 @@ optdepends=(
   'kdeconnect: your phone in Settings › Phone, Control Center and widgets (only its background service is used)'
   'appmenu-gtk-module: GTK apps'\'' menus in the menu bar'
   'glib2: move to Trash via gio'
+  'fprintd: fingerprint unlock (Settings › Lock Screen can install it)'
   'cups: printing (Settings › Printers & Scanners can install it)'
   'scrcpy: Phone Mirroring (the app can install it)'
   'android-tools: Phone Mirroring (adb)'

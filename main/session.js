@@ -82,6 +82,15 @@ async function startSession({ preload }) {
   const crashes = new Map();
   // crashes also go to ~/.config/LiquidDesktop/crashes.log (the session's own output ends up wherever the login
   // screen puts it), so they can be looked up and reported
+  // displays.log: what happened around every monitor change (the X server's view, what LiquidDesktop did, GPU
+  // process crashes, compositor resets), for finding out why a monitor change went wrong on someone's machine
+  const dlog = (line) => {
+    try {
+      const f = path.join(app.getPath('userData'), 'displays.log');
+      try { if (fs.statSync(f).size > 512 * 1024) fs.renameSync(f, f + '.old'); } catch { /* no log yet */ }
+      fs.appendFileSync(f, `${new Date().toISOString()} ${line}\n`);
+    } catch { /* not writable */ }
+  };
   const crashLog = (line) => {
     console.error(line);
     try {
@@ -105,6 +114,7 @@ async function startSession({ preload }) {
   app.on('child-process-gone', (_e, d) => {
     if (d.reason === 'clean-exit') return;
     crashLog(`[session] ${d.type}${d.name ? ' (' + d.name + ')' : ''} process gone: ${d.reason} (exit ${d.exitCode})`);
+    if (d.type === 'GPU') dlog(`GPU process gone: ${d.reason} (exit ${d.exitCode})`);
   });
 
   const toShell = (ch, ...a) => { if (!shell.isDestroyed()) shell.webContents.send(ch, ...a); };
@@ -341,6 +351,15 @@ async function startSession({ preload }) {
   on('wm:zoom', (id, mode) => wm.zoom(id, mode));
   on('shell:locked', (v) => { wm.setLocked(v); for (const b of bars()) if (!b.isDestroyed()) b.webContents.send('session:locked', v); });
   on('shell:notify', (n) => toShell('session:notify', n));
+  on('shell:runSetup', () => toShell('session:runSetup'));   // Settings › General › Setup Assistant (shown full screen by the shell)
+  // polkit: apps asking for administrator rights get LiquidDesktop's password sheet (main/polkit.js ↔ renderer/js/polkit.js)
+  const pkWaiting = new Map();   // cookie → resolve
+  on('shell:polkitAnswer', (cookie, answer) => { const r = pkWaiting.get(cookie); pkWaiting.delete(cookie); r?.(answer || null); });
+  const pkAsk = (info) => new Promise((resolve) => { pkWaiting.set(info.cookie, resolve); toShell('session:polkit', info); });
+  pkAsk.cancel = pkAsk.close = (cookie) => { const r = pkWaiting.get(cookie); pkWaiting.delete(cookie); r?.(null); toShell('session:polkitClose', cookie); };
+  require('./polkit').register(pkAsk);
+  // screen sleep, auto-lock, lock before sleeping, the lid (Settings › Lock Screen)
+  require('./idle').register({ wm, lock: () => toShell('session:shortcut', 'lock') });
   on('shell:windowMenu', (id, x, y, kind, rel) => {
     // from a title bar: its coordinates are relative to the window (it sits inside the frame container)
     const w = rel && wm.windows.get(id);
@@ -406,7 +425,7 @@ async function startSession({ preload }) {
     compositorTimer = setTimeout(() => {
       try {
         const pid = parseInt(fs.readFileSync(process.env.LIQUID_PICOM_PIDFILE || '', 'utf8'), 10);
-        if (pid > 1) { process.kill(pid, 'SIGUSR1'); console.log('[session] display layout changed: compositor reset'); }
+        if (pid > 1) { process.kill(pid, 'SIGUSR1'); console.log('[session] display layout changed: compositor reset'); dlog('compositor reset (picom SIGUSR1)'); }
       } catch { /* no picom of ours */ }
     }, 1500);
   };
@@ -423,7 +442,9 @@ async function startSession({ preload }) {
     const first = !lastLayout;
     lastLayout = key;
     const b = pd.bounds;
-    console.log('[session] displays:', all.map((d) => `${d.id}${d.id === pd.id ? '*' : ''} ${d.bounds.width}x${d.bounds.height}+${d.bounds.x}+${d.bounds.y}@${d.scaleFactor}`).join(', '));
+    const desc = all.map((d) => `${d.id}${d.id === pd.id ? '*' : ''} ${d.bounds.width}x${d.bounds.height}+${d.bounds.x}+${d.bounds.y}@${d.scaleFactor}`).join(', ');
+    console.log('[session] displays:', desc);
+    dlog(`layout: ${desc}`);
     for (const bw of [desktop, shell]) if (!bw.isDestroyed()) bw.setBounds(b);
     const mons = all.map((d) => ({ ...pxOf(d), id: d.id, primary: d.id === pd.id }));
     const rw = Math.max(...mons.map((m) => m.x + m.w)), rh = Math.max(...mons.map((m) => m.y + m.h));
@@ -477,7 +498,27 @@ async function startSession({ preload }) {
   const scheduleRelayout = (ms) => { clearTimeout(relayoutTimer); relayoutTimer = setTimeout(relayout, ms); };
   relayout();
   lastGeom = JSON.stringify(wm.mons.map((m) => [m.id, m.x, m.y, m.w, m.h]));
-  for (const ev of ['display-metrics-changed', 'display-added', 'display-removed']) screen.on(ev, () => scheduleRelayout(400));
+  // While the X server is reconfiguring monitors (RandR events still coming) nothing is resized or created: making
+  // Chromium build new GPU surfaces mid mode set is what crashed its GPU process on NVIDIA and drew garbage on
+  // AMD. Once the changes stop (wm 'randr', ~1 s of quiet): monitors plugged in are turned on / unplugged ones off
+  // (displays.hotplug), then everything is laid out for the result, once.
+  let changing = false;
+  wm.on('randr-start', () => { changing = true; clearTimeout(relayoutTimer); dlog('X server: monitor change started'); });
+  wm.on('randr', async () => {
+    let outs = [];
+    try { outs = await require('./displays').outputs(); } catch { /* no xrandr */ }
+    dlog('X server: ' + (outs.map((o) => `${o.name} ${o.connected ? 'connected' : 'disconnected'}${o.enabled ? ` ${o.w}x${o.h}+${o.x}+${o.y}` : ' off'}${o.primary ? ' primary' : ''}`).join(', ') || 'no outputs (xrandr missing?)'));
+    try {
+      const r = await require('./displays').hotplug();
+      if (r) dlog(`hotplug: ${r.did.join('; ')}${r.ok ? '' : ` — xrandr failed: ${r.err}`}`);
+      // that changed the layout: its own RandR events end in another 'randr', which lays out (and if they never
+      // come, lay out anyway after a while, so nothing stays waiting)
+      if (r && r.ok) { setTimeout(() => { if (changing) { changing = false; scheduleRelayout(300); } }, 6000); return; }
+    } catch (e) { dlog('hotplug failed: ' + e.message); }
+    changing = false;
+    scheduleRelayout(300);
+  });
+  for (const ev of ['display-metrics-changed', 'display-added', 'display-removed']) screen.on(ev, () => { if (!changing) scheduleRelayout(1000); });
 
   app.on('liquid-cursor-changed', () => wm.reloadCursor());
 

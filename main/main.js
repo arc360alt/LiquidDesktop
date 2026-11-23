@@ -23,8 +23,14 @@ if (softwareRendering) {
   app.disableHardwareAcceleration();
   console.log('[LiquidDesktop] software rendering (LIQUID_SOFTWARE_RENDERING / LIBGL_ALWAYS_SOFTWARE)');
 } else {
-  app.commandLine.appendSwitch('enable-gpu-rasterization');
-  app.commandLine.appendSwitch('ignore-gpu-blocklist');
+  // Chromium's own GPU blocklist decides what's safe on this driver. Overriding it (as LiquidDesktop used to) turned
+  // on GPU paths Chromium had turned off for that driver because they draw garbage or crash — which they did when
+  // a monitor was plugged in (rainbow corruption on AMD, GPU process crashes on NVIDIA). LIQUID_FORCE_GPU=1 still
+  // forces them, for drivers where they're known to be fine and faster.
+  if (process.env.LIQUID_FORCE_GPU === '1') {
+    app.commandLine.appendSwitch('enable-gpu-rasterization');
+    app.commandLine.appendSwitch('ignore-gpu-blocklist');
+  }
 }
 process.env.LIQUID_SOFTWARE_RENDERING = softwareRendering ? '1' : '';
 if (mode === 'session') {
@@ -98,12 +104,16 @@ app.whenReady().then(async () => {
   require('./android').register();
   require('./drives').register();
   require('./power').register();
+  require('./battery').register();   // battery health, charge limit, Low Power Mode
+  require('./fingerprint').register();   // fingerprint unlock (fprintd)
   require('./openrgb').register();
   require('./recorder').register({ mode });
   require('./appthemes').register({ mode });   // before any app starts: Qt apps need QT_STYLE_OVERRIDE
   require('./printing').register();   // Printers & Scanners, the Print dialog (CUPS)
   require('./vpn').register();        // VPN (NetworkManager)
   require('./mirror').register();     // iPhone-Mirroring-style phone mirroring (scrcpy)
+  require('./idle').registerIpc();    // Settings › Lock Screen's power options (the timers run in a session)
+  require('./autostart').register({ session: mode === 'session' });   // Login Items (started at login in a session)
   if (mode === 'session') {
     try {
       const { startSession } = require('./session');

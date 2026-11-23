@@ -47,6 +47,10 @@ app.whenReady().then(async () => {
   require('../main/printing').register();
   require('../main/vpn').register();
   require('../main/mirror').register();
+  require('../main/idle').registerIpc();
+  require('../main/autostart').register({});
+  require('../main/battery').register();
+  require('../main/fingerprint').register();
   require('../main/portal').register({});
   require('../main/notifications').register({ resolveIcon: require('../main/system').resolveIcon });
   require('../main/tray').register({ resolveIcon: require('../main/system').resolveIcon });

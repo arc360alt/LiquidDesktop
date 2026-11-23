@@ -169,6 +169,23 @@ class WindowManager extends EventEmitter {
     }
     // Shape extension, for the shell's drawable/clickable regions
     await new Promise((res) => X.require('shape', (err, Shape) => { this.Shape = err ? null : Shape; res(); }));
+    // RandR: hear about monitors being plugged in, unplugged and reconfigured straight from the X server (Electron's
+    // screen events alone can come late, or not at all, mid mode set). 'randr' fires once the changes have stopped
+    // for a moment; 'randr-start' at the first one, so work on the GPU can wait while the driver reconfigures.
+    await new Promise((res) => X.require('randr', (err, R) => {
+      if (err || !R) { res(); return; }
+      this.RandR = R;
+      const notifyType = R.firstEvent + 1;   // RRNotify (CRTC / output changes): the x11 module has no parser for it
+      let quiet = null, busy = false;
+      this.X.on('event', (ev) => {
+        if (ev.name !== 'RRScreenChangeNotify' && ev.type !== notifyType) return;
+        if (!busy) { busy = true; this.emit('randr-start'); }
+        clearTimeout(quiet);
+        quiet = setTimeout(() => { busy = false; this.emit('randr'); }, 900);
+      });
+      try { R.SelectInput(this.root, R.NotifyMask.ScreenChange | R.NotifyMask.CrtcChange | R.NotifyMask.OutputChange); } catch { /* old server */ }
+      res();
+    }));
     // a normal arrow on the desktop and window edges (the bare X server shows an "X")
     try { this.cursor = await loadCursor(X, this.root); X.ChangeWindowAttributes(this.root, { cursor: this.cursor }); } catch (e) { console.warn('[wm] cursor', e.message); }
     // 32-bit visual for the invisible "blur windows" placed behind each glass surface

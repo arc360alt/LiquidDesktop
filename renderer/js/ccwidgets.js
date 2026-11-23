@@ -187,6 +187,24 @@ const vpnControl = { id: 'net-vpn', name: 'VPN', size: 's', build: (c) => {
   .concat(['-', { label: 'VPN Settings…', action: () => { c.close(); c.shell.openSettings('vpn'); } }]) };
 api.vpn?.onChanged?.(() => { vpnCache = null; });
 
+// Low Power Mode: power-profiles-daemon's Power Saver, on and off (Settings › Battery has Always / Only on Battery)
+const LEAF = '<svg class="sym" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="7" width="17" height="10" rx="2.5"/><path d="M21.5 10.5v3"/><path d="M6 12h6" stroke-width="3" stroke="#ffcc00"/></svg>';
+let lpBefore = 'balanced';
+const lowPowerControl = { id: 'set-lowpower', name: 'Low Power Mode', size: 's', build: (c) => {
+  const el = c.sq(LEAF, 'Low Power', false, async () => {
+    const st = await api.power?.state().catch(() => null);
+    if (!st?.available) { c.close(); c.shell.openSettings('energy'); return; }
+    try {
+      if (st.active === 'power-saver') await api.power.set(lpBefore && lpBefore !== 'power-saver' ? lpBefore : 'balanced');
+      else { lpBefore = st.active; await api.power.set('power-saver'); }
+    } catch (e) { c.shell.notify({ app: 'settings', title: 'Low Power Mode', body: e.message }); }
+    c.render();
+  });
+  el.classList.add('cc-lowpower');
+  api.power?.state().then((st) => { if (!st?.available) el.classList.add('cc-dim'); el.classList.toggle('on', st?.active === 'power-saver'); }).catch(() => el.classList.add('cc-dim'));
+  return el;
+} };
+
 const MENUS = {
   clock: (c, iid = 'info-clock') => [check(iid, 'seconds', 'Show Seconds', false, c), check(iid, 'date', 'Show Date', true, c)],
   system: (c, iid = 'info-system') => [{ header: 'Show' }, ...radio(iid, 'show', [['both', 'CPU & Memory'], ['cpu', 'CPU'], ['mem', 'Memory']], 'both', c)],
@@ -207,6 +225,7 @@ export const EXTRA_CONTROLS = [
   ...INFO.map(([id, name, size, build, sizes]) => ({ id: 'info-' + id, name, size, sizes, build, menu: MENUS[id] })),
   ...PHONE_CONTROLS,
   vpnControl,
+  lowPowerControl,
 ];
 
 // Control Center widgets made in Widget Creator (size "cs" / "cw" / "cl"): shown like any control, with

@@ -60,9 +60,11 @@ function dockItem(id, { special } = {}) {
     if (!wm.appWindows(id).length) bounce(id, el);
     catalog.launch(app);
   });
-  el.addEventListener('contextmenu', (e) => {
+  el.addEventListener('contextmenu', async (e) => {
     e.preventDefault(); hideTip();
     if (special) return;
+    // Options › Open at Login, for Linux apps (a login item in ~/.config/autostart, main/autostart.js)
+    const atLogin = app.file && api.autostart ? await api.autostart.isOn(app.file).catch(() => null) : null;
     const pinned = store.get('dockPinned');
     const wins = wm.appWindows(id);
     const r = el.getBoundingClientRect();
@@ -73,6 +75,7 @@ function dockItem(id, { special } = {}) {
       { label: 'Options', submenu: [
         pinned.includes(id) ? { label: 'Remove from Dock', action: () => store.set('dockPinned', pinned.filter((p) => p !== id)) }
           : { label: 'Keep in Dock', action: () => store.set('dockPinned', [...pinned, id]) },
+        atLogin != null ? { label: 'Open at Login', checked: atLogin, action: () => (atLogin ? api.autostart.set(app.file.split('/').pop(), false) : api.autostart.add(app.file)).catch(() => {}) } : null,
         app.file ? { label: 'Show in Files', action: () => wm.open('files', { path: app.file.replace(/\/[^/]+$/, ''), select: app.file }) } : null,
       ].filter(Boolean) },
       wins.length ? '-' : null,

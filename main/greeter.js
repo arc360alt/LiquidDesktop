@@ -173,7 +173,9 @@ function run() {
   lastPath = path.join(dataDir, 'last.json');
 
   app.whenReady().then(() => {
-    ipcMain.handle('greeter:info', () => ({ users: users(), sessions: sessions(), last: saved(), host: os.hostname(), test: TEST }));
+    // fingerprint login is on when the login manager's PAM file has LiquidDesktop's lines (main/fingerprint.js)
+    const fingerprint = () => ['/etc/pam.d/greetd'].some((f) => { try { return fs.readFileSync(f, 'utf8').includes('# LiquidDesktop: fingerprint login'); } catch { return false; } });
+    ipcMain.handle('greeter:info', () => ({ users: users(), sessions: sessions(), last: saved(), host: os.hostname(), test: TEST, fingerprint: fingerprint() }));
     ipcMain.handle('greeter:login', (_e, u, p, s) => login(String(u), String(p), String(s)));
     ipcMain.handle('greeter:power', (_e, action) => {
       if (TEST) return { ok: true, test: true };

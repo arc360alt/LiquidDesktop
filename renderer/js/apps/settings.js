@@ -72,6 +72,7 @@ const render = {
         .map(([k, v]) => row(k, h('span.muted.ellipsis', { style: { maxWidth: '60%' } }, v || '—')))),
       h('div.group-title', 'Software Update'),
       softwareUpdateGroup(),
+      ...(await loginItemsGroup()),
       ...(await dialogsGroup()),
       h('div.group-title', 'Screenshots'),
       h('div.group',
@@ -86,6 +87,7 @@ const render = {
         row('Folder', h('input.field', { value: store.get('recDir') || '~/Videos/ScreenRecordings', style: { width: '220px', height: '28px' }, onchange: (e) => store.set('recDir', e.target.value.trim()) }))),
       h('div.group-title', 'Session'),
       h('div.group',
+        row('Setup Assistant', h('button.btn', { onclick: () => (isSession ? api.session.send('shell:runSetup') : import('../setup.js').then((m) => m.runSetup())) }, 'Run Again…'), 'Wi-Fi, your name and picture, the look, your phone.'),
         row('Mode', h('span.muted', i.mode === 'session' ? 'Desktop session' : i.mode === 'windowed' ? 'Windowed (testing)' : 'Browser preview')),
         row('Reset all settings', h('button.btn', { onclick: async () => { if (await confirmDialog('Reset all settings?', 'Your Dock, wallpaper, widgets and preferences go back to their defaults. Notes and files are kept.', 'Reset', { danger: true })) store.reset(); } }, 'Reset…')),
         isNative ? row('Developer tools', h('button.btn', { onclick: () => api.shell.devtools() }, 'Open')) : null),
@@ -272,7 +274,8 @@ const render = {
     // the arrangement: monitors to scale. Click one to edit it; drag it next to another to move it there.
     const arr = h('div.disp-arrange');
     if (enabled.length) {
-      const ext = (d) => (d.rotation % 180 ? [d.height, d.width] : [d.width, d.height]);
+      // each display's size in the arrangement: logical points (its mode ÷ its scale), like macOS
+      const ext = (d) => (d.rotation % 180 ? [d.height, d.width] : [d.width, d.height]).map((v) => v / (d.scale || 1));
       const minX = Math.min(...enabled.map((d) => d.x)), minY = Math.min(...enabled.map((d) => d.y));
       const maxX = Math.max(...enabled.map((d) => d.x + ext(d)[0])), maxY = Math.max(...enabled.map((d) => d.y + ext(d)[1]));
       const k = Math.min(380 / (maxX - minX || 1), 150 / (maxY - minY || 1));
@@ -282,7 +285,7 @@ const render = {
       for (const d of enabled) {
         const [w, hh] = ext(d);
         const el = h('div.disp-mon' + (d.name === displayState.sel ? '.sel' : ''), { style: { left: padX + (d.x - minX) * k + 'px', top: padY + (d.y - minY) * k + 'px', width: w * k - 4 + 'px', height: hh * k - 4 + 'px' } },
-          h('b', d.name), h('small', `${d.width}×${d.height}`), d.primary ? h('i', 'Main') : null);
+          h('b', d.name), h('small', `${d.width}×${d.height}${(d.scale || 1) !== 1 ? ` · ${Math.round(d.scale * 100)}%` : ''}`), d.primary ? h('i', 'Main') : null);
         el.addEventListener('pointerdown', (e) => {
           if (e.button !== 0) return;
           e.preventDefault();
@@ -337,10 +340,19 @@ const render = {
           ds.length > 1 ? row('Use this display', h('label.toggle', h('input', { type: 'checkbox', checked: draft.enabled, onchange: (e) => {
             const on = e.target.checked;
             // a display turned on goes to the right of the others
-            const right = Math.max(0, ...enabled.filter((o) => o !== draft).map((o) => o.x + (o.rotation % 180 ? o.height : o.width)));
+            const right = Math.max(0, ...enabled.filter((o) => o !== draft).map((o) => o.x + (o.rotation % 180 ? o.height : o.width) / (o.scale || 1)));
             set({ enabled: on, ...(on ? { x: right, y: 0, ...(!draft.width ? { width: draft.modes[0].width, height: draft.modes[0].height, refresh: draft.modes[0].rates[0] } : {}) } : { primary: false }) });
           } }), h('span'))) : null,
           draft.enabled ? row('Resolution', resSel) : null,
+          // per-display scale (main/displays.js): the displays beside it move along as it grows or shrinks
+          draft.enabled && info.backend === 'x11' ? row('Scale', h('select.field.square', { style: { height: '28px', minWidth: '190px' }, onchange: (e) => {
+            const nv = +e.target.value, ov = draft.scale || 1;
+            const w = (d, sc) => (d.rotation % 180 ? d.height : d.width) / sc, hgt = (d, sc) => (d.rotation % 180 ? d.width : d.height) / sc;
+            const dw = w(draft, nv) - w(draft, ov), dh = hgt(draft, nv) - hgt(draft, ov);
+            for (const o of enabled) if (o !== draft) { if (o.x >= draft.x + w(draft, ov) - 1) o.x += dw; else if (o.y >= draft.y + hgt(draft, ov) - 1) o.y += dh; }
+            set({ scale: nv });
+          } }, ...[1, 1.25, 1.5, 1.75, 2, 2.5, 3].map((v) => h('option', { value: v, selected: (draft.scale || 1) === v }, `${v * 100}%${v === 1 ? ' (default)' : ''}`))),
+            drafts.filter((x) => x.enabled).length > 1 ? 'Each display can have its own size. Displays below the largest scale are drawn sharper and shrunk to fit.' : 'How big everything is drawn on this display.') : null,
           draft.enabled ? row('Refresh rate', rateSel) : null,
           draft.enabled ? row('Rotation', rotSel) : null,
           draft.enabled && info.backend === 'x11' && ds.length > 1 ? row('Main display', h('label.toggle', h('input', { type: 'checkbox', checked: draft.primary, onchange: (e) => {
@@ -350,7 +362,7 @@ const render = {
           actions()));
     }
     // Interface size: LiquidDesktop drawn bigger (crisp, not stretched), and the DPI other apps size their text by
-    const ui = isSession ? await api.sys.uiScale?.().catch(() => null) : null;
+    const ui = isSession && !(info.backend === 'x11' && ds.length) ? await api.sys.uiScale?.().catch(() => null) : null;
     if (ui) {
       const MIN = 100, MAX = 200;
       const label = h('b', { style: { minWidth: '44px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' } });
@@ -374,6 +386,14 @@ const render = {
           row('Scale', h('div', { style: { display: 'flex', alignItems: 'center', gap: '10px', width: '290px' } }, h('small.muted', 'A'), slider, h('span', { style: { fontSize: '17px' } }, 'A'), label),
             `How big the menu bar, Dock, windows and text are drawn.${ui.current !== ui.saved ? ` Now ${ui.current}%.` : ''}`),
           apply));
+    }
+    // plugging in a monitor (main/displays.js hotplug): extend onto it like a Mac, mirror, or leave it off
+    if (info.backend === 'x11' && api.sys.displayOptions) {
+      const dopt = await api.sys.displayOptions().catch(() => ({ connect: 'extend' }));
+      out.push(h('div.group-title', 'Connecting displays'),
+        h('div.group', row('When a display is connected', h('select.field.square', { style: { height: '26px', minWidth: '160px' }, onchange: (e) => api.sys.displayOptions({ connect: e.target.value }) },
+          ...[['extend', 'Extend the desktop'], ['mirror', 'Mirror the main display'], ['off', 'Do nothing']].map(([v, l]) => h('option', { value: v, selected: dopt.connect === v }, l))),
+          'A display you’ve arranged here before gets your layout back. Details of every change are kept in ~/.config/LiquidDesktop/displays.log.')));
     }
     out.push(h('div.group-title', 'Brightness & color'),
       h('div.group',
@@ -463,6 +483,25 @@ const render = {
     if (laptop) {
       out.push(h('div.group', row('Battery level', h('div.en-batt', h('div.en-batt-bar', h('i', { style: { width: b.percent + '%', background: b.percent < 20 ? '#ff3b30' : '#34c759' } })), h('b', b.percent + '%')),
         b.charging ? 'Charging' : b.status || 'On battery')));
+    }
+    // battery health, charge limit, Low Power Mode (main/battery.js)
+    const bs = laptop && api.battery ? await api.battery.status().catch(() => null) : null;
+    if (bs?.health) {
+      const hl = bs.health;
+      out.push(h('div.group-title', 'Battery Health'), h('div.group',
+        row('Condition', h('span' + (hl.condition === 'Normal' ? '.muted' : ''), { style: hl.condition === 'Normal' ? null : { color: '#ff9f0a', fontWeight: 600 } }, hl.condition || '—'),
+          hl.condition === 'Normal' ? 'The battery is working normally.' : 'It holds noticeably less than when new; a replacement would bring back the battery life.'),
+        hl.capacity != null ? row('Maximum capacity', h('span.muted', hl.capacity + '%'), 'How much the battery holds now, compared with when it was new.') : null,
+        hl.cycles != null ? row('Charge cycles', h('span.muted', String(hl.cycles))) : null,
+        bs.limit ? row('Limit charging', h('select.field.square', { style: { height: '26px', minWidth: '170px' }, onchange: async (e) => {
+          const v = +e.target.value;
+          if (!(await askSudo('Changing the charge limit needs your password.'))) { e.target.value = bs.limit.current; return; }
+          try { await api.battery.setLimit(v); } catch (er) { e.target.value = bs.limit.current; alertDialog({ title: 'Charge limit', message: er.message }); }
+        } }, ...bs.limit.choices.map((c) => h('option', { value: c, selected: bs.limit.current === c }, c === 0 ? 'Off (charge to 100%)' : bs.limit.fixed ? 'On' : `Stop at ${c}%`))),
+          `Not sitting at 100% while plugged in makes the battery last more years.${bs.limit.fixed ? ' This laptop stops at its own limit (usually 60–80%).' : ''}`) : null));
+      if (st?.available && st.profiles.includes('power-saver')) out.push(h('div.group-title', 'Low Power Mode'), h('div.group', row('Low Power Mode', h('select.field.square', { style: { height: '26px', minWidth: '170px' }, onchange: (e) => api.battery.setLowPower(e.target.value).catch((er) => alertDialog({ title: 'Low Power Mode', message: er.message })) },
+        ...[['never', 'Never'], ['always', 'Always'], ['battery', 'Only on Battery']].map(([v, l]) => h('option', { value: v, selected: bs.lowPower === v }, l))),
+        'Uses the Power Saver mode below: slower, quieter, and the battery lasts longer. Also in Control Center.')));
     }
     out.push(h('div.group-title', 'Power Mode'));
     if (!st?.available) {
@@ -584,6 +623,9 @@ const render = {
       hero('lock', 'Lock Screen', 'Lock with ⌃⌘Q / Ctrl+Alt+Q, from the system menu, or a hot corner.'),
       h('div.group', row('Require password to unlock', toggle('requirePassword'), isNative ? 'Checked against your Linux account password.' : 'Unavailable in the browser preview.'),
         row('Lock now', h('button.btn', { onclick: () => import('../shell.js').then(({ shell }) => shell.lock()) }, 'Lock Screen'))),
+      // display sleep, auto-lock, idle sleep, lid; fingerprint unlock
+      ...(await import('./settings-lockextra.js').then((m) => m.powerGroups(paneCtx())).catch(() => [])),
+      ...(await import('./settings-lockextra.js').then((m) => m.fingerprintGroups?.(paneCtx()) || []).catch(() => [])),
     ];
     if (!api.sddm?.status) return out;
     // ---- the login screen (display manager / SDDM theme)
@@ -1010,6 +1052,49 @@ function softwareUpdateGroup() {
   setTimeout(check, 50);
   return group;
 }
+/* ------------------------------------------------------------------ Login Items (main/autostart.js) */
+async function loginItemsGroup() {
+  if (!api.autostart) return [];
+  const items = await api.autostart.list().catch(() => null);
+  if (!items) return [];
+  const { catalog } = await import('../catalog.js');
+  const iconFor = (it) => {
+    const app = catalog.native.find((a) => a.file && a.file.endsWith('/' + it.id));
+    if (app) return appIcon(app, 'li-ic');
+    return it.icon ? h('img.li-ic', { src: 'file://' + it.icon, alt: '' }) : h('span.li-ic.li-none', { html: sym.grid });
+  };
+  const fail = (e) => alertDialog({ title: 'Login Items', message: e.message });
+  const rows = items.map((it) => row(h('div.li-row', iconFor(it), h('div', h('span', it.name), h('small', it.managed || it.note || (it.installed ? (it.user ? 'Added by you' : 'Added by the system') : 'Not installed — it won’t open')))),
+    h('div', { style: { display: 'flex', gap: '8px', alignItems: 'center' } },
+      it.user && !it.system ? h('button.tb-btn', { title: 'Remove', html: sym.minus, onclick: async () => { try { await api.autostart.remove(it.id); rerender(); } catch (e) { fail(e); } } }) : null,
+      it.managed ? h('span.muted', { style: { fontSize: '11.5px' } }, 'Built in') : h('label.toggle', h('input', { type: 'checkbox', checked: it.enabled, onchange: async (e) => { try { await api.autostart.set(it.id, e.target.checked); } catch (er) { fail(er); e.target.checked = !e.target.checked; } } }), h('span')))));
+  const addApp = async () => {
+    const apps = catalog.native.filter((a) => a.file && !items.some((it) => it.id === a.file.split('/').pop() && it.enabled));
+    const search = h('input.field.square', { placeholder: 'Search apps', style: { width: '100%', height: '28px', marginBottom: '6px' } });
+    const list = h('div.li-pick');
+    let picked = null;
+    const draw = () => {
+      const q = search.value.toLowerCase();
+      list.replaceChildren(...apps.filter((a) => !q || a.name.toLowerCase().includes(q)).slice(0, 80).map((a) => {
+        const el = h('div.li-opt' + (picked === a ? '.sel' : ''), { onclick: () => { picked = a; draw(); }, ondblclick: () => { picked = a; ok(); } }, appIcon(a, 'li-ic'), h('span', a.name));
+        return el;
+      }));
+    };
+    search.addEventListener('input', draw);
+    draw();
+    let ok = () => {};
+    const res = alertDialog({ title: 'Open at Login', message: 'Choose an app to open when you log in.', content: h('div', { style: { width: '100%' } }, search, list),
+      buttons: [{ label: 'Cancel', value: 'cancel' }, { label: 'Add', value: 'ok', primary: true }] });
+    ok = () => list.closest('.alert')?.querySelector('.btn.primary')?.click();
+    const r = await res;
+    if (r.button !== 'ok' || !picked) return;
+    try { await api.autostart.add(picked.file); rerender(); } catch (e) { fail(e); }
+  };
+  return [h('div.group-title', 'Login Items'),
+    h('div.group', ...rows, !rows.length ? row(h('span.muted', 'Nothing opens at login'), null) : null,
+      row(h('small.muted', 'Apps that open when you log in, and apps’ own “start on login” items.'), h('button.btn', { onclick: addApp }, 'Add App…')))];
+}
+
 /* ------------------------------------------------------------------ Android (Waydroid) */
 // administrator rights for the root parts (installing, the container service…): asks for the password once
 async function askSudo(why) {
@@ -1320,7 +1405,7 @@ function phonePane() {
 }
 
 const displayState = { sel: null, drafts: null, sig: '' };
-const DISP_KEYS = ['width', 'height', 'refresh', 'rotation', 'x', 'y', 'enabled', 'primary'];
+const DISP_KEYS = ['width', 'height', 'refresh', 'rotation', 'x', 'y', 'enabled', 'primary', 'scale'];
 // A dragged monitor lands touching the nearest side of another one (never overlapping), lined up with its
 // edge or center when it's close to that.
 function snapDisplay(d, nx, ny, others, ext) {
@@ -1338,7 +1423,7 @@ function snapDisplay(d, nx, ny, others, ext) {
       if (!best || dist < best.dist) best = { ...c, dist };
     }
   }
-  return best ? { x: Math.round(best.x), y: Math.round(best.y) } : { x: d.x, y: d.y };
+  return best ? { x: Math.round(best.x * 100) / 100, y: Math.round(best.y * 100) / 100 } : { x: d.x, y: d.y };   // hundredths: logical points × the scale must land on the pixel
 }
 // the layout starts at 0,0 (what xrandr expects)
 function normalizeDisplays(list) {
@@ -1364,6 +1449,8 @@ async function applyDisplays(before, after) {
   const res = await p;
   settled = true; clearInterval(t);
   if (res.button !== 'keep' && !r?.unchanged) await api.sys.setDisplays(before.map((d) => ({ ...d }))).catch(() => {});
+  // a new overall scale: the displays already look right; LiquidDesktop and apps redraw at it after logging in again
+  else if (r?.relogin && await confirmDialog('Log out to finish?', `Everything is drawn at ${Math.round(r.scale * 100)}% from the next login. Until then, text and windows may look ${r.scale > 1 ? 'small' : 'large'} on some displays.`, 'Log Out')) api.sys.power('logout');
   displayState.drafts = null;
   setTimeout(rerender, 400);
 }

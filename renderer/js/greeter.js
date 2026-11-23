@@ -99,8 +99,9 @@ $('.g-field').addEventListener('submit', async (e) => {
   if (busy) return;
   const name = user ? user.name : $('.g-user').value.trim();
   const pass = $('.g-pass').value;
-  if (!name || !pass) return;
-  busy = true; msg('Logging in…'); document.body.classList.add('busy');
+  // with fingerprint login on, an empty password (just Enter) means "use my finger" (the PAM stack asks for it)
+  if (!name || (!pass && !info?.fingerprint)) return;
+  busy = true; msg(pass ? 'Logging in…' : 'Touch the fingerprint sensor…'); document.body.classList.add('busy');
   const r = await g.login(name, pass, session?.id).catch((err) => ({ ok: false, error: err.message }));
   busy = false; document.body.classList.remove('busy');
   if (r.ok) {
@@ -117,6 +118,7 @@ addEventListener('keydown', (e) => { if (e.key !== 'Escape') return; if (menu) {
 
 (async () => {
   try { info = await g.info(); } catch { /* not under the greeter */ }
+  if (info?.fingerprint) $('.g-pass').placeholder = 'Password, or Enter for fingerprint';
   session = info.sessions.find((s) => s.id === info.last?.session) || info.sessions[0] || null;
   drawPeople(); drawSession(); drawPower();
   pick(info.users.find((u) => u.name === info.last?.user) || info.users[0] || null);

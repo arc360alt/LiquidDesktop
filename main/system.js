@@ -450,14 +450,48 @@ function osName() {
   return m ? m[1] : 'Linux';
 }
 
+/**
+ * Is this the live system on an installer disc/USB (Lumen's ISO, or any archiso-based one) rather than an installed
+ * system? Then things meant for a fresh install — the Setup Assistant — stay away: the live system is only there to
+ * install the OS. Any one of these is enough; the reasons are kept so it's clear why.
+ * Lumen's installer removes every Lumen-specific marker below from the installed copy (backend/lumen-install), so
+ * none of them can linger after installing. LIQUID_LIVE=1 / LIQUID_LIVE=0 overrides it all (other distributions,
+ * testing).
+ */
+let liveCache = null;
+function liveSession() {
+  if (process.env.LIQUID_LIVE === '1') return { live: true, reasons: ['LIQUID_LIVE=1'] };
+  if (process.env.LIQUID_LIVE === '0') return { live: false, reasons: [] };
+  if (liveCache) return liveCache;
+  const reasons = [];
+  const cmdline = readFile('/proc/cmdline') || '';
+  // archiso (Lumen's ISO, Arch's own, EndeavourOS, CachyOS…): its boot mount, and its kernel options
+  if (fs.existsSync('/run/archiso')) reasons.push('/run/archiso');
+  const m = cmdline.match(/\b(archisobasedir|archisolabel|archisodevice|archisosearchuuid|boot=live|rd\.live\.image|boot=casper)\b/);
+  if (m) reasons.push('kernel option ' + m[1]);
+  // the root filesystem is the image's copy-on-write overlay (archiso's "airootfs", other live systems' overlays)
+  const mounts = readFile('/proc/mounts') || '';
+  const root = mounts.split('\n').find((l) => l.split(' ')[1] === '/');
+  if (root && /^(airootfs|overlay|aufs|LiveOS_rootfs)\s/.test(root) && /(airootfs|cowspace|\/run\/archiso|LiveOS|casper)/.test(mounts)) reasons.push('live root filesystem');
+  // Lumen's live-only pieces (removed by its installer)
+  for (const f of ['/usr/local/bin/lumen-live-session', '/usr/local/bin/lumen-live-setup', '/etc/systemd/system/lumen-live-setup.service']) if (fs.existsSync(f)) reasons.push(f);
+  // the live user Lumen's ISO logs in ("lumen", "Lumen Live"; deleted by the installer)
+  try {
+    const me = os.userInfo().username;
+    const pw = (readFile('/etc/passwd') || '').split('\n').find((l) => l.startsWith(me + ':'));
+    if (pw && /^Lumen Live\b/.test(pw.split(':')[4] || '')) reasons.push('the live user');
+  } catch { /* no passwd */ }
+  liveCache = { live: reasons.length > 0, reasons };
+  if (liveCache.live) console.log('[LiquidDesktop] live session (installer image):', reasons.join(', '));
+  return liveCache;
+}
+
 // How the screen is drawn, for the software-rendering notice: no GPU (main/main.js), which distribution, and
-// whether this is a live session from the installer image (archiso) rather than an installed system
+// whether this is a live session from the installer image rather than an installed system
 function rendering() {
   const osRel = readFile('/etc/os-release') || '';
   const id = (osRel.match(/^ID="?([^"\n]+)"?/m) || [])[1] || '';
-  const cmdline = readFile('/proc/cmdline') || '';
-  const live = fs.existsSync('/run/archiso') || /\b(archisobasedir|archisolabel|boot=live)\b/.test(cmdline);
-  return { software: process.env.LIQUID_SOFTWARE_RENDERING === '1', osId: id.toLowerCase(), live };
+  return { software: process.env.LIQUID_SOFTWARE_RENDERING === '1', osId: id.toLowerCase(), live: liveSession().live };
 }
 
 // Settings › Developer › Rendering: Automatic / Hardware / Software, saved per user in
@@ -728,7 +762,7 @@ function register({ getWindow, mode }) {
     mode, version: require('../package.json').version, user: os.userInfo().username, fullName: (await run('getent', ['passwd', os.userInfo().username])).out.split(':')[4]?.split(',')[0] || os.userInfo().username,
     host: os.hostname(), home: HOME, os: osName(), kernel: os.release(), arch: os.arch(),
     cpu: os.cpus()[0]?.model || 'CPU', cores: os.cpus().length, memory: os.totalmem(), uptime: os.uptime(),
-    electron: process.versions.electron, chrome: process.versions.chrome, rendering: rendering(),
+    electron: process.versions.electron, chrome: process.versions.chrome, rendering: rendering(), live: liveSession(),
     gpu: await gpuName(),
   }));
   h('sys:status', async () => {

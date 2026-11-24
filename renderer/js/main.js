@@ -270,7 +270,8 @@ function softwareRenderingNotice() {
 function welcome() {
   if (store.get('welcomed')) { if (!store.get('setupDone')) store.set('setupDone', true); return; }
   // a first start: the Setup Assistant (it marks LiquidDesktop as welcomed when it's done)
-  if (!store.get('setupDone') && !params.get('secondary')) { import('./setup.js').then((m) => m.maybeRunSetup()); return; }
+  // (not on an installer's live system: that's only there to install the OS — its own installer opens instead)
+  if (!store.get('setupDone') && !params.get('secondary') && !shell.info?.live?.live) { import('./setup.js').then((m) => m.maybeRunSetup()); return; }
   store.set('welcomed', true);
   setTimeout(() => notify({ app: 'about', appName: 'LiquidDesktop', title: 'Welcome to LiquidDesktop', body: 'Alt+Space for Spotlight · F4 for Apps · F3 for Mission Control · click the clock for widgets.', timeout: 9000 }), 1500);
 }

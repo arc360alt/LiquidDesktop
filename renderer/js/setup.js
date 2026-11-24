@@ -12,8 +12,11 @@ const ACCENTS = [['#0a84ff', 'Blue'], ['#af52de', 'Purple'], ['#ff2d55', 'Pink']
 let open = false;
 
 /** First start: show it unless it's been done (or LiquidDesktop was already set up before it existed). */
-export function maybeRunSetup() {
+export async function maybeRunSetup() {
   if (store.get('setupDone')) return false;
+  // a live system from an installer image (main/system.js liveSession): it's there to install the OS, not to set up
+  const info = await api.sys.info().catch(() => ({}));
+  if (info.live?.live) return false;
   if (store.get('welcomed')) { store.set('setupDone', true); return false; }   // already using LiquidDesktop
   runSetup();
   return true;

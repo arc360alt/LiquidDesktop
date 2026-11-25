@@ -280,6 +280,6 @@ export async function initDesktop() {
   places = await api.fs.places().catch(() => null);
   renderIcons(); renderWidgets(); initSurface(); initHotCorners();
   bus.on('fs-changed', renderIcons);
-  store.on('change', (k) => { if (k === 'showDesktopIcons') renderIcons(); if (k === 'widgets') renderWidgets(); });
+  store.on('change', (k) => { if (k === 'showDesktopIcons' || k === 'accent' || k === 'tintIcons') renderIcons(); if (k === 'widgets') renderWidgets(); });
   setInterval(() => renderIcons(false), 5000);
 }

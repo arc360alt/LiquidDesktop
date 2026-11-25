@@ -351,7 +351,8 @@ async function startSession({ preload }) {
   on('wm:zoom', (id, mode) => wm.zoom(id, mode));
   on('shell:locked', (v) => { wm.setLocked(v); for (const b of bars()) if (!b.isDestroyed()) b.webContents.send('session:locked', v); });
   on('shell:notify', (n) => toShell('session:notify', n));
-  on('shell:runSetup', () => toShell('session:runSetup'));   // Settings › General › Setup Assistant (shown full screen by the shell)
+  on('shell:runSetup', () => toShell('session:runSetup'));
+  on('shell:editMenubar', () => toShell('session:editMenubar'));   // Settings › Menu Bar › Edit Menu Bar… (the editor is in the shell)   // Settings › General › Setup Assistant (shown full screen by the shell)
   // polkit: apps asking for administrator rights get LiquidDesktop's password sheet (main/polkit.js ↔ renderer/js/polkit.js)
   const pkWaiting = new Map();   // cookie → resolve
   on('shell:polkitAnswer', (cookie, answer) => { const r = pkWaiting.get(cookie); pkWaiting.delete(cookie); r?.(answer || null); });

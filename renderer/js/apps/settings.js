@@ -1,7 +1,7 @@
 // System Settings.
 import { h, $$, fmtSize, fileUrl } from '../util.js';
 import { registerApp, wm } from '../wm.js';
-import { sym, appIcon, appIconSVG, logoBadge } from '../icons.js';
+import { sym, appIcon, appIconSVG, logoBadge, tintOn, tintColor, mix } from '../icons.js';
 import { store, defaults, dockHideMode } from '../store.js';
 import { api, isNative } from '../sys.js';
 import { WALLPAPERS, wallpaperUrl } from '../wallpapers.js';
@@ -53,9 +53,17 @@ const liveSlider = (value, onInput) => {
 };
 // like macOS: "Battery" on a laptop, "Energy" on a desktop
 const paneLabel = (id, label) => (id === 'energy' && !status.s.battery?.percent && status.s.battery?.percent !== 0 ? 'Energy' : label);
+// a pane's icon color: its own, or (accent color picked) a shade of the accent — light ones a little lighter, so
+// the sidebar keeps some variety, like macOS's tinted icons
+const paneColor = (c) => {
+  if (!tintOn()) return c;
+  const ac = tintColor();
+  const l = (x) => { const v = [1, 3, 5].map((i) => parseInt(x.slice(i, i + 2), 16)); return (0.299 * v[0] + 0.587 * v[1] + 0.114 * v[2]) / 255; };
+  return `linear-gradient(180deg, ${mix(ac, '#ffffff', 0.15)}, ${l(c) < 0.25 ? mix(ac, '#000000', 0.25) : ac})`;
+};
 const hero = (pane, title, text) => {
   const p = PANES.find((x) => x[0] === pane);
-  return h('div.set-hero', h('div', { style: { width: '62px', height: '62px', borderRadius: '15px', background: p[2], color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 14px rgba(0,0,0,.2)' }, html: p[3].replace('class="sym"', 'style="width:34px;height:34px"') }), h('h2', title), h('p', text));
+  return h('div.set-hero', h('div', { style: { width: '62px', height: '62px', borderRadius: '15px', background: paneColor(p[2]), color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 14px rgba(0,0,0,.2)' }, html: p[3].replace('class="sym"', 'style="width:34px;height:34px"') }), h('h2', title), h('p', text));
 };
 
 // the newer panes live in their own files (loaded when opened)
@@ -106,6 +114,8 @@ const render = {
       h('div.group',
         row('Appearance', h('div.theme-cards', card('light', 'Light', 'linear-gradient(135deg,#8ec5ff,#3d7fe0)', '#f6f6f8'), card('dark', 'Dark', 'linear-gradient(135deg,#0b1a3f,#06143a)', '#232326'), card('auto', 'Auto', 'linear-gradient(90deg,#8ec5ff 50%,#0b1a3f 50%)', 'linear-gradient(90deg,#f6f6f8 50%,#232326 50%)'))),
         row('Accent color', h('div.accent-row', ...ACCENTS.map(([n, c]) => h('button' + (store.get('accent') === c ? '.sel' : ''), { title: n, style: { background: n === 'Multicolor' ? 'conic-gradient(#ff3b30,#ffcc00,#34c759,#0a84ff,#af52de,#ff3b30)' : c }, onclick: () => { store.set('accent', c); rerender(); } })))),
+        row('Tint folders and icons', h('label.toggle', h('input', { type: 'checkbox', checked: store.get('tintIcons') !== false, onchange: (e) => { store.set('tintIcons', e.target.checked); rerender(); } }), h('span')),
+          'With an accent color picked, folders and Settings’ icons take it on. Multicolor keeps them in their own colors.'),
         row('Liquid Glass', seg('glass', [['clear', 'Clear'], ['tinted', 'Tinted']]), 'Clear shows more of what’s behind; Tinted is frostier and easier to read.'),
         row('Glass refraction', toggle('refraction'), 'Bend the background at the edges of glass, like a real lens.'),
         row('Reduce transparency', toggle('reduceTransparency'))),
@@ -248,6 +258,7 @@ const render = {
     const global = api.appmenu?.enabled ? await api.appmenu.enabled().catch(() => null) : null;
     return [
       hero('menubar', 'Menu Bar', 'What the clock and status items show, and where apps keep their menus.'),
+      ...(await menubarItemsGroup()),
       h('div.group', row('Use a 24-hour clock', toggle('clock24')), row('Show seconds', toggle('showSeconds')), row('Show battery', toggle('showBattery'), 'The battery icon in the menu bar'), row('Show battery percentage', toggle('showBatteryPct'))),
       global == null ? null : h('div.group', row('Show app menus in the menu bar', h('label.toggle', h('input', { type: 'checkbox', checked: global, onchange: async (e) => {
         await api.appmenu.setEnabled(e.target.checked).catch(() => {});
@@ -1052,6 +1063,29 @@ function softwareUpdateGroup() {
   setTimeout(check, 50);
   return group;
 }
+/* ------------------------------------------------------------------ Menu Bar items (menubaritems.js) */
+async function menubarItemsGroup() {
+  const { ITEMS, menubarOrder } = await import('../menubaritems.js');
+  const shown = menubarOrder();
+  const set = (list) => { store.set('menubarItems', list); rerender(); };
+  const move = (id, d) => { const l = [...shown]; const i = l.indexOf(id), j = i + d; if (j < 0 || j >= l.length || ITEMS[l[j]].fixed) return; [l[i], l[j]] = [l[j], l[i]]; set(l); };
+  const rowFor = (id) => {
+    const it = ITEMS[id], on = shown.includes(id);
+    return h('div.row.mbi-row', h('span.mbi-ic', { html: it.icon || sym.grid }), h('div.label', it.name, it.about ? h('small', it.about) : null),
+      on && !it.fixed ? h('div.mbi-move', h('button.tb-btn', { title: 'Move left', html: sym.chevronLeft, onclick: () => move(id, -1) }), h('button.tb-btn', { title: 'Move right', html: sym.chevronRight, onclick: () => move(id, 1) })) : null,
+      it.fixed ? h('span.muted', { style: { fontSize: '11.5px' } }, 'Always shown') : h('label.toggle', h('input', { type: 'checkbox', checked: on, onchange: (e) => {
+        set(e.target.checked ? [...shown.filter((x) => !ITEMS[x].fixed), id, ...shown.filter((x) => ITEMS[x].fixed)] : shown.filter((x) => x !== id));
+      } }), h('span')));
+  };
+  const edit = () => (isSession ? api.session.send('shell:editMenubar') : import('../menubar.js').then((m) => m.openMenubarEditor()));
+  return [h('div.group-title', 'Menu Bar Items'),
+    h('div.group', ...shown.map(rowFor),
+      row(h('small.muted', 'Or right-click the menu bar › Edit Menu Bar… and drag them into place.'), h('div', { style: { display: 'flex', gap: '6px' } },
+        h('button.btn', { onclick: () => set(null) }, 'Reset'), h('button.btn', { onclick: edit }, 'Edit Menu Bar…')))),
+    h('div.group-title', 'More Items'),
+    h('div.group', ...Object.keys(ITEMS).filter((id) => !shown.includes(id)).map(rowFor))];
+}
+
 /* ------------------------------------------------------------------ Login Items (main/autostart.js) */
 async function loginItemsGroup() {
   if (!api.autostart) return [];
@@ -1484,12 +1518,15 @@ registerApp({
       for (const [id, label0, color, icon] of PANES) {
         const label = paneLabel(id, label0);
         if (q && !label.toLowerCase().includes(q)) continue;
-        const el = h('div.sb-item', { 'data-pane': id, onclick: () => show(id) }, h('div.ic.sq', { style: { background: color }, html: icon }), label);
+        const el = h('div.sb-item', { 'data-pane': id, onclick: () => show(id) }, h('div.ic.sq', { style: { background: paneColor(color) }, html: icon }), label);
         items.append(el);
       }
       $$('.sb-item', items).forEach((el) => el.classList.toggle('sel', el.dataset.pane === current));
     };
     search.addEventListener('input', drawSidebar);
+    // the sidebar's icons follow the accent color
+    const offTint = store.on('change', (k) => { if (k === 'accent' || k === 'tintIcons') drawSidebar(); });
+    win.on('close', offTint);
     search.addEventListener('keydown', (e) => { if (e.key === 'Enter') items.querySelector('.sb-item')?.click(); });
     let current = null;
     const hist = [];

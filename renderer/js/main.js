@@ -41,6 +41,8 @@ import './apps/contacts.js';
 import './apps/phonehub.js';
 import './apps/reminders.js';
 import './apps/mirroring.js';
+import './apps/games.js';
+import './apps/journal.js';
 
 const progress = (p) => { const b = $('#boot .bar i'); if (b) b.style.width = p + '%'; };
 const hideBoot = () => {

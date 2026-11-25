@@ -181,6 +181,18 @@ const APP_ICONS = {
       <circle cx="27" cy="50" r="7" fill="none" stroke="#ff3b30" stroke-width="3.2"/><circle cx="27" cy="50" r="3.6" fill="#ff3b30"/>
       <circle cx="27" cy="69" r="7" fill="none" stroke="${c.ac2}" stroke-width="3.2"/><circle cx="27" cy="69" r="3.6" fill="${c.ac2}"/></g>
       <g stroke="${c.ink}" stroke-width="2.6" stroke-linecap="round"><path d="M41 31h36M41 50h36M41 69h30"/></g>` },
+  // Journal: a page with a doodle, a sticky note and a to-do tick
+  journal: { bg: ['#fff7e6', '#ffe3b3'], tone: '#ff9f0a', paper: true, c: { fg: '#fff', ac: '#ff9f0a', ac2: '#ffd60a', paper: '#fff', ink: '#5e5ce6' },
+    draw: (c) => `<rect x="20" y="16" width="56" height="68" rx="8" fill="${c.paper}" stroke="#e8dcc6" stroke-width="1.5"/>
+      <path d="M28 34c6-8 12 6 18-2s10 4 16-2" stroke="${c.ink}" stroke-width="3.2" fill="none" stroke-linecap="round"/>
+      <rect x="52" y="48" width="22" height="22" rx="3" fill="${c.ac2}" transform="rotate(8 63 59)"/>
+      <rect x="29" y="52" width="9" height="9" rx="2.2" fill="none" stroke="${c.ac}" stroke-width="2.4"/><path d="m31 56.5 2 2 3.5-4" stroke="${c.ac}" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+      <path d="M29 70h16" stroke="#c7c7cc" stroke-width="2.4" stroke-linecap="round"/>` },
+  // Games: a game controller on a dusk gradient
+  games: { bg: ['#ff5e8a', '#6b2fd6'], tone: '#ff375f', c: { fg: '#fff', ac: '#ffd60a', ac2: '#5ac8fa', paper: '#fff', ink: '#6b2fd6' },
+    draw: (c) => `<path d="M30 33h40a16 16 0 0 1 15.7 19.2l-3.4 16.3a9 9 0 0 1-15.4 4.3L59 65H41l-7.9 7.8a9 9 0 0 1-15.4-4.3l-3.4-16.3A16 16 0 0 1 30 33z" fill="${c.fg}"/>
+      <path d="M33 44v12M27 50h12" stroke="${c.ink}" stroke-width="4.5" stroke-linecap="round"/>
+      <circle cx="64" cy="46" r="3.6" fill="${c.ac}"/><circle cx="71" cy="53" r="3.6" fill="${c.ac2}"/>` },
   // Screen Time: an hourglass on purple
   screentime: { bg: ['#8e7bff', '#4b2fd6'], tone: '#7d6bff', c: { fg: '#fff', ac: '#ffd60a', ac2: '#e8e2ff', paper: '#fff', ink: '#4b2fd6' },
     draw: (c) => `<path d="M32 20h36M32 80h36" stroke="${c.fg}" stroke-width="5" stroke-linecap="round"/>
@@ -304,14 +316,33 @@ const FOLDER_GLYPHS = { Desktop: sym.desktop, Documents: sym.doc, Downloads: sym
 // the symbol embossed on special folders (Desktop, Documents…): a 22px glyph centred on the folder's front
 function folderGlyph(g) {
   const inner = g.replace(/^\s*<svg[^>]*>/, '').replace(/<\/svg>\s*$/, '');
-  return `<svg x="21" y="24" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#2f8bd0" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" opacity=".7">${inner}</svg>`;
+  // the symbol on Documents, Downloads…: a deeper shade of the folder's color
+  const stroke = tintOn() ? mix(tintColor(), '#000000', 0.2) : '#2f8bd0';
+  return `<svg x="21" y="24" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="${stroke}" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" opacity=".7">${inner}</svg>`;
 }
+/* ------------------------------------------------------------------ accent tinting (Appearance › Accent color) */
+// With an accent color picked (not Multicolor), folders and Settings' icons take it on, like macOS. tintOn() says
+// whether to; mix() makes the lighter and darker shades from it.
+const MULTICOLOR = '#0a84ff';
+export const tintOn = () => store.get('tintIcons') !== false && (store.get('accent') || MULTICOLOR) !== MULTICOLOR;
+export function mix(hex, other, t) {
+  const p = (c) => [1, 3, 5].map((i) => parseInt(c.slice(i, i + 2), 16));
+  const a = p(hex), b = p(other);
+  return '#' + a.map((v, i) => Math.round(v + (b[i] - v) * t).toString(16).padStart(2, '0')).join('');
+}
+export const tintColor = () => store.get('accent') || MULTICOLOR;
+let folderUid = 0;
+
 export function folderIcon(name) {
   const g = FOLDER_GLYPHS[name];
-  return `<svg viewBox="0 0 64 64"><defs><linearGradient id="fb" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8fd3ff"/><stop offset="1" stop-color="#4fb0f5"/></linearGradient>
-    <linearGradient id="ff" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#a8ddff"/><stop offset="1" stop-color="#6cc1fa"/></linearGradient></defs>
-    <path d="M4 13a4 4 0 0 1 4-4h14l4 4h30a4 4 0 0 1 4 4v32a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4z" fill="url(#fb)"/>
-    <path d="M4 21a4 4 0 0 1 4-4h48a4 4 0 0 1 4 4v28a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4z" fill="url(#ff)"/>
+  // the classic blue, or shades of the accent color (back a little deeper than the front, like macOS)
+  const ac = tintColor(), on = tintOn();
+  const [b1, b2, f1, f2] = on ? [mix(ac, '#ffffff', 0.45), mix(ac, '#ffffff', 0.18), mix(ac, '#ffffff', 0.58), mix(ac, '#ffffff', 0.32)] : ['#8fd3ff', '#4fb0f5', '#a8ddff', '#6cc1fa'];
+  const n = ++folderUid;   // ids unique per icon: two folders with different colors on one page mustn't share gradients
+  return `<svg viewBox="0 0 64 64"><defs><linearGradient id="fb${n}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${b1}"/><stop offset="1" stop-color="${b2}"/></linearGradient>
+    <linearGradient id="ff${n}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${f1}"/><stop offset="1" stop-color="${f2}"/></linearGradient></defs>
+    <path d="M4 13a4 4 0 0 1 4-4h14l4 4h30a4 4 0 0 1 4 4v32a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4z" fill="url(#fb${n})"/>
+    <path d="M4 21a4 4 0 0 1 4-4h48a4 4 0 0 1 4 4v28a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4z" fill="url(#ff${n})"/>
     <path d="M4.5 21.5a4 4 0 0 1 4-4h47" stroke="#fff" stroke-opacity=".7" stroke-width="1" fill="none"/>
     ${g ? folderGlyph(g) : ''}</svg>`;
 }

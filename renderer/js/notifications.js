@@ -133,6 +133,8 @@ function dragNC(el, e) {
 
 export function toggleNotificationCenter(force) {
   const open = force ?? !nc.classList.contains('open');
+  // and Control Center closes when Notification Center opens (they'd overlap)
+  if (open) import('./controlcenter.js').then((m) => m.closeControlCenter());
   if (!open) ncEditing = false;
   if (open) renderNC();
   nc.classList.toggle('open', open);

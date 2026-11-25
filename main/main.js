@@ -106,6 +106,8 @@ app.whenReady().then(async () => {
   require('./power').register();
   require('./battery').register();   // battery health, charge limit, Low Power Mode
   require('./fingerprint').register();   // fingerprint unlock (fprintd)
+  require('./games').register();   // the Games app's library (Steam, Heroic, Lutris, installed games)
+  require('./journal').register();   // Journal's pages and pictures
   require('./openrgb').register();
   require('./recorder').register({ mode });
   require('./appthemes').register({ mode });   // before any app starts: Qt apps need QT_STYLE_OVERRIDE

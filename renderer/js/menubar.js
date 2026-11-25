@@ -10,9 +10,12 @@ import { catalog } from './catalog.js';
 import { api } from './sys.js';
 import { isSession, session as S } from './layer.js';
 import { recordingIndicator } from './recording.js';
+import { ITEMS as MB_ITEMS, menubarOrder, editMenubar, editingMenubar, dragMenubarItem } from './menubaritems.js';
 import { HALVES, QUARTERS, ARRANGE, layoutIcon } from './tiling.js';
 
-let bar, appArea, statusArea, clockEl, battEl, wifiEl, openTitle = null;
+let bar, appArea, statusArea, clockEl, battEl, wifiEl, openTitle = null, openEditorRef = null;
+/** Edit Menu Bar (Settings › Menu Bar, in the testing window; a session asks the shell). */
+export const openMenubarEditor = () => openEditorRef?.();
 
 function fmtClock(d = new Date()) {
   const day = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }).replace(',', '');
@@ -249,7 +252,40 @@ export function initMenubar() {
   const cc = h('div.mb-item', { html: sym.controls, title: 'Control Center', onclick: (e) => { e.stopPropagation(); shell.toggleControlCenter(); } });
   clockEl = h('div.mb-item', { onclick: () => shell.toggleNotificationCenter() });
   const trayArea = h('div#mb-tray');
-  statusArea = h('div#mb-status', recordingIndicator(), trayArea, battEl, wifiEl, search, cc, clockEl);
+  // the right side: the items you chose, in your order (menubaritems.js; right-click › Edit Menu Bar…)
+  const own = { tray: trayArea, battery: battEl, wifi: wifiEl, spotlight: search, cc, clock: clockEl };
+  const recEl = recordingIndicator();
+  statusArea = h('div#mb-status');
+  const ctx = { shell };
+  const drawItems = () => {
+    const kids = [recEl];
+    for (const id of menubarOrder()) {
+      const def = MB_ITEMS[id];
+      let el = null;
+      try { el = def.own ? own[id] : def.build(ctx); } catch (e) { console.error('[menubar]', id, e); }
+      if (!el) continue;
+      el.dataset.mb = id;
+      kids.push(el);
+    }
+    statusArea.replaceChildren(...kids);
+  };
+  drawItems();
+  store.on('change:menubarItems', () => { if (!editingMenubar()) drawItems(); });
+  // editing: items don't do their thing, they move (drag along the bar)
+  for (const t of ['click', 'mousedown']) statusArea.addEventListener(t, (e) => {
+    if (!editingMenubar()) return;
+    const it = e.target.closest('[data-mb]');
+    e.stopPropagation(); e.preventDefault();
+    if (t === 'mousedown' && it && e.button === 0) dragMenubarItem(it, e, drawItems);
+  }, true);
+  const openEditor = () => editMenubar(drawItems);
+  openEditorRef = openEditor;
+  statusArea.addEventListener('contextmenu', (e) => {
+    if (e.defaultPrevented) return;   // a background app's own menu
+    e.preventDefault();
+    showMenu([{ label: 'Edit Menu Bar…', action: openEditor }, { label: 'Menu Bar Settings…', action: () => shell.openSettings('menubar') }], e.clientX, e.clientY + 4);
+  });
+  if (isSession) S.on('session:editMenubar', openEditor);
   initTray(trayArea);
   bar.append(logoItem, appArea, statusArea);
 

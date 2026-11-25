@@ -51,6 +51,8 @@ app.whenReady().then(async () => {
   require('../main/autostart').register({});
   require('../main/battery').register();
   require('../main/fingerprint').register();
+  require('../main/games').register();
+  require('../main/journal').register();
   require('../main/portal').register({});
   require('../main/notifications').register({ resolveIcon: require('../main/system').resolveIcon });
   require('../main/tray').register({ resolveIcon: require('../main/system').resolveIcon });

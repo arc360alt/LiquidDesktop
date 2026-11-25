@@ -9,9 +9,9 @@ import { closeMenu } from './menus.js';
 import { dockHidden, revealDock } from './dock.js';
 import { menubarHidden, revealMenubar } from './menubar.js';
 
-const INTERACTIVE = ['#menubar', '#dock', '#dock .dock-floor', '.dock-item', '.menu', '.cc', '#nc.open', '#toasts > *', '#switcher', '#spotlight .bar',
+const INTERACTIVE = ['#menubar', '#dock', '#dock .dock-floor', '.dock-item', '.menu', '.cc', '.cc-addpanel', '.mb-edit-panel', '#nc.open', '#toasts > *', '#switcher', '#spotlight .bar',
   '#spotlight .chips > *', '#spotlight .results:not([hidden])', '#launcher', '#widget-gallery', '.global-alert-layer .alert', '#mission', '#lock', '#boot', '.quicklook', '#shot-layer', '#lock-cover', '#emoji-picker', '#clip-picker', '#setup'];
-const MODAL = ['.menu', '.cc', '#nc.open', '#spotlight-layer', '#launcher-layer', '.global-alert-layer', '#mission', '#lock', '#boot', '#switcher', '.quicklook', '#shot-layer', '#lock-cover', '#emoji-layer', '#clip-layer', '#setup'];
+const MODAL = ['.menu', '.cc', '.cc-addpanel', '.mb-edit-panel', '#nc.open', '#spotlight-layer', '#launcher-layer', '.global-alert-layer', '#mission', '#lock', '#boot', '#switcher', '.quicklook', '#shot-layer', '#lock-cover', '#emoji-layer', '#clip-layer', '#setup'];
 const KEYBOARD = ['#emoji-layer', '#clip-layer', '#setup', '#spotlight-layer', '#launcher-layer', '#lock', '.global-alert-layer', '#shot-layer'];
 // glass that gets a real blur behind it: these, plus anything the stylesheets give a backdrop blur (see glassSelectors)
 const GLASS = ['.glass', '#menubar', '#mission', '#launchpad', '.snap-preview'];
@@ -42,7 +42,7 @@ function glassSelectors() {
   return [...out].join(', ');
 }
 let glassSel = GLASS.join(', ');
-const RADII = [0, 6, 10, 14, 18, 22, 26, 30, 36];   // must match the rules in session/picom.conf
+const RADII = [0, 6, 10, 14, 18, 22, 26, 30, 36, 44, 56, 72];   // must match the rules in session/picom.conf
 
 const visible = (el) => {
   if (!el.isConnected || el.closest('[hidden]')) return null;

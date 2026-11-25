@@ -176,10 +176,6 @@
 .cc-sq.on { background: var(--accent) !important; color: #fff; }
 .cc-sq:active { transform: scale(0.95); }
 .cc-slider-mod h4 { margin: 0 0 8px; font-size: 12.5px; font-weight: 600; }
-.cc-slider { position: relative; height: 30px; border-radius: 999px; background: rgba(128, 128, 128, 0.25); overflow: hidden; }
-.cc-slider .fill { position: absolute; left: 0; top: 0; bottom: 0; background: rgba(255, 255, 255, 0.95); border-radius: 999px; min-width: 15px; }
-.cc-slider .fill::after { content: ''; position: absolute; right: 0; top: 0; bottom: 0; width: 30px; border-radius: 50%; background: #fff; box-shadow: 0 0 6px rgba(0, 0, 0, 0.2); }
-.cc-slider svg { position: absolute; left: 8px; top: 7px; width: 16px; height: 16px; color: rgba(0, 0, 0, 0.55); z-index: 2; pointer-events: none; }
 .cc-np { display: flex; align-items: center; gap: 10px; }
 .cc-np .art { width: 44px; height: 44px; border-radius: 10px; background: linear-gradient(135deg, #ff6b9a, #8b5cf6); flex: none; background-size: cover; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2); display: flex; align-items: center; justify-content: center; }
 .cc-np .art svg { width: 22px; height: 22px; color: #fff; }
@@ -541,13 +537,6 @@
 #widget-gallery .wg-hint { font-size: 12px; opacity: 0.75; }
 #widget-gallery { overflow: visible; }
 
-/* Control Center sliders: a real knob that becomes a glass lens while you drag it */
-.cc-slider { overflow: visible; }
-.cc-slider .fill { overflow: hidden; }
-.cc-slider .fill::after { display: none; }
-.cc-slider .knob { position: absolute; top: 0; width: 30px; height: 30px; margin-left: -30px; border-radius: 999px; background: #fff; box-shadow: 0 0 6px rgba(0, 0, 0, 0.2); z-index: 3; transition: transform 0.2s var(--spring), background 0.2s; pointer-events: none; }
-.cc-slider.dragging .knob { transform: scale(1.3, 1.45); background: linear-gradient(180deg, rgba(255, 255, 255, 0.35), rgba(255, 255, 255, 0.08)) !important; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.95), inset 0 0 0 2px rgba(0, 0, 0, 0.06), inset 0 2px 4px rgba(255, 255, 255, 0.8), inset 0 -2px 5px rgba(0, 0, 0, 0.08), 0 5px 18px rgba(0, 0, 0, 0.28) !important;
-  -webkit-backdrop-filter: blur(1.5px) saturate(2) brightness(1.2); backdrop-filter: blur(1.5px) saturate(2) brightness(1.2); }
 /* the remove badge sits half outside the widget's corner */
 .desk-widget { overflow: visible; }
 .desk-widget .remove { left: -9px; top: -9px; }
@@ -968,3 +957,175 @@
 .su-dots { position: relative; display: flex; gap: 7px; margin-top: 18px; }
 .su-dots i { width: 7px; height: 7px; border-radius: 50%; background: rgba(255, 255, 255, 0.4); transition: background 0.3s, width 0.3s; }
 .su-dots i.on { background: #fff; width: 18px; border-radius: 4px; }
+
+/* ================================================================ Control Center — macOS Tahoe
+   No box around it: every control floats as its own piece of Liquid Glass on a grid of 66 px cells. Capsules
+   (Wi-Fi, Bluetooth, Airplane Mode, Focus), round one-tap buttons, wide slider cards, Now Playing as a big square.
+   Each piece has a backdrop blur, so in a session the compositor blurs behind each one (shellshape.js). */
+.cc.cc-tahoe { width: 312px; right: 10px; background: none; box-shadow: none; border-radius: 0; overflow: visible; }
+.cc-tahoe .cc-grid { grid-template-columns: repeat(4, 66px); grid-auto-rows: auto; align-content: start; grid-auto-flow: row; gap: 12px; padding: 6px 6px 12px; justify-content: center; }
+.cc-tahoe .cc-mod {
+  border-radius: 30px; padding: 14px 16px; min-height: 66px; box-sizing: border-box; color: var(--on-glass); position: relative; isolation: isolate;
+  background: rgba(var(--glass-rgb), var(--glass-a));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat)); backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  box-shadow: 0 8px 26px rgba(0, 0, 0, 0.18), inset 0 0.5px 0 var(--glass-hi);
+}
+/* the glass rim, as on every other glass surface */
+.cc-tahoe .cc-mod::before {
+  content: ''; position: absolute; inset: 0; border-radius: inherit; padding: 1px; pointer-events: none; z-index: 5;
+  background: linear-gradient(135deg, var(--glass-rim) 0%, var(--glass-rim-2) 22%, transparent 45%, transparent 60%, var(--glass-rim-2) 82%, var(--glass-rim) 100%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude;
+}
+/* opening: one short fade-and-settle per control, slightly staggered — only when Control Center opens (controljs adds
+   .cc-in to the first drawing only), and no second animation on the panel itself (the two fought, and replaying
+   it on every redraw is what flickered) */
+.cc.cc-tahoe { animation: none; }
+.cc.cc-tahoe.closing { animation: ccOut 0.18s ease forwards; }
+.cc-tahoe .cc-in { animation: ccModIn 0.3s cubic-bezier(0.2, 0.9, 0.3, 1.1) both; animation-delay: calc(var(--i, 0) * 18ms); }
+@keyframes ccModIn { from { opacity: 0; transform: translateY(-8px) scale(0.96); } }
+.cc-tahoe .cc-mod.row2 { min-height: 144px; }
+.cc-tahoe .cc-mod:active:not(.cc-slider-mod):not(.cc-detail):not(.cc-npmod) { transform: scale(0.96); }
+.cc-tahoe .cc-mod { transition: transform 0.25s var(--spring), background 0.2s; }
+
+/* capsules: a round button (white with a colored symbol when on) and the name with its state */
+.cc-tahoe .cc-cap { border-radius: 999px; display: flex; align-items: center; gap: 10px; padding: 0 14px 0 10px; height: 66px; box-sizing: border-box; cursor: default; }
+.cc-cap .circ { width: 46px; height: 46px; border-radius: 50%; flex: none; display: flex; align-items: center; justify-content: center; background: rgba(128, 128, 128, 0.3); color: var(--on-glass); transition: background 0.2s, color 0.2s, transform 0.2s var(--spring); }
+.cc-cap .circ:active { transform: scale(0.88); }
+.cc-cap .circ svg { width: 21px; height: 21px; }
+.cc-cap.on .circ { background: #fff; color: var(--accent); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18); }
+.cc-cap .t { min-width: 0; display: flex; flex-direction: column; line-height: 1.2; }
+.cc-cap .t b { font-size: 13.5px; font-weight: 600; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.15; }
+.cc-cap .t small { font-size: 12px; color: var(--on-glass-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cc-tahoe .cc-focus.on { background: var(--accent); color: #fff; }
+.cc-tahoe .cc-focus.on .t small { color: rgba(255, 255, 255, 0.8); }
+.cc-tahoe .cc-focus.on .circ { background: #fff; color: var(--accent); }
+
+/* round one-tap buttons (their name is the tooltip) */
+.cc-tahoe .cc-sq { border-radius: 50%; height: 66px; padding: 0; display: flex; align-items: center; justify-content: center; font-size: 11px; }
+.cc-tahoe .cc-sq .cc-ic { display: flex; }
+.cc-tahoe .cc-sq .cc-ic svg, .cc-tahoe .cc-sq > span:first-child svg { width: 24px; height: 24px; }
+.cc-tahoe .cc-sq .cc-lbl { display: none; }
+.cc-tahoe .cc-sq.on { background: var(--accent) !important; color: #fff; }
+.cc-tahoe .cc-sq .cc-app-ic { width: 30px; height: 30px; }
+/* small cells that show information keep their words, in a rounded square */
+.cc-tahoe .cc-sq:is(.cc-weather, .cc-info, .cc-custom, .cc-phone-batt) { border-radius: 24px; }
+.cc-tahoe .cc-mod.span2:not(.cc-cap), .cc-tahoe .cc-mod.span4 { border-radius: 30px; }
+
+/* sliders: title, then a thin track between a small and a big symbol */
+.cc-tahoe .cc-slider-mod { padding: 14px 18px 16px; }
+.cc-tahoe .cc-slider-mod h4 { margin: 0 0 12px; font-size: 13.5px; font-weight: 600; cursor: default; }
+.cc-slider { display: flex; align-items: center; gap: 12px; height: 24px; cursor: default; touch-action: none; }
+.cc-slider .lo, .cc-slider .hi { flex: none; display: flex; color: var(--on-glass); }
+.cc-slider .lo svg { width: 15px; height: 15px; }
+.cc-slider .hi svg { width: 21px; height: 21px; }
+.cc-slider .track { position: relative; flex: 1; height: 6px; border-radius: 3px; background: rgba(0, 0, 0, 0.16); }
+:root[data-theme='dark'] .cc-slider .track { background: rgba(255, 255, 255, 0.2); }
+.cc-slider .fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 3px; background: #fff; box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.08); }
+.cc-slider .knob { position: absolute; top: 50%; width: 22px; height: 22px; margin: -11px 0 0 -11px; border-radius: 50%; background: #fff; box-shadow: 0 1px 6px rgba(0, 0, 0, 0.3);
+  opacity: 0; transform: scale(0.5); transition: opacity 0.18s, transform 0.25s var(--spring); pointer-events: none; z-index: 2; }
+.cc-slider:hover .knob { opacity: 1; transform: none; }
+.cc-slider.dragging .knob { opacity: 1; transform: scale(1.55, 1.3); background: linear-gradient(180deg, rgba(255, 255, 255, 0.4), rgba(255, 255, 255, 0.1)) !important;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.95), inset 0 2px 4px rgba(255, 255, 255, 0.8), inset 0 -2px 5px rgba(0, 0, 0, 0.08), 0 5px 18px rgba(0, 0, 0, 0.28) !important;
+  -webkit-backdrop-filter: blur(1.5px) saturate(2) brightness(1.2); backdrop-filter: blur(1.5px) saturate(2) brightness(1.2); }
+.cc-slider.dragging .track { height: 8px; transition: height 0.15s; }
+.cc-slider-row { display: flex; align-items: center; gap: 10px; }
+.cc-slider-row .cc-slider { flex: 1; }
+.cc-tahoe .cc-more { width: 30px; height: 30px; background: rgba(128, 128, 128, 0.28); }
+
+/* Now Playing: art and words on top, the buttons along the bottom */
+.cc-tahoe .cc-npmod { display: flex; flex-direction: column; justify-content: space-between; padding: 16px; }
+.cc-tahoe .cc-npmod .cc-np { flex-direction: column; align-items: flex-start; gap: 8px; }
+.cc-tahoe .cc-npmod .art { width: 52px; height: 52px; border-radius: 12px; }
+.cc-tahoe .cc-npmod .meta { width: 100%; }
+.cc-tahoe .cc-npmod .meta b { font-size: 13.5px; }
+.cc-tahoe .cc-npmod .meta span { font-size: 12px; }
+.cc-tahoe .cc-npmod .cc-np-ctrl { justify-content: space-between; margin-top: 4px; }
+.cc-tahoe .cc-npmod .cc-np-ctrl button { width: 36px; height: 32px; }
+.cc-tahoe .cc-npmod .cc-np-ctrl svg { width: 22px; height: 22px; }
+.cc-tahoe .cc-npmod .cc-np-ctrl .pp svg { width: 26px; height: 26px; }
+
+/* Edit Controls: a small glass pill under everything */
+.cc-edit-row { grid-column: span 4; display: flex; justify-content: center; align-items: center; }
+.cc-tahoe .cc-edit-btn, .cc-tahoe .cc-reset { width: auto; padding: 7px 16px; border-radius: 999px; font-size: 12.5px; font-weight: 500; color: var(--on-glass);
+  background: rgba(var(--glass-rgb), var(--glass-a)); -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat)); backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.16), inset 0 0.5px 0 var(--glass-hi); }
+.cc-tahoe .cc-reset { grid-column: 2 / span 2; justify-self: center; }
+.cc-tahoe .cc-add-head { border-top: 0; margin-top: 4px; padding: 10px 12px 10px 16px; border-radius: 22px;
+  background: rgba(var(--glass-rgb), var(--glass-a)); -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat)); backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.16), inset 0 0.5px 0 var(--glass-hi); }
+.cc-tahoe .cc-remove, .cc-tahoe .cc-add-badge { top: -2px; left: -2px; z-index: 6; }
+.cc-tahoe .cc-mod.cc-editing, .cc-tahoe .cc-mod.cc-preview { overflow: visible; }
+.cc-tahoe .cc-detail { padding: 14px; }
+.cc-tahoe .cc-grid > small.muted { color: #fff; text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5); }
+.cc-tahoe .cc-mod.cc-editing { animation: ccJiggle 0.3s ease-in-out infinite alternate; }
+.cc-tahoe .cc-mod.cc-dragging { animation: none !important; }
+/* the grid keeps its natural height (squeezed into a scrolling grid, rows fall back to their minimum and cut controls
+   short); the panel around it scrolls instead when Control Center is taller than the screen (edit mode) */
+.cc.cc-tahoe { overflow-x: hidden; overflow-y: auto; scrollbar-width: none; }
+.cc.cc-tahoe::-webkit-scrollbar { width: 0; }
+.cc-tahoe .cc-grid { flex: none; overflow: visible; min-height: auto; }
+
+/* Edit Controls: the controls you can add, in a glass panel beside Control Center (macOS Tahoe) */
+.cc-addpanel { position: fixed; top: calc(var(--menubar-h) + 6px); right: calc(10px + 312px + 14px); width: 334px; z-index: 15000;
+  max-height: calc(100vh - var(--menubar-h) - 24px); border-radius: 32px; overflow-y: auto; overflow-x: hidden; scrollbar-width: none; color: var(--on-glass);
+  animation: ccSideIn 0.32s cubic-bezier(0.2, 0.9, 0.3, 1.1) both; }
+.cc-addpanel::-webkit-scrollbar { width: 0; }
+.cc-addpanel.closing { animation: ccOut 0.18s ease forwards; }
+@keyframes ccSideIn { from { opacity: 0; transform: translateX(16px) scale(0.98); } }
+.cc-addpanel .cc-grid { padding: 14px 12px 16px; }
+/* inside its glass the controls are a lighter glass (no blur of their own: the panel's covers them) */
+.cc-addpanel .cc-mod { background: rgba(128, 128, 128, 0.16); box-shadow: inset 0 0.5px 0 var(--glass-hi); -webkit-backdrop-filter: none; backdrop-filter: none; }
+.cc-addpanel .cc-add-head { grid-column: span 4; margin: 0 0 4px; padding: 0 2px 8px; background: none; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; border-radius: 0; }
+.cc-addpanel .cc-add-head b { font-size: 15px; }
+.cc-addpanel .cc-add-none { grid-column: span 4; text-align: center; color: var(--on-glass-2); padding: 20px 0; }
+.cc-addpanel .cc-reset { background: rgba(128, 128, 128, 0.18); box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; color: var(--accent); }
+.cc-tahoe .cc-done { background: var(--accent); color: #fff; }
+/* a narrow screen: the panel goes under the menu bar's left side instead of off the screen */
+@media (max-width: 720px) { .cc-addpanel { right: auto; left: 10px; } }
+.cc-addpanel .cc-add-head { flex-wrap: wrap; gap: 8px; }
+.cc-add-cell { display: flex; flex-direction: column; align-items: center; gap: 5px; min-width: 0; }
+.cc-add-cell.span2 { grid-column: span 2; } .cc-add-cell.span4 { grid-column: span 4; } .cc-add-cell.row2 { grid-row: span 2; }
+.cc-add-cell > .cc-mod { align-self: stretch; }
+.cc-add-cell > .cc-sq { align-self: center; width: 66px; }
+.cc-add-cell > small { font-size: 10.5px; line-height: 1.2; color: var(--on-glass-2); text-align: center; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cc-addpanel .cc-grid { row-gap: 10px; }
+/* the add panel: the glass box doesn't scroll (its rim and sheen are drawn on it), the list inside it does */
+.cc-addpanel { overflow: hidden; display: flex; flex-direction: column; }
+.cc-add-scroll { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; scrollbar-width: none; border-radius: inherit; }
+.cc-add-scroll::-webkit-scrollbar { width: 0; }
+
+/* ---------------------------------------------------------------- the menu bar's items (menubaritems.js) */
+.mb-item.mb-dim { opacity: 0.45; }
+.mb-item.mb-on { color: var(--accent); }
+#menubar.dark-text .mb-item.mb-on, #menubar .mb-item.mb-on svg { filter: drop-shadow(0 0 0.5px rgba(0, 0, 0, 0.3)); }
+.mb-np, .mb-phone, .mb-weather, .mb-meter { display: flex; align-items: center; gap: 4px; }
+.mb-np span, .mb-phone span, .mb-meter span, .mb-wx { width: 15px; height: 15px; display: flex; }
+.mb-np span svg, .mb-phone span svg, .mb-meter span svg, .mb-wx svg { width: 100%; height: 100%; }
+.mb-np small, .mb-phone small, .mb-weather small, .mb-meter small { font-size: 12.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.mb-meter b { font-size: 10px; font-weight: 700; opacity: 0.7; letter-spacing: 0.02em; }
+.mb-user { font-size: 13px; font-weight: 500; }
+/* editing: the items jiggle and can be dragged */
+#mb-status.mb-editing > [data-mb] { animation: ccJiggle 0.28s ease-in-out infinite alternate; cursor: var(--cur-grab, grab); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.35); border-radius: 7px; }
+#mb-status.mb-editing > [data-mb='cc'], #mb-status.mb-editing > [data-mb='clock'] { animation: none; box-shadow: none; opacity: 0.6; }
+#mb-status .mb-dragging { animation: none !important; background: rgba(255, 255, 255, 0.25); }
+.mb-edit-panel { position: fixed; top: calc(var(--menubar-h) + 6px); right: 10px; width: 320px; max-height: calc(100vh - var(--menubar-h) - 24px); overflow: hidden; z-index: 15500;
+  border-radius: 24px; color: var(--on-glass); display: flex; flex-direction: column; animation: ccIn 0.3s var(--spring); }
+.mb-edit-panel.closing { animation: ccOut 0.18s ease forwards; }
+.mb-edit-panel > .mb-edit-head { padding: 14px 16px 6px; display: flex; flex-direction: column; gap: 2px; }
+.mb-edit-head b { font-size: 14px; }
+.mb-edit-head small { font-size: 11.5px; color: var(--on-glass-2); }
+.mb-edit-sec { padding: 10px 16px 4px; font-size: 11px; font-weight: 600; color: var(--on-glass-2); }
+.mb-edit-row { display: flex; align-items: center; gap: 10px; padding: 6px 12px 6px 16px; font-size: 13px; }
+.mb-edit-row:hover { background: rgba(128, 128, 128, 0.12); }
+.mb-edit-ic { width: 18px; height: 18px; display: flex; flex: none; opacity: 0.85; }
+.mb-edit-ic svg { width: 100%; height: 100%; }
+.mb-edit-name { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.mb-edit-name small { font-size: 10.5px; color: var(--on-glass-2); }
+.mb-edit-fixed { font-size: 10.5px; color: var(--on-glass-2); }
+.mb-edit-btn { width: 22px; height: 22px; border-radius: 50%; border: 0; padding: 0; display: flex; align-items: center; justify-content: center; color: #fff; flex: none; }
+.mb-edit-btn svg { width: 12px; height: 12px; }
+.mb-edit-btn.add { background: #34c759; }
+.mb-edit-btn.rm { background: #ff3b30; }
+.mb-edit-foot { display: flex; align-items: center; gap: 8px; padding: 10px 14px 14px; border-top: 0.5px solid rgba(128, 128, 128, 0.3); margin-top: 6px; }
+/* the lists scroll between the head and the foot */
+.mb-edit-panel { overflow-y: auto; scrollbar-width: none; }

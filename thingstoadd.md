@@ -1,5 +1,4 @@
 Trackpad gestures. I found no gesture handling at all. Three-finger swipe up for Mission Control, sideways to switch Spaces, pinch for Launchpad, two-finger swipe for back and forward in the Browser and Files. This would do the most to make it feel like macOS. On X11 you can read gestures through libinput (or touchegg); on Wayland they're built in, which is one more reason for your planned Wayland move.
-Keyboard: a true ⌘ key. Alt stands in for ⌘ today. Add a "Use Super as ⌘" option that maps Super+C/V/Q/W to the app's Ctrl shortcuts, and let users remap shortcuts in Settings › Keyboard Shortcuts.
 Time Machine–style Backups in Settings or as an app: hourly Btrfs snapshots of /home (or restic to an external drive), a timeline, and "Restore this file". It pairs with OS item 1.
 Stage Manager, and Split View (full-screen two apps side by side).
 Accessibility pane: a screen reader (Orca), zoom/magnifier, reduce motion, a bigger cursor, high contrast, sticky keys. Right now there's only a single mention of accessibility in the code.

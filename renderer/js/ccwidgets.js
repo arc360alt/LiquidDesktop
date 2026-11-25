@@ -175,8 +175,8 @@ const vpnControl = { id: 'net-vpn', name: 'VPN', size: 's', build: (c) => {
   const paint = (list) => {
     const v = list.find((x) => x.uuid === cfg('net-vpn').uuid) || list.find((x) => x.state === 'on') || list[0];
     el.classList.toggle('on', v?.state === 'on');
-    const lab = el.lastChild;
-    if (lab?.nodeType === 3) lab.textContent = v ? (v.state === 'connecting' ? 'Connecting…' : v.name) : 'VPN';
+    const lab = el.querySelector('.cc-lbl');
+    if (lab) lab.textContent = v ? (v.state === 'connecting' ? 'Connecting…' : v.name) : 'VPN';
     el.title = v ? `${v.name} — ${v.state === 'on' ? 'Connected' : 'Not Connected'}` : 'No VPN set up — click to add one';
     if (!v) el.classList.add('cc-dim');
   };

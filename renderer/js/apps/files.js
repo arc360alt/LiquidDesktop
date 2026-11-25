@@ -77,6 +77,7 @@ class FilesView {
     this.pollDrives = pollDrives;
     const off = bus.on('fs-changed', () => this.refresh());
     const offS = store.on('change', (k) => {
+      if (k === 'accent' || k === 'tintIcons') this.renderItems();   // folders follow the accent color
       if (k === 'filesShowHidden') { this.showHidden = !!store.get(k); this.renderItems(); }
       if (k === 'filesShowExt') { this.showExt = store.get(k) !== false; this.renderItems(); }
       if (k === 'filesSort') { this.sort = store.get(k); this.renderItems(); }

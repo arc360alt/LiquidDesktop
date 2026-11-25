@@ -16,44 +16,59 @@ import { appIcon } from './icons.js';
 import { phoneState, mainPhone, onPhone, deviceIcon, signalBars, PHONE_ICONS, phoneAct, sendFiles, browsePhone, has } from './phone.js';
 
 // which controls Control Center shows, in order (Edit Controls); the built-in ones can always be added back
-const BUILTIN = [['conn', 'Connectivity'], ['np', 'Now Playing'], ['focus', 'Focus'], ['dark', 'Dark Mode'], ['shot', 'Screenshot'], ['bright', 'Display'],
-  ['sound', 'Sound'], ['ns', 'Night Shift'], ['lock', 'Lock'], ['mission', 'Desktops'], ['rec', 'Record'], ['battery', 'Battery'], ['phone', 'Phone']];
-const DEFAULT_LAYOUT = BUILTIN.map(([id]) => id);
-const layout = () => { const l = store.get('ccLayout'); return Array.isArray(l) ? l : DEFAULT_LAYOUT; };
+// (macOS Tahoe's Control Center: every control its own piece of glass — capsules for Wi-Fi, Bluetooth and
+// Focus, round buttons for one-tap controls, wide slider cards, Now Playing as a big square)
+const BUILTIN = [['wifi', 'Wi-Fi'], ['bluetooth', 'Bluetooth'], ['airplane', 'Airplane Mode'], ['np', 'Now Playing'], ['focus', 'Focus'], ['dark', 'Dark Mode'], ['shot', 'Screenshot'],
+  ['bright', 'Display'], ['sound', 'Sound'], ['ns', 'Night Shift'], ['lock', 'Lock'], ['mission', 'Desktops'], ['rec', 'Record'], ['battery', 'Battery'], ['phone', 'Phone']];
+// (Battery and Phone aren't in it: they're in Edit Controls for whoever wants them)
+const DEFAULT_LAYOUT = ['wifi', 'np', 'bluetooth', 'airplane', 'dark', 'shot', 'focus', 'ns', 'lock', 'bright', 'sound', 'mission', 'rec'];
+// layouts saved before Tahoe's layout had one "Connectivity" block: it's the three capsules now
+const layout = () => { const l = store.get('ccLayout'); return Array.isArray(l) ? l.flatMap((id) => (id === 'conn' ? ['wifi', 'bluetooth', 'airplane'].filter((x) => !l.includes(x)) : [id])) : DEFAULT_LAYOUT; };
 let editing = false;
 
 // panel: the glass box (stays still); grid: what's in it, which scrolls (so the glass rim and blur don't scroll away)
 let panel = null, grid = null, mediaTimer = null, offStatus = null;
+// Edit Controls: the controls you can add, in their own glass panel beside Control Center (like the Mac's)
+let addPanel = null, addKids = null;
 // recording the screen right now (main/recorder.js): the Record button turns into Stop
 let recording = false;
 api.rec?.status?.().then((r) => { recording = !!r?.recording; }).catch(() => {});
 api.rec?.onChanged?.((r) => { recording = !!r?.recording; });
 
-function slider(icon, value, onInput, onCommit) {
+function slider(icon, value, onInput, onCommit, hiIcon) {
+  // Tahoe: a thin track between a small and a big icon; the knob appears when you touch it and turns into a glass
+  // lens while you drag. The fill and the track have the same round ends, so nothing pokes out at any value.
   const fill = h('div.fill');
   const knob = h('i.knob');
-  const el = h('div.cc-slider', h('span', { html: icon }), fill, knob);
-  // the fill ends at the knob's centre (with a round end), so the knob always covers it — no square corners
-  // poking out beside the round knob, and through the glass knob (while dragging) the end looks right too
-  const set = (v) => { const w = `calc(${v}% + ${30 * (1 - v / 100)}px)`; fill.style.width = `calc(${w} - 15px)`; knob.style.left = w; };
+  const track = h('div.track', fill, knob);
+  const lo = h('span.lo', { html: icon });
+  const el = h('div.cc-slider', lo, track, hiIcon ? h('span.hi', { html: hiIcon }) : null);
+  const set = (v) => { fill.style.width = v + '%'; knob.style.left = v + '%'; };
   set(value ?? 50);
   el.addEventListener('mousedown', (e) => {
-    const r = el.getBoundingClientRect();
-    const at = (ev) => clamp(Math.round(((ev.clientX - r.left - 15) / (r.width - 30)) * 100), 0, 100);
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const r = track.getBoundingClientRect();
+    const at = (ev) => clamp(Math.round(((ev.clientX - r.left) / r.width) * 100), 0, 100);
     const mv = (ev) => { const v = at(ev); set(v); onInput(v); };
-    // while held, the knob is glass (in a session the compositor blurs behind anything marked .glass)
     el.classList.add('dragging'); knob.classList.add('glass');
     const up = (ev) => { removeEventListener('mousemove', mv); removeEventListener('mouseup', up); el.classList.remove('dragging'); knob.classList.remove('glass'); onCommit?.(at(ev)); set(at(ev)); };
     mv(e);
     addEventListener('mousemove', mv); addEventListener('mouseup', up);
   });
+  // the scroll wheel nudges it, like the Mac's
+  el.addEventListener('wheel', (e) => { e.preventDefault(); const cur = parseFloat(fill.style.width) || 0; const v = clamp(Math.round(cur - Math.sign(e.deltaY) * 5), 0, 100); set(v); onInput(v); onCommit?.(v); }, { passive: false });
   el.set = set;
+  el.setIcon = (html) => { lo.innerHTML = html; };
   return el;
 }
 
-function tog(icon, title, sub, on, onclick) {
-  const el = h('div.cc-tog' + (on ? '.on' : ''), h('div.circ', { html: icon }), h('div.t', title, sub != null ? h('small', sub) : null));
-  el.querySelector('.circ').addEventListener('click', (e) => { e.stopPropagation(); onclick(el); });
+/** A Tahoe capsule: a round icon button (toggles), and its name and state (opens the details). */
+function capsule(icon, title, sub, on, onToggle, onOpen) {
+  const circ = h('div.circ', { html: icon });
+  const el = h('div.cc-mod.span2.cc-cap' + (on ? '.on' : ''), circ, h('div.t', h('b', title), sub != null ? h('small', sub) : null));
+  circ.addEventListener('click', (e) => { e.stopPropagation(); onToggle(el); });
+  el.addEventListener('click', () => (onOpen ? onOpen() : onToggle(el)));
   return el;
 }
 
@@ -66,28 +81,15 @@ function mainView() {
   const s = status.s;
   const wifi = s.wifi, bt = s.bluetooth;
   const wifiOn = !!(wifi && wifi.enabled);
-  const conn = h('div.cc-mod.span2.row2.cc-conn',
-    tog(sym.wifi, 'Wi-Fi', wifi ? (wifi.enabled ? wifi.ssid || (wifi.wired ? 'Ethernet' : 'Not Connected') : 'Off') : 'Unavailable', wifiOn, async (el) => {
-      const on = !el.classList.contains('on');
-      el.classList.toggle('on', on);
-      await api.sys.wifiPower(on); status.refresh();
-    }),
-    tog(sym.bluetooth, 'Bluetooth', bt ? (bt.powered ? 'On' : 'Off') : 'Unavailable', !!bt?.powered, async (el) => {
-      const on = !el.classList.contains('on');
-      el.classList.toggle('on', on);
-      await api.sys.bluetoothPower(on); status.refresh();
-    }),
-    tog(sym.airplane, 'Airplane Mode', null, !!store.get('airplane'), async (el) => {
-      const on = !el.classList.contains('on');
-      el.classList.toggle('on', on);
-      store.set('airplane', on);
-      await api.sys.airplane(on); status.refresh();
-    }));
-  const [wifiT, btT] = conn.querySelectorAll('.cc-tog .t');
-  wifiT.addEventListener('click', () => render('wifi'));
-  btT.addEventListener('click', () => render('bluetooth'));
+  const flip = (el) => { const on = !el.classList.contains('on'); el.classList.toggle('on', on); return on; };
+  const wifiCap = capsule(sym.wifi, 'Wi-Fi', wifi ? (wifi.enabled ? wifi.ssid || (wifi.wired ? 'Ethernet' : 'Not Connected') : 'Off') : 'Unavailable', wifiOn,
+    async (el) => { await api.sys.wifiPower(flip(el)); status.refresh(); }, () => render('wifi'));
+  const btCap = capsule(sym.bluetooth, 'Bluetooth', bt ? (bt.powered ? 'On' : 'Off') : 'Unavailable', !!bt?.powered,
+    async (el) => { await api.sys.bluetoothPower(flip(el)); status.refresh(); }, () => render('bluetooth'));
+  const airCap = capsule(sym.airplane, 'Airplane Mode', store.get('airplane') ? 'On' : 'Off', !!store.get('airplane'),
+    async (el) => { const on = flip(el); store.set('airplane', on); el.querySelector('small').textContent = on ? 'On' : 'Off'; await api.sys.airplane(on); status.refresh(); });
 
-  const np = h('div.cc-mod.span2.row2', h('div.cc-np', h('div.art', { html: sym.music }), h('div.meta', h('b', 'Not Playing'), h('span', 'Music'))),
+  const np = h('div.cc-mod.span2.row2.cc-npmod', h('div.cc-np', h('div.art', { html: sym.music }), h('div.meta', h('b', 'Not Playing'), h('span', 'Music'))),
     h('div.cc-np-ctrl',
       h('button', { html: sym.prev, onclick: () => api.sys.mediaCmd('previous').then(updateMedia) }),
       h('button.pp', { html: sym.play, onclick: () => api.sys.mediaCmd('play-pause').then(() => setTimeout(updateMedia, 300)) }),
@@ -95,11 +97,11 @@ function mainView() {
   np.id = 'cc-np';
 
   const dnd = store.get('dnd');
-  const focus = h('div.cc-mod.span2.cc-pill' + (dnd ? '.on' : ''), { style: dnd ? { background: 'rgba(94,92,230,.9)', color: '#fff' } : {} },
-    h('div.cc-tog' + (dnd ? '.on' : ''), h('div.circ', { html: sym.moon, style: dnd ? { background: '#fff', color: '#5e5ce6' } : {} }), h('div.t', 'Focus', h('small', dnd ? 'Do Not Disturb' : 'Off'))));
-  focus.addEventListener('click', () => { store.set('dnd', !store.get('dnd')); render(); });
+  const focus = capsule(sym.moon, 'Focus', dnd ? 'Do Not Disturb' : null, dnd, () => { store.set('dnd', !store.get('dnd')); render(); });
+  focus.classList.add('cc-focus');
 
-  const sq = (icon, label, on, fn) => { const el = h('div.cc-mod.cc-sq' + (on ? '.on' : ''), h('span', { html: icon }), label); el.addEventListener('click', fn); return el; };
+  // a round one-tap button (its name shows on hover, like the Mac's)
+  const sq = (icon, label, on, fn) => { const el = h('div.cc-mod.cc-sq' + (on ? '.on' : ''), { title: label }, h('span.cc-ic', { html: icon }), h('span.cc-lbl', label)); el.addEventListener('click', fn); return el; };
   const dark = sq(sym.contrast, theme.dark ? 'Dark' : 'Light', theme.dark, () => { store.set('theme', theme.dark ? 'light' : 'dark'); render(); });
   const shot = sq(sym.camera, 'Screenshot', false, () => { close(); setTimeout(() => shell.screenshot(), 350); });
 
@@ -107,14 +109,14 @@ function mainView() {
   const bright = h('div.cc-mod.span4.cc-slider-mod', h('h4', 'Display'),
     slider(sym.sunDim, brightnessVal, (v) => {
       if (status.s.brightness != null) api.sys.setBrightness(v); else { store.set('softBrightness', v); softwareBrightness(v); }
-    }, (v) => { if (status.s.brightness != null) status.patch({ brightness: v }); }));
+    }, (v) => { if (status.s.brightness != null) status.patch({ brightness: v }); }, sym.sun));
   bright.querySelector('h4').addEventListener('click', () => render('display'));
 
   const vol = s.volume;
   const sound = h('div.cc-mod.span4.cc-slider-mod', h('h4', 'Sound'),
     h('div.cc-slider-row',
-      slider(vol?.muted ? sym.speakerMute : sym.speaker, vol?.level ?? 50, (v) => { api.sys.setVolume(v); if (vol?.muted) api.sys.setMute(false); },
-        (v) => status.patch({ volume: { level: v, muted: false } })),
+      slider(vol?.muted ? sym.speakerMute : sym.speakerLow, vol?.level ?? 50, (v) => { api.sys.setVolume(v); if (vol?.muted) api.sys.setMute(false); },
+        (v) => status.patch({ volume: { level: v, muted: false } }), sym.speaker),
       api.audio?.devices ? h('button.cc-more', { title: 'Sound devices', html: sym.chevronRight, onclick: (e) => { e.stopPropagation(); render('sound'); } }) : null));
   sound.querySelector('h4').addEventListener('click', () => render('sound'));
 
@@ -131,7 +133,7 @@ function mainView() {
     h('div.spacer'), h('div', { style: { width: '90px', height: '8px', borderRadius: '4px', background: 'rgba(128,128,128,.3)', overflow: 'hidden' } },
       h('div', { style: { width: batt.percent + '%', height: '100%', background: batt.percent < 20 ? '#ff3b30' : '#34c759' } }))) : null;
 
-  const builtins = { conn, np, focus, dark, shot, bright, sound, ns, lock: lockB, mission, rec, battery: extra, phone: phoneModule() };
+  const builtins = { wifi: wifiCap, bluetooth: btCap, airplane: airCap, np, focus, dark, shot, bright, sound, ns, lock: lockB, mission, rec, battery: extra, phone: phoneModule() };
   const ctx = { sq, close, render: (v) => render(v), shell, wm, layout };
   const controls = allControls();
   const make = (id) => {
@@ -162,7 +164,7 @@ function mainView() {
     out.push(el);
   }
   if (!editing) {
-    out.push(h('button.cc-edit-btn.span4', { onclick: (e) => { e.stopPropagation(); editing = true; render(); } }, 'Edit Controls'));
+    out.push(h('div.cc-edit-row', h('button.cc-edit-btn', { onclick: (e) => { e.stopPropagation(); editing = true; render(); } }, 'Edit Controls')));
     return out;
   }
   // edit mode: everything not shown yet, drawn as it would be in Control Center (built-in ones first, so a
@@ -176,11 +178,11 @@ function mainView() {
     while (ids.includes(`${c.id}#${n}`)) n++;
     return `${c.id}#${n}`;
   };
-  out.push(h('div.cc-add-head.span4', h('b', 'Add Controls'), h('div.cc-add-btns',
+  const side = [];
+  side.push(h('div.cc-add-head.span4', h('b', 'Add Controls'), h('div.cc-add-btns',
     // your own Control Center widgets: make one in Widget Creator, or import a .ldwidget someone shared
     h('button.btn', { title: 'Make a Control Center widget in Widget Creator', onclick: (e) => { e.stopPropagation(); close(); wm.open('widgetcreator', { target: 'cc' }); } }, 'Create…'),
-    h('button.btn', { onclick: (e) => { e.stopPropagation(); importControl(); } }, 'Import…'),
-    h('button.btn.primary', { onclick: (e) => { e.stopPropagation(); editing = false; render(); } }, 'Done'))));
+    h('button.btn', { onclick: (e) => { e.stopPropagation(); importControl(); } }, 'Import…'))));
   for (const c of missing) {
     const el = make(addId(c));   // drawn as the one that would be added
     if (!el) continue;
@@ -189,10 +191,16 @@ function mainView() {
     for (const t of ['click', 'mousedown']) el.addEventListener(t, (e) => { e.stopPropagation(); e.preventDefault(); if (t === 'click') { const nid = addId(c); c.onAdd?.(nid, ids); store.set('ccLayout', [...layout(), nid]); render(c.pickOnAdd ? 'pick:' + nid : undefined); } }, true);
     el.append(h('span.cc-add-badge', { html: sym.plus }));
     if (c.custom) el.addEventListener('contextmenu', (e) => { e.preventDefault(); e.stopPropagation(); showMenu(c.menu(ctx, c.id), e.clientX, e.clientY); });
-    out.push(el);
+    // its name under it, like the Mac's gallery (the cell takes the control's size in the grid)
+    const cell = h('div.cc-add-cell', el, h('small', c.name));
+    for (const k of ['span2', 'span4', 'row2']) if (el.classList.contains(k)) cell.classList.add(k);
+    side.push(cell);
   }
-  if (!missing.length) out.push(h('small.muted.span4', { style: { gridColumn: 'span 4', textAlign: 'center' } }, 'Everything is already in Control Center.'));
-  out.push(h('button.cc-reset', { onclick: (e) => { e.stopPropagation(); store.set('ccLayout', null); render(); } }, 'Reset to Default'));
+  if (!missing.length) side.push(h('small.muted.span4.cc-add-none', 'Everything is already in Control Center.'));
+  side.push(h('div.cc-edit-row', h('button.cc-reset', { onclick: (e) => { e.stopPropagation(); store.set('ccLayout', null); render(); } }, 'Reset to Default')));
+  addKids = side;
+  // Control Center itself keeps a Done button where Edit Controls was
+  out.push(h('div.cc-edit-row', h('button.cc-edit-btn.cc-done', { onclick: (e) => { e.stopPropagation(); editing = false; render(); } }, 'Done')));
   return out;
 }
 
@@ -273,8 +281,8 @@ async function soundView() {
   for (const x of d?.inputs || []) ins.append(devItem('input', x));
   if (!d?.available) outs.append(h('div.cc-list-item', { style: { opacity: 0.6 } }, 'No sound devices found'));
   const mod = h('div.cc-mod.cc-detail', h('h3', h('button.cc-back', { html: sym.chevronLeft, onclick: () => render() }), 'Sound'),
-    h('div.cc-detail-slider', slider(vol?.muted ? sym.speakerMute : sym.speaker, vol?.level ?? 50, (v) => { api.sys.setVolume(v); if (vol?.muted) api.sys.setMute(false); },
-      (v) => status.patch({ volume: { level: v, muted: false } }))),
+    h('div.cc-detail-slider', slider(vol?.muted ? sym.speakerMute : sym.speakerLow, vol?.level ?? 50, (v) => { api.sys.setVolume(v); if (vol?.muted) api.sys.setMute(false); },
+      (v) => status.patch({ volume: { level: v, muted: false } }), sym.speaker)),
     h('h5.cc-sub', 'Output'), outs,
     d?.inputs?.length ? h('h5.cc-sub', 'Input') : null, d?.inputs?.length ? ins : null,
     h('div.cc-list', h('div.cc-list-item', { onclick: () => { close(); shell.openSettings('sound'); } }, 'Sound Settings…')));
@@ -410,13 +418,18 @@ function pickView(id) {
 
 async function render(view) {
   if (!panel) return;
-  if (view?.startsWith?.('pick:')) { grid.innerHTML = ''; grid.append(...pickView(view.slice(5))); panel.dataset.view = view; grid.scrollTop = 0; return; }
+  if (view?.startsWith?.('pick:')) { grid.innerHTML = ''; grid.append(...pickView(view.slice(5))); panel.dataset.view = view; panel.scrollTop = 0; return; }
   const kids = view === 'wifi' ? await wifiView() : view === 'bluetooth' ? await bluetoothView() : view === 'sound' ? await soundView() : view === 'display' ? displayView() : view === 'phone' ? phoneView() : mainView();
   // it's rebuilt whenever the status changes (volume, battery…): keep the scroll position
-  const top = panel.dataset.view === (view || '') ? grid.scrollTop : 0;
+  const top = panel.dataset.view === (view || '') ? panel.scrollTop : 0;
   grid.innerHTML = '';
-  grid.append(...kids.filter(Boolean));
-  grid.scrollTop = top;
+  const shown = kids.filter(Boolean);
+  // the controls fly in once, as Control Center opens — not again whenever it's redrawn (the status changes often,
+  // and replaying it mid-way is what flickered)
+  if (!panel.dataset.shown) { panel.dataset.shown = '1'; shown.forEach((el, i) => { el.classList.add('cc-in'); el.style.setProperty('--i', Math.min(i, 8)); }); }
+  grid.append(...shown);
+  sideRender(editing && !view);
+  panel.scrollTop = top;
   panel.dataset.view = view || '';
   if (!view) updateMedia();
 }
@@ -435,10 +448,26 @@ async function updateMedia() {
   }
 }
 
+function sideRender(show) {
+  if (!show || !addKids) { if (addPanel) { const p = addPanel; addPanel = null; p.classList.add('closing'); setTimeout(() => p.remove(), 180); } addKids = null; return; }
+  if (!addPanel) {
+    // the glass (and its rim) stays put; what's inside scrolls (a rim on a scrolling box scrolls away with it)
+    addPanel = h('div.cc-addpanel.cc-tahoe.glass.panel.sheen', h('div.cc-add-scroll', h('div.cc-grid')));
+    addPanel.addEventListener('mousedown', (e) => e.stopPropagation());
+    document.body.append(addPanel);
+  }
+  const sc = addPanel.firstChild, g = sc.firstChild, top = sc.scrollTop;
+  g.replaceChildren(...addKids);
+  sc.scrollTop = top;
+}
+
 export function toggleControlCenter(view) {
   if (panel) { close(); return; }
+  // only one of the two at a time: Notification Center (the clock) closes when Control Center opens
+  if (document.querySelector('#nc.open')) import('./notifications.js').then((m) => m.toggleNotificationCenter(false));
   grid = h('div.cc-grid');
-  panel = h('div.cc.glass.panel.sheen', grid);
+  // no box around it: each control is its own glass (Tahoe)
+  panel = h('div.cc.cc-tahoe', grid);
   panel.addEventListener('mousedown', (e) => e.stopPropagation());
   document.body.append(panel);
   render(view === 'wifi' ? 'wifi' : undefined);
@@ -449,12 +478,13 @@ export function toggleControlCenter(view) {
   mediaTimer = setInterval(updateMedia, 3000);
   setTimeout(() => document.addEventListener('mousedown', outside), 0);
 }
-function outside(e) { if (panel && !panel.contains(e.target) && !e.target.closest('.global-alert-layer') && !e.target.closest('.menu')) close(); }
+function outside(e) { if (panel && !panel.contains(e.target) && !addPanel?.contains(e.target) && !e.target.closest('.global-alert-layer') && !e.target.closest('.menu')) close(); }
 export function closeControlCenter() { if (panel) close(); }
 function close() {
   editing = false;
   if (!panel) return;
   const p = panel; panel = null;
+  sideRender(false);
   p.classList.add('closing');
   setTimeout(() => p.remove(), 200);
   clearInterval(mediaTimer); offStatus?.();

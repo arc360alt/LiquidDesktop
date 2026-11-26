@@ -1669,3 +1669,15 @@ body.mission-open #spaces { z-index: 7550; }
 .jr-rich li { margin: 1px 0; }
 .jr-sticky .jr-rich blockquote { border-color: rgba(0, 0, 0, 0.35); color: rgba(0, 0, 0, 0.65); }
 .jr-sticky .jr-rich h6 { color: rgba(0, 0, 0, 0.55); }
+
+/* Journal: Keyboard Shortcuts sheet (? or Ctrl+/) */
+.jr-keys { position: absolute; z-index: 40; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(760px, calc(100% - 40px)); max-height: calc(100% - 40px); overflow: auto; padding: 16px 20px 18px; border-radius: 22px; color: var(--on-glass); animation: jr-keys-in .16s ease-out; }
+@keyframes jr-keys-in { from { opacity: 0; transform: translate(-50%, -48%) scale(.98); } }
+.jr-keys-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; font-size: 15px; }
+.jr-keys-head .tb-btn { width: 26px; height: 26px; padding: 7px; border: 0; border-radius: 50%; background: rgba(128, 128, 128, .18); color: inherit; display: flex; }
+.jr-keys-head .tb-btn svg { width: 100%; height: 100%; }
+.jr-keys-grid { columns: 2 260px; column-gap: 26px; }
+.jr-keys-sec { break-inside: avoid; margin-bottom: 14px; }
+.jr-keys-sec h4 { margin: 0 0 6px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; opacity: .55; }
+.jr-keys-row { display: flex; align-items: center; gap: 10px; padding: 3px 0; font-size: 12.5px; }
+.jr-keys-row kbd { flex: 0 0 140px; box-sizing: border-box; overflow: hidden; text-overflow: ellipsis; font: 500 11.5px/1 var(--font, system-ui); padding: 4px 7px; border-radius: 6px; background: rgba(128, 128, 128, .16); box-shadow: inset 0 -1px 0 rgba(0, 0, 0, .12); white-space: nowrap; text-align: center; }

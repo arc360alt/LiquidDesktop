@@ -4,7 +4,7 @@
 //   Pan: scroll, or drag with the hand tool / middle button / Space held. Zoom: Ctrl+scroll, or the buttons.
 //   Pictures: the Picture tool, drag them in, or paste. Delete removes what's selected; Ctrl+Z / Ctrl+Shift+Z.
 import { h, $, $$, fileUrl } from '../util.js';
-import { registerApp } from '../wm.js';
+import { registerApp, wm } from '../wm.js';
 import { sym } from '../icons.js';
 import { api } from '../sys.js';
 import { contextMenu, confirmDialog } from '../menus.js';
@@ -40,7 +40,8 @@ registerApp({
   about: 'Freeform pages: type, draw, and pin pictures, to-dos and boards.',
   menus: (win) => [{ title: 'File', items: [{ label: 'New Page', shortcut: '⌘N', action: () => win?.state?.newPage() }, '-', { label: 'Delete Page…', action: () => win?.state?.deletePage() }] },
     { title: 'Edit', items: [{ label: 'Undo', shortcut: '⌃Z', action: () => win?.state?.undo() }, { label: 'Redo', shortcut: '⇧⌃Z', action: () => win?.state?.redo() }, '-', { label: 'Delete', action: () => win?.state?.delSel() }, { label: 'Duplicate', shortcut: '⌃D', action: () => win?.state?.dupSel() }] },
-    { title: 'View', items: [{ label: 'Zoom In', shortcut: '⌃+', action: () => win?.state?.zoomBy(1.2) }, { label: 'Zoom Out', shortcut: '⌃−', action: () => win?.state?.zoomBy(1 / 1.2) }, { label: 'Zoom to Fit', action: () => win?.state?.fit() }, { label: 'Actual Size', shortcut: '⌃0', action: () => win?.state?.zoomTo(1) }] }],
+    { title: 'View', items: [{ label: 'Zoom In', shortcut: '⌃+', action: () => win?.state?.zoomBy(1.2) }, { label: 'Zoom Out', shortcut: '⌃−', action: () => win?.state?.zoomBy(1 / 1.2) }, { label: 'Zoom to Fit', shortcut: '⌃1', action: () => win?.state?.fit() }, { label: 'Actual Size', shortcut: '⌃0', action: () => win?.state?.zoomTo(1) }] },
+    { title: 'Help', items: [{ label: 'Keyboard Shortcuts', shortcut: '?', action: () => win?.state?.keys() }] }],
   open(win) {
     let ix = { pages: [] }, page = null, pageId = null;
     let tool = 'select', ink = INK[0], penSize = 3, sel = null, view = { x: 0, y: 0, z: 1 };
@@ -171,8 +172,8 @@ registerApp({
     zoomBox.append(h('button', { title: 'Zoom Out', html: ICON.minus, onclick: () => zoomAt(1 / 1.2) }), zoomLabel, h('button', { title: 'Zoom In', html: ICON.plus, onclick: () => zoomAt(1.2) }), h('button', { title: 'Zoom to Fit', html: ICON.fit, onclick: fit }));
 
     /* -------------------------------------------- tools */
-    const TOOLS = [['select', 'Select (V)', ICON.select], ['hand', 'Move the page (H)', ICON.hand], '|', ['text', 'Text (T)', ICON.text], ['sticky', 'Sticky Note (S)', ICON.sticky], ['todo', 'To-Do List', ICON.todo], ['kanban', 'Board', ICON.kanban],
-      ['image', 'Picture', ICON.image], ['shape', 'Shape', ICON.shape], '|', ['pen', 'Pen (P)', ICON.pen], ['marker', 'Highlighter', ICON.marker], ['eraser', 'Eraser (E)', ICON.eraser], '|', ['undo', 'Undo', ICON.undo], ['redo', 'Redo', ICON.redo]];
+    const TOOLS = [['select', 'Select (V)', ICON.select], ['hand', 'Move the page (H)', ICON.hand], '|', ['text', 'Text (T)', ICON.text], ['sticky', 'Sticky Note (S)', ICON.sticky], ['todo', 'To-Do List (L)', ICON.todo], ['kanban', 'Board (K)', ICON.kanban],
+      ['image', 'Picture (I)', ICON.image], ['shape', 'Shape (R, O, A)', ICON.shape], '|', ['pen', 'Pen (P)', ICON.pen], ['marker', 'Highlighter (M)', ICON.marker], ['eraser', 'Eraser (E)', ICON.eraser], '|', ['undo', 'Undo (Ctrl+Z)', ICON.undo], ['redo', 'Redo (Ctrl+Shift+Z)', ICON.redo]];
     function drawTools() {
       tools.replaceChildren(...TOOLS.map((t) => (t === '|' ? h('i.jr-sep') : h('button' + (tool === t[0] ? '.on' : ''), { title: t[1], html: t[2], onclick: (e) => pickTool(t[0], e.currentTarget) }))));
       inkBar.hidden = !['pen', 'marker'].includes(tool);
@@ -603,27 +604,92 @@ registerApp({
       r.readAsDataURL(img.getAsFile());
     });
 
-    win.el.addEventListener('keydown', (e) => {
-      const typing = e.target.closest?.('[contenteditable], input, textarea');
-      if (e.key === ' ' && !typing) { spaceHeld = true; stage.classList.add('space'); e.preventDefault(); }
-      if (e.ctrlKey && (e.key === 'z' || e.key === 'Z') && !typing) { e.preventDefault(); e.shiftKey ? redo() : undo(); }
-      if (e.ctrlKey && e.key === 'y' && !typing) { e.preventDefault(); redo(); }
-      if (e.ctrlKey && e.key === 'd' && sel) { e.preventDefault(); dup(page.items.find((i) => i.id === sel)); }
-      if (e.ctrlKey && (e.key === '=' || e.key === '+')) { e.preventDefault(); zoomAt(1.2); }
-      if (e.ctrlKey && e.key === '-') { e.preventDefault(); zoomAt(1 / 1.2); }
-      if (e.ctrlKey && e.key === '0') { e.preventDefault(); view.z = 1; applyView(); }
-      if (e.ctrlKey && e.key === 'n') { e.preventDefault(); newPage(); }
-      if (typing) { if (e.key === 'Escape') e.target.blur(); return; }
-      if ((e.key === 'Delete' || e.key === 'Backspace') && sel) { e.preventDefault(); del(sel); }
-      const keys = { v: 'select', h: 'hand', p: 'pen', e: 'eraser' };
-      if (!e.ctrlKey && !e.altKey && keys[e.key]) { tool = keys[e.key]; drawTools(); }
-      if (!e.ctrlKey && !e.altKey && e.key === 't') addItem('text');
-      if (!e.ctrlKey && !e.altKey && e.key === 's') addItem('sticky');
-      if (e.key === 'Escape') { select(null); tool = 'select'; drawTools(); }
-    });
-    win.el.addEventListener('keyup', (e) => { if (e.key === ' ') { spaceHeld = false; stage.classList.remove('space'); } });
+    /* -------------------------------------------- keyboard */
+    // Listened for on the whole page, not just this window's element: a click on the empty canvas takes the focus
+    // off everything, and keys would never reach the Journal. Only while this window is the one in front.
+    let clip = null;   // copied items (Ctrl+C on a selected item), pasted with Ctrl+V
+    const mine = () => win.el.isConnected && (wm.focused === win || !wm.focused);
+    const selItem = () => page?.items.find((i) => i.id === sel);
+    const pageStep = (d) => { const l = ix.pages.slice().sort((a, b) => b.updated - a.updated); const i = l.findIndex((p) => p.id === pageId); const n = l[i + d]; if (n) openPage(n.id); };
+    const nudge = (dx, dy) => { const it = selItem(); if (!it) return; commit(); it.x += dx; it.y += dy; const el = $(`[data-id="${it.id}"]`, world); if (el) { el.style.left = it.x + 'px'; el.style.top = it.y + 'px'; } save(); };
+    const restack = (front) => { const it = selItem(); if (!it) return; commit(); it.z = front ? Math.max(...page.items.map((i) => i.z || 0)) + 1 : Math.min(...page.items.map((i) => i.z || 0)) - 1; render(); select(it.id); save(); };
+    function onKey(e) {
+      if (!mine() || !page) return;
+      if (e.target.closest?.('.global-alert-layer, .alert-layer, .menu')) return;   // a dialog or menu has the keys
+      const typing = !!e.target.closest?.('[contenteditable], input, textarea, select');
+      const ctrl = e.ctrlKey || e.metaKey, k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+      const take = () => { e.preventDefault(); e.stopPropagation(); };
+      // anywhere, typing or not
+      if (ctrl && !e.shiftKey && (k === '=' || k === '+')) { take(); zoomAt(1.2); return; }
+      if (ctrl && e.shiftKey && (k === '+' || k === '=')) { take(); zoomAt(1.2); return; }
+      if (ctrl && k === '-') { take(); zoomAt(1 / 1.2); return; }
+      if (ctrl && k === '0') { take(); view.z = 1; applyView(); return; }
+      if (ctrl && k === '1') { take(); fit(); return; }
+      if (ctrl && !e.shiftKey && k === 'n') { take(); newPage(); return; }
+      if (ctrl && (k === 'PageUp' || (e.altKey && k === 'ArrowUp'))) { take(); pageStep(-1); return; }
+      if (ctrl && (k === 'PageDown' || (e.altKey && k === 'ArrowDown'))) { take(); pageStep(1); return; }
+      if (ctrl && k === '/') { take(); shortcutsSheet(); return; }
+      if (typing) {
+        // Escape: stop typing, keep the thing selected (Escape again: nothing selected)
+        if (k === 'Escape') { take(); const it = e.target.closest('.jr-item'); e.target.blur(); if (it) select(it.dataset.id); }
+        return;   // the rest is the text's own (Ctrl+Z undoes typing, arrows move the caret…)
+      }
+      if (ctrl && k === 'z') { take(); e.shiftKey ? redo() : undo(); return; }
+      if (ctrl && k === 'y') { take(); redo(); return; }
+      if (ctrl && k === 'd') { take(); dup(selItem()); return; }
+      if (ctrl && k === 'c' && selItem()) { take(); clip = JSON.parse(JSON.stringify(selItem())); return; }
+      if (ctrl && k === 'x' && selItem()) { take(); clip = JSON.parse(JSON.stringify(selItem())); del(sel); return; }
+      if (ctrl && k === 'v' && clip) {
+        // a copied item (a picture on the clipboard is handled by the paste event instead)
+        take(); commit();
+        const c = JSON.parse(JSON.stringify(clip)); c.id = uid(); c.x += 30; c.y += 30; c.z = Math.max(0, ...page.items.map((i) => i.z || 0)) + 1;
+        clip.x += 30; clip.y += 30;
+        page.items.push(c); sel = c.id; render(); save();
+        return;
+      }
+      if (ctrl && k === ']') { take(); restack(true); return; }
+      if (ctrl && k === '[') { take(); restack(false); return; }
+      if (k === ' ') { take(); spaceHeld = true; stage.classList.add('space'); return; }
+      if ((k === 'Delete' || k === 'Backspace') && sel) { take(); del(sel); return; }
+      if (k === 'Escape') { take(); select(null); tool = 'select'; drawTools(); return; }
+      // Enter: start typing in what's selected
+      if (k === 'Enter' && sel) { take(); const ed = $(`[data-id="${sel}"] [contenteditable]`, world); if (ed) { ed.focus(); const r = document.createRange(); r.selectNodeContents(ed); r.collapse(false); getSelection().removeAllRanges(); getSelection().addRange(r); } return; }
+      // arrows: move what's selected (Shift: further); with nothing selected, move around the page
+      const ARROWS = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+      if (ARROWS[k] && !ctrl) { take(); const [dx, dy] = ARROWS[k], n = e.shiftKey ? 10 : 1; if (sel) nudge(dx * n, dy * n); else { view.x -= dx * 80; view.y -= dy * 80; applyView(); } return; }
+      if (ctrl || e.altKey) return;
+      // the pen: [ ] thinner / thicker, 1–7 its colors
+      if (['pen', 'marker'].includes(tool) && (k === '[' || k === ']')) { take(); const S = [2, 4, 8]; penSize = (k === ']' ? S.find((x) => x > penSize) : S.filter((x) => x < penSize).pop()) || penSize; drawTools(); return; }
+      if (['pen', 'marker'].includes(tool) && /^[1-7]$/.test(k)) { take(); ink = INK[+k - 1]; drawTools(); return; }
+      // tools
+      const TOOLKEYS = { v: () => setTool('select'), h: () => setTool('hand'), p: () => setTool('pen'), m: () => setTool('marker'), e: () => setTool('eraser'),
+        t: () => addItem('text'), s: () => addItem('sticky'), l: () => addItem('todo'), k: () => addItem('kanban'), i: () => pickImage(),
+        r: () => addItem('shape', { kind: 'rect' }), o: () => addItem('shape', { kind: 'ellipse' }), a: () => addItem('shape', { kind: 'arrow' }), '?': () => shortcutsSheet() };
+      if (TOOLKEYS[e.key] || TOOLKEYS[k]) { take(); (TOOLKEYS[e.key] || TOOLKEYS[k])(); }
+    }
+    const setTool = (t) => { tool = t; if (t !== 'select') select(null); drawTools(); };
+    addEventListener('keydown', onKey, true);
+    addEventListener('keyup', (e) => { if (e.key === ' ') { spaceHeld = false; stage.classList.remove('space'); } });
+    win.on('close', () => removeEventListener('keydown', onKey, true));
 
-    win.state = { newPage, deletePage: () => deletePage(), undo, redo, delSel: () => del(sel), dupSel: () => dup(page?.items.find((i) => i.id === sel)), zoomBy: (f) => zoomAt(f), zoomTo: (z) => { view.z = z; applyView(); }, fit };
+    /** Keyboard Shortcuts (? or Ctrl+/, Help menu): everything above, on a glass sheet. */
+    function shortcutsSheet() {
+      if ($('.jr-keys', win.el)) { $('.jr-keys', win.el).remove(); return; }
+      const G = [
+        ['Edit', [['Ctrl+Z', 'Undo'], ['Ctrl+Shift+Z  ·  Ctrl+Y', 'Redo'], ['Ctrl+C / X / V', 'Copy, cut, paste an item'], ['Ctrl+D', 'Duplicate'], ['Delete', 'Delete'], ['Enter', 'Type in the selected item'], ['Esc', 'Stop typing / deselect'], ['Arrows', 'Move the selected item (Shift: 10×)'], ['Ctrl+] / [', 'Bring to front / send to back']]],
+        ['Add', [['T', 'Text'], ['S', 'Sticky note'], ['L', 'To-do list'], ['K', 'Board'], ['I', 'Picture'], ['R / O / A', 'Rectangle, circle, arrow'], ['Double-click', 'Text where you click']]],
+        ['Tools', [['V', 'Select'], ['H  ·  hold Space', 'Move the page'], ['P', 'Pen'], ['M', 'Highlighter'], ['E', 'Eraser'], ['[ / ]', 'Thinner / thicker pen'], ['1 – 7', 'Pen color']]],
+        ['View & Pages', [['Ctrl + / −', 'Zoom in / out'], ['Ctrl+0', 'Actual size'], ['Ctrl+1', 'Zoom to fit'], ['Ctrl+scroll', 'Zoom'], ['Scroll · Arrows', 'Move around'], ['Ctrl+N', 'New page'], ['Ctrl+PageUp / Down', 'Previous / next page']]],
+        ['Text', [['Ctrl+B / I / U', 'Bold, italic, underline'], ['# ## ###', 'Headings'], ['- or 1.', 'Lists'], ['**b** *i* ~~s~~ `c`', 'Markdown styles']]],
+      ];
+      const sheet = h('div.jr-keys.glass.panel', h('div.jr-keys-head', h('b', 'Keyboard Shortcuts'), h('button.tb-btn', { html: sym.close || '×', title: 'Close', onclick: () => sheet.remove() })),
+        h('div.jr-keys-grid', ...G.map(([t, rows]) => h('div.jr-keys-sec', h('h4', t), ...rows.map(([key, what]) => h('div.jr-keys-row', h('kbd', key), h('span', what)))))));
+      sheet.addEventListener('mousedown', (e) => e.stopPropagation());
+      canvasPane.append(sheet);
+      setTimeout(() => addEventListener('mousedown', function off(e) { if (!sheet.contains(e.target)) { sheet.remove(); removeEventListener('mousedown', off, true); } }, true), 0);
+    }
+
+    win.state = { newPage, deletePage: () => deletePage(), keys: () => shortcutsSheet(), undo, redo, delSel: () => del(sel), dupSel: () => dup(page?.items.find((i) => i.id === sel)), zoomBy: (f) => zoomAt(f), zoomTo: (z) => { view.z = z; applyView(); }, fit };
     win.on('close', () => save(true));
 
     (async () => {

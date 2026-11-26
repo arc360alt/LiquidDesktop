@@ -29,6 +29,10 @@ const ICON = {
 const STICKY = ['#ffe066', '#ffb3c7', '#a8e6a3', '#9fd3ff', '#d4b8ff', '#ffc98a'];
 const INK = ['#1c1c1e', '#0a84ff', '#ff3b30', '#34c759', '#ff9500', '#af52de', '#ffffff'];
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+// every text field is rich (bold, sizes, lists…): its html, or the plain text it had before this was added
+const rich = (html, text) => (html != null ? html : esc(text || ''));
+const plain = (html) => String(html || '').replace(/<br\s*\/?>|<\/(div|p|h\d|li)>/gi, ' ').replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
 
 registerApp({
   id: 'journal', name: 'Journal', size: [1100, 720], minSize: [640, 420], overlayContent: true, hideTitle: true, singleton: true,
@@ -75,7 +79,7 @@ registerApp({
       };
     })();
     const previewText = () => {
-      const t = page.items.map((it) => it.type === 'text' || it.type === 'sticky' ? (it.data.html || '').replace(/<[^>]+>/g, ' ') : it.type === 'todo' ? it.data.title : it.type === 'kanban' ? it.data.title : '').join(' ').replace(/\s+/g, ' ').trim();
+      const t = page.items.map((it) => it.type === 'text' || it.type === 'sticky' ? (it.data.html || '').replace(/<[^>]+>/g, ' ') : it.type === 'todo' || it.type === 'kanban' ? plain(rich(it.data.titleHtml, it.data.title)) : '').join(' ').replace(/\s+/g, ' ').trim();
       return t.slice(0, 80);
     };
     function drawList() {
@@ -238,6 +242,141 @@ registerApp({
       } catch (e) { import('../shell.js').then(({ shell }) => shell.notify({ app: 'journal', title: 'Journal', body: e.message })); }
     }
 
+    /* -------------------------------------------- rich text: the format bar and Markdown */
+    // Every text field on the page (.jr-rich) takes formatting. A glass bar floats above the one you're typing in:
+    // style, size, bold/italic/underline/strike, color, lists, alignment. And Markdown as you type: "# ", "## ",
+    // "### " headings, "- " / "* " bullets, "1. " numbers, "> " quote at the start of a line; **bold**, *italic*,
+    // ~~strike~~ and `code` inline.
+    const STYLES = [['h1', 'Title'], ['h2', 'Heading'], ['h3', 'Subheading'], ['div', 'Body'], ['h6', 'Caption'], ['pre', 'Monospaced'], ['blockquote', 'Quote']];
+    const COLORS = ['inherit', '#ff3b30', '#ff9500', '#34c759', '#0a84ff', '#af52de', '#8e8e93'];
+    const FB = {
+      b: '<b style="font-size:14px">B</b>', i: '<i style="font-size:14px;font-family:serif">I</i>', u: '<u style="font-size:14px">U</u>', s: '<s style="font-size:14px">S</s>',
+      ul: I('<path d="M9 6.5h11M9 12h11M9 17.5h11"/><circle cx="4.5" cy="6.5" r=".9" fill="currentColor"/><circle cx="4.5" cy="12" r=".9" fill="currentColor"/><circle cx="4.5" cy="17.5" r=".9" fill="currentColor"/>'),
+      ol: I('<path d="M10 6.5h10M10 12h10M10 17.5h10M4 5l1.2-.8V9M3.8 14.2a1.3 1.3 0 0 1 2.4.6c0 .9-2.4 1.8-2.4 3h2.6"/>'),
+      left: I('<path d="M4 6h16M4 10h10M4 14h16M4 18h10"/>'), center: I('<path d="M4 6h16M7 10h10M4 14h16M7 18h10"/>'), right: I('<path d="M4 6h16M10 10h10M4 14h16M10 18h10"/>'),
+    };
+    const fmt = h('div.jr-fmt.glass', { hidden: true });
+    canvasPane.append(fmt);
+    let fmtFor = null;   // the field the bar is working on
+    fmt.addEventListener('mousedown', (e) => { if (!e.target.closest('select')) e.preventDefault(); });   // keep the text selected
+    const exec = (cmd, val) => { fmtFor?.focus(); document.execCommand('styleWithCSS', false, cmd === 'foreColor'); document.execCommand(cmd, false, val); syncFmt(); };
+    // the size of the selected text (or where the caret is)
+    const curSize = () => { const n = getSelection().anchorNode; const el = n?.nodeType === 3 ? n.parentElement : n; return el && fmtFor?.contains(el) ? Math.round(parseFloat(getComputedStyle(el).fontSize)) : 16; };
+    function setSize(px) {
+      if (!fmtFor) return;
+      fmtFor.focus();
+      const sel = getSelection();
+      // nothing selected: the whole field
+      if (sel.isCollapsed) { const r = document.createRange(); r.selectNodeContents(fmtFor); sel.removeAllRanges(); sel.addRange(r); }
+      document.execCommand('styleWithCSS', false, false);
+      document.execCommand('fontSize', false, '7');
+      for (const f of fmtFor.querySelectorAll('font[size="7"]')) { const sp = document.createElement('span'); sp.style.fontSize = px + 'px'; sp.append(...f.childNodes); f.replaceWith(sp); }
+      // sizes set before inside it would win over the new one
+      for (const sp of fmtFor.querySelectorAll('span[style*="font-size"] span[style*="font-size"]')) sp.style.fontSize = '';
+      fmtFor.dispatchEvent(new Event('input', { bubbles: true }));
+      syncFmt();
+    }
+    const sizeBox = h('input.jr-fmt-size', { type: 'number', min: 8, max: 120, title: 'Text size', onchange: (e) => setSize(Math.max(8, Math.min(120, +e.target.value || 16))), onmousedown: (e) => e.stopPropagation() });
+    const styleSel = h('select.jr-fmt-style', { title: 'Style', onchange: (e) => { exec('formatBlock', e.target.value); fmtFor?.dispatchEvent(new Event('input', { bubbles: true })); } }, ...STYLES.map(([v, l]) => h('option', { value: v }, l)));
+    const btn = (key, title, fn) => h('button.jr-fmt-btn', { title, html: FB[key], 'data-k': key, onclick: fn });
+    const colorBtn = h('button.jr-fmt-btn.jr-fmt-color', { title: 'Text color', onclick: (e) => {
+      const r = e.currentTarget.getBoundingClientRect(), pr = canvasPane.getBoundingClientRect();
+      const pop = h('div.jr-fmt-pop.glass', ...COLORS.map((c) => h('button.jr-swatch', { title: c === 'inherit' ? 'Default' : c, style: { background: c === 'inherit' ? 'linear-gradient(135deg,#fff 45%,#1c1c1e 55%)' : c }, onmousedown: (ev) => ev.preventDefault(), onclick: () => { exec('foreColor', c === 'inherit' ? getComputedStyle(fmtFor).color : c); pop.remove(); } })));
+      Object.assign(pop.style, { left: r.left - pr.left - 40 + 'px', top: r.bottom - pr.top + 6 + 'px' });
+      canvasPane.append(pop);
+      setTimeout(() => addEventListener('mousedown', function off(ev) { if (!pop.contains(ev.target)) { pop.remove(); removeEventListener('mousedown', off, true); } }, true), 0);
+    } }, h('span', 'A'), h('i'));
+    fmt.append(styleSel, h('i.jr-sep'),
+      h('button.jr-fmt-btn', { title: 'Smaller', onclick: () => setSize(Math.max(8, curSize() - 2)) }, h('small', 'A')), sizeBox, h('button.jr-fmt-btn', { title: 'Bigger', onclick: () => setSize(Math.min(120, curSize() + 2)) }, h('b', 'A')),
+      h('i.jr-sep'), btn('b', 'Bold (Ctrl+B)', () => exec('bold')), btn('i', 'Italic (Ctrl+I)', () => exec('italic')), btn('u', 'Underline (Ctrl+U)', () => exec('underline')), btn('s', 'Strikethrough', () => exec('strikeThrough')), colorBtn,
+      h('i.jr-sep'), btn('ul', 'Bulleted list ( - )', () => exec('insertUnorderedList')), btn('ol', 'Numbered list ( 1. )', () => exec('insertOrderedList')),
+      h('i.jr-sep'), btn('left', 'Align left', () => exec('justifyLeft')), btn('center', 'Center', () => exec('justifyCenter')), btn('right', 'Align right', () => exec('justifyRight')));
+    // what the selection is now: lit buttons, the size, the style
+    function syncFmt() {
+      if (!fmtFor) return;
+      sizeBox.value = curSize();
+      for (const [k, c] of [['b', 'bold'], ['i', 'italic'], ['u', 'underline'], ['s', 'strikeThrough'], ['ul', 'insertUnorderedList'], ['ol', 'insertOrderedList'], ['left', 'justifyLeft'], ['center', 'justifyCenter'], ['right', 'justifyRight']]) {
+        let on = false; try { on = document.queryCommandState(c); } catch { /* */ }
+        fmt.querySelector(`[data-k="${k}"]`)?.classList.toggle('on', on);
+      }
+      let block = ''; try { block = String(document.queryCommandValue('formatBlock') || '').toLowerCase(); } catch { /* */ }
+      styleSel.value = STYLES.some(([v]) => v === block) ? block : 'div';
+      const n = getSelection().anchorNode; const el = n?.nodeType === 3 ? n.parentElement : n;
+      if (el) colorBtn.querySelector('i').style.background = getComputedStyle(el).color;
+    }
+    function placeFmt() {
+      if (!fmtFor || fmt.hidden) return;
+      const item = fmtFor.closest('.jr-item'), r = item.getBoundingClientRect(), pr = canvasPane.getBoundingClientRect();
+      const w = fmt.offsetWidth;
+      let x = r.left - pr.left + r.width / 2 - w / 2, y = r.top - pr.top - fmt.offsetHeight - 12;
+      if (y < 40) y = r.bottom - pr.top + 12;   // no room above: below it
+      fmt.style.left = Math.max(8, Math.min(pr.width - w - 8, x)) + 'px';
+      fmt.style.top = Math.max(40, Math.min(pr.height - fmt.offsetHeight - 70, y)) + 'px';
+    }
+    stage.addEventListener('focusin', (e) => {
+      const f = e.target.closest?.('.jr-rich');
+      if (!f) return;
+      fmtFor = f; fmt.hidden = false; syncFmt(); placeFmt();
+    });
+    stage.addEventListener('focusout', () => setTimeout(() => { if (!stage.contains(document.activeElement) || !document.activeElement.closest?.('.jr-rich')) { if (!fmt.contains(document.activeElement)) { fmt.hidden = true; fmtFor = null; } } }, 120));
+    document.addEventListener('selectionchange', () => { if (fmtFor && fmtFor.contains(getSelection().anchorNode)) syncFmt(); });
+    stage.addEventListener('wheel', () => requestAnimationFrame(placeFmt), { passive: true });
+    stage.addEventListener('pointerup', () => requestAnimationFrame(placeFmt));
+
+    // Markdown, as you type
+    const BLOCK_MD = { '#': ['formatBlock', 'h1'], '##': ['formatBlock', 'h2'], '###': ['formatBlock', 'h3'], '-': ['insertUnorderedList'], '*': ['insertUnorderedList'], '1.': ['insertOrderedList'], '>': ['formatBlock', 'blockquote'] };
+    const INLINE_MD = [[/\*\*([^*\n]+)\*\*$/, 'b'], [/__([^_\n]+)__$/, 'b'], [/~~([^~\n]+)~~$/, 's'], [/`([^`\n]+)`$/, 'code'], [/(?:^|[^*])\*([^*\n]+)\*$/, 'i'], [/(?:^|[^_\w])_([^_\n]+)_$/, 'i']];
+    stage.addEventListener('keydown', (e) => {
+      const f = e.target.closest?.('.jr-rich');
+      if (!f) return;
+      if (e.ctrlKey && !e.shiftKey && ['b', 'i', 'u'].includes(e.key.toLowerCase())) { e.preventDefault(); exec({ b: 'bold', i: 'italic', u: 'underline' }[e.key.toLowerCase()]); return; }
+      if (e.key !== ' ') return;
+      // "# " at the start of a line: the text before the caret in this line is just the marker
+      const sel = getSelection();
+      if (!sel.isCollapsed || sel.anchorNode?.nodeType !== 3) return;
+      const node = sel.anchorNode, before = node.data.slice(0, sel.anchorOffset);
+      const isLineStart = !node.previousSibling || node.previousSibling.nodeName === 'BR';
+      const md = BLOCK_MD[before.trim()];
+      if (md && isLineStart && before === before.trimStart()) {
+        e.preventDefault();
+        // make the line a heading / list item first (with the marker still in it: the browser's commands don't
+        // like an empty line), then take the marker out of it and put the caret where it was
+        const marker = before.length;
+        document.execCommand(md[0], false, md[1]);
+        const at = getSelection().anchorNode;
+        const t = at?.nodeType === 3 ? at : document.createTreeWalker(at, NodeFilter.SHOW_TEXT).nextNode();
+        if (t && t.data.slice(0, marker) === before) {
+          t.data = t.data.slice(marker);
+          if (!t.data) t.data = '\u200b';
+          const c = document.createRange(); c.setStart(t, t.data === '\u200b' ? 1 : 0); c.collapse(true); sel.removeAllRanges(); sel.addRange(c);
+        }
+        f.dispatchEvent(new Event('input', { bubbles: true }));
+        syncFmt();
+      }
+    });
+    stage.addEventListener('input', (e) => {
+      const f = e.target.closest?.('.jr-rich');
+      if (!f || e.inputType !== 'insertText' || !/[*_~`]/.test(e.data || '')) return;
+      const sel = getSelection();
+      if (!sel.isCollapsed || sel.anchorNode?.nodeType !== 3) return;
+      const node = sel.anchorNode, off = sel.anchorOffset, before = node.data.slice(0, off);
+      for (const [re, tag] of INLINE_MD) {
+        const m = before.match(re);
+        if (!m) continue;
+        const whole = m[0].replace(/^[^*_~`]/, '');   // (the character before a single *…* isn't part of it)
+        const start = off - whole.length;
+        const r = document.createRange(); r.setStart(node, start); r.setEnd(node, off); r.deleteContents();
+        const el = document.createElement(tag); el.textContent = m[1];
+        r.insertNode(el);
+        // the caret goes after it, outside the formatting
+        const after = document.createTextNode('\u200b');
+        el.after(after);
+        const c = document.createRange(); c.setStart(after, 1); c.collapse(true); sel.removeAllRanges(); sel.addRange(c);
+        f.dispatchEvent(new Event('input', { bubbles: true }));
+        break;
+      }
+    });
+
     /* -------------------------------------------- drawing the page */
     function render() {
       $$('.jr-item', world).forEach((e) => e.remove());
@@ -271,23 +410,23 @@ registerApp({
       const el = h('div.jr-item.jr-' + it.type + (sel === it.id ? '.sel' : ''), { 'data-id': it.id, style: { left: it.x + 'px', top: it.y + 'px', width: it.w + 'px', height: it.h + 'px', zIndex: 10 + (it.z || 0) } });
       const changed = () => save();
       if (it.type === 'text' || it.type === 'sticky') {
-        const ed = h('div.jr-ed', { contenteditable: 'true', spellcheck: true, 'data-ph': it.type === 'text' ? 'Type something' : 'Write a note' });
+        const ed = h('div.jr-ed.jr-rich', { contenteditable: 'true', spellcheck: true, 'data-ph': it.type === 'text' ? 'Type something' : 'Write a note' });
         ed.innerHTML = it.data.html || '';
         if (it.type === 'sticky') el.style.background = it.data.color;
         ed.addEventListener('focus', () => { commit(); select(it.id); });
         ed.addEventListener('input', () => { it.data.html = ed.innerHTML; if (it.type === 'text') { const need = ed.scrollHeight + 8; if (need > it.h) { it.h = need; el.style.height = need + 'px'; } } changed(); });
         el.append(ed);
       } else if (it.type === 'todo') {
-        const t = h('div.jr-todo-title', { contenteditable: 'true', spellcheck: true }, it.data.title || '');
-        t.addEventListener('input', () => { it.data.title = t.textContent; changed(); });
+        const t = h('div.jr-todo-title.jr-rich', { contenteditable: 'true', spellcheck: true, html: rich(it.data.titleHtml, it.data.title) });
+        t.addEventListener('input', () => { it.data.titleHtml = t.innerHTML; it.data.title = plain(t.innerHTML); changed(); });
         const box = h('div.jr-todo-list');
         const drawTodos = (focusI) => {
           box.replaceChildren(...it.data.items.map((x, i) => {
-            const txt = h('div.jr-todo-txt' + (x.done ? '.done' : ''), { contenteditable: 'true', spellcheck: true, 'data-ph': 'To-do' }, x.text);
-            txt.addEventListener('input', () => { x.text = txt.textContent; changed(); });
+            const txt = h('div.jr-todo-txt.jr-rich' + (x.done ? '.done' : ''), { contenteditable: 'true', spellcheck: true, 'data-ph': 'To-do', html: rich(x.html, x.text) });
+            txt.addEventListener('input', () => { x.html = txt.innerHTML; x.text = plain(txt.innerHTML); changed(); });
             txt.addEventListener('keydown', (e) => {
-              if (e.key === 'Enter') { e.preventDefault(); commit(); it.data.items.splice(i + 1, 0, { text: '', done: false }); drawTodos(i + 1); grow(); changed(); }
-              if (e.key === 'Backspace' && !txt.textContent && it.data.items.length > 1) { e.preventDefault(); commit(); it.data.items.splice(i, 1); drawTodos(Math.max(0, i - 1)); changed(); }
+              if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); commit(); it.data.items.splice(i + 1, 0, { html: '', text: '', done: false }); drawTodos(i + 1); grow(); changed(); }
+              if (e.key === 'Backspace' && !txt.textContent.replace(/\u200b/g, '') && it.data.items.length > 1) { e.preventDefault(); commit(); it.data.items.splice(i, 1); drawTodos(Math.max(0, i - 1)); changed(); }
             });
             return h('div.jr-todo-row', h('button.jr-check' + (x.done ? '.on' : ''), { onclick: () => { commit(); x.done = !x.done; drawTodos(); changed(); } }), txt);
           }));
@@ -298,20 +437,20 @@ registerApp({
         const done = it.data.items.filter((x) => x.done).length;
         el.append(h('div.jr-todo-head', t, h('small', `${done}/${it.data.items.length}`)), box, h('button.jr-add', { onclick: () => { commit(); it.data.items.push({ text: '', done: false }); drawTodos(it.data.items.length - 1); grow(); changed(); } }, '+ Add'));
       } else if (it.type === 'kanban') {
-        const t = h('div.jr-kb-title', { contenteditable: 'true', spellcheck: true }, it.data.title || '');
-        t.addEventListener('input', () => { it.data.title = t.textContent; changed(); });
+        const t = h('div.jr-kb-title.jr-rich', { contenteditable: 'true', spellcheck: true, html: rich(it.data.titleHtml, it.data.title) });
+        t.addEventListener('input', () => { it.data.titleHtml = t.innerHTML; it.data.title = plain(t.innerHTML); changed(); });
         const cols = h('div.jr-kb-cols');
         const drawCols = () => {
           cols.replaceChildren(...it.data.columns.map((col, ci) => {
-            const ct = h('div.jr-kb-ctitle', { contenteditable: 'true', spellcheck: true }, col.title);
-            ct.addEventListener('input', () => { col.title = ct.textContent; changed(); });
+            const ct = h('div.jr-kb-ctitle.jr-rich', { contenteditable: 'true', spellcheck: true, html: rich(col.titleHtml, col.title) });
+            ct.addEventListener('input', () => { col.titleHtml = ct.innerHTML; col.title = plain(ct.innerHTML); changed(); });
             const cards = h('div.jr-kb-cards');
             col.cards.forEach((card, k) => {
               const c = h('div.jr-kb-card', { draggable: true },
-                h('div.jr-kb-ctext', { contenteditable: 'true', spellcheck: true, 'data-ph': 'Card' }, card.text),
+                h('div.jr-kb-ctext.jr-rich', { contenteditable: 'true', spellcheck: true, 'data-ph': 'Card', html: rich(card.html, card.text) }),
                 h('button.jr-kb-del', { title: 'Delete card', html: '×', onclick: () => { commit(); col.cards.splice(k, 1); drawCols(); changed(); } }));
               const ed = c.firstChild;
-              ed.addEventListener('input', () => { card.text = ed.textContent; changed(); });
+              ed.addEventListener('input', () => { card.html = ed.innerHTML; card.text = plain(ed.innerHTML); changed(); });
               c.addEventListener('dragstart', (e) => { e.dataTransfer.setData('text/jr-card', JSON.stringify([ci, k])); e.stopPropagation(); c.classList.add('dragging'); });
               c.addEventListener('dragend', () => c.classList.remove('dragging'));
               cards.append(c);

@@ -1639,3 +1639,33 @@ body.mission-open #spaces { z-index: 7550; }
 :root[data-theme='dark'] .jr-main { --jr-card: #2c2c30; }
 .jr-todo, .jr-kanban, .jr-kb-card { background: var(--jr-card); }
 .jr-stage { background-color: var(--win-content); }
+/* Journal: the zoom percentage, centred like the buttons around it */
+.jr-zoom .jr-zl { display: flex; align-items: center; justify-content: center; min-width: 46px; height: 30px; line-height: 1; padding: 0 6px !important; }
+
+/* Journal: the format bar over the text you're typing in */
+.jr-fmt { position: absolute; z-index: 6; display: flex; align-items: center; gap: 2px; padding: 5px 7px; border-radius: 16px; color: var(--on-glass); white-space: nowrap; }
+.jr-fmt-btn { min-width: 28px; height: 28px; border: 0; border-radius: 8px; background: none; color: inherit; padding: 5px; display: flex; align-items: center; justify-content: center; }
+.jr-fmt-btn svg { width: 17px; height: 17px; }
+.jr-fmt-btn:hover { background: rgba(128, 128, 128, 0.18); }
+.jr-fmt-btn.on { background: rgba(var(--accent-rgb), 0.22); color: var(--accent); }
+.jr-fmt-btn small { font-size: 11px; font-weight: 600; }
+.jr-fmt-btn > b { font-size: 16px; }
+.jr-fmt-style { height: 28px; border: 0; border-radius: 8px; background: rgba(128, 128, 128, 0.14); color: inherit; font: inherit; font-size: 12.5px; padding: 0 6px; }
+.jr-fmt-size { width: 40px; height: 26px; border: 0; border-radius: 7px; background: rgba(128, 128, 128, 0.14); color: inherit; font: inherit; font-size: 12.5px; text-align: center; -moz-appearance: textfield; }
+.jr-fmt-size::-webkit-inner-spin-button { -webkit-appearance: none; }
+.jr-fmt-color { flex-direction: column; gap: 1px; padding: 3px 5px; }
+.jr-fmt-color span { font-size: 14px; font-weight: 600; line-height: 1; }
+.jr-fmt-color i { width: 16px; height: 3px; border-radius: 2px; }
+.jr-fmt-pop { position: absolute; z-index: 7; display: flex; gap: 6px; padding: 8px; border-radius: 14px; }
+/* Journal: what Markdown and the styles look like */
+.jr-rich h1 { font-size: 30px; font-weight: 800; line-height: 1.15; margin: 0.1em 0 0.2em; }
+.jr-rich h2 { font-size: 23px; font-weight: 700; line-height: 1.2; margin: 0.1em 0 0.15em; }
+.jr-rich h3 { font-size: 18px; font-weight: 600; margin: 0.1em 0; }
+.jr-rich h6 { font-size: 12.5px; font-weight: 400; color: var(--text-2); margin: 0; }
+.jr-rich pre { font: 13px/1.45 "JetBrains Mono", "DejaVu Sans Mono", monospace; background: rgba(128, 128, 128, 0.12); border-radius: 6px; padding: 6px 8px; margin: 2px 0; white-space: pre-wrap; }
+.jr-rich blockquote { margin: 2px 0; padding: 2px 0 2px 12px; border-left: 3px solid var(--accent); color: var(--text-2); }
+.jr-rich code { font: 0.9em "JetBrains Mono", "DejaVu Sans Mono", monospace; background: rgba(128, 128, 128, 0.16); border-radius: 4px; padding: 1px 4px; }
+.jr-rich ul, .jr-rich ol { margin: 2px 0; padding-left: 22px; }
+.jr-rich li { margin: 1px 0; }
+.jr-sticky .jr-rich blockquote { border-color: rgba(0, 0, 0, 0.35); color: rgba(0, 0, 0, 0.65); }
+.jr-sticky .jr-rich h6 { color: rgba(0, 0, 0, 0.55); }

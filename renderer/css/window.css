@@ -2338,3 +2338,14 @@ body.mission-open #spaces { z-index: 7550; }
 /* Browser: dragging a pinned extension along the toolbar */
 .br-ext-btn { transition: background 0.15s; }
 .br-ext-btn.dragging { position: relative; z-index: 3; background: var(--control, rgba(255, 255, 255, 0.9)); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.22); cursor: var(--cur-grabbing, grabbing); }
+/* Time Machine › Choose a Backup Disk: this computer isn't on Btrfs */
+.tm-choose { display: flex; flex-direction: column; gap: 8px; width: 100%; min-width: 0; }
+.tm-fswarn { display: flex; gap: 10px; text-align: left; padding: 10px 12px; border-radius: 12px; background: rgba(255, 159, 10, 0.14); box-shadow: inset 0 0 0 0.5px rgba(255, 159, 10, 0.45); }
+.tm-fswarn-ic { width: 20px; height: 20px; flex: none; color: #ff9f0a; margin-top: 1px; }
+.tm-fswarn-ic svg { width: 100%; height: 100%; }
+.tm-fswarn b { font-size: 12.5px; display: block; margin-bottom: 3px; }
+.tm-fswarn p { margin: 0 0 4px; font-size: 11.5px; line-height: 1.35; color: var(--text-2); }
+.tm-fswarn p:last-child { margin-bottom: 0; }
+.alert:has(.tm-choose) { width: min(460px, calc(100vw - 40px)); max-width: none; }
+.tm-disk-why { color: #c4161c !important; }
+:root[data-theme='dark'] .tm-disk-why { color: #ff6b61 !important; }

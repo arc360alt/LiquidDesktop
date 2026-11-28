@@ -49,13 +49,12 @@ registerApp({
         return el;
       };
       const driveLabel = st?.dest ? st.dest.label : 'No Backup Disk';
-      const localOn = st?.local?.enabled;
       side.replaceChildren(...[
         h('div.sb-sec', 'Go Back In Time'),
         item('backups', 'Your Files', I.drive, pts.length ? String(pts.length) : null),
         h('div.sb-sec', 'Kept On'),
         h('div.tm-where', h('span', { html: I.drive }), h('div', h('b.ellipsis', driveLabel), h('small', st?.dest ? (st.dest.connected ? `${st.dest.count} backup${st.dest.count === 1 ? '' : 's'}` : 'Not connected') : 'Not set up'))),
-        h('div.tm-where', h('span', { html: I.local }), h('div', h('b', 'Local Snapshots'), h('small', localOn ? `${st.local.count} on this computer` : st?.local?.btrfs ? 'Off' : 'Needs Btrfs'))),
+        localWhere(st),
         st?.system?.available ? h('div.sb-sec', 'System') : null,
         st?.system?.available ? item('system', 'System Snapshots', I.system) : null,
         h('div.spacer'),
@@ -197,6 +196,20 @@ registerApp({
             : h('button.btn.primary.lg', { onclick: async () => { if (await chooseDisk(win.el)) refresh(); } }, 'Choose Backup Disk…'),
           local?.btrfs && !local?.enabled ? h('button.btn.lg', { onclick: () => turnOnLocal() }, 'Turn On Local Snapshots') : null),
         local?.btrfs && !local?.enabled ? h('small.muted', 'No drive? Local snapshots keep hourly versions of your files on this computer (Btrfs).') : null));
+    }
+    // Local Snapshots in the sidebar: on or off (and how many there are to look back at); right-click to switch it
+    function localWhere(st) {
+      const l = st?.local, on = !!l?.enabled;
+      const el = h('div.tm-where', { title: l?.btrfs ? 'Right-click to turn local snapshots on or off' : '' }, h('span', { html: I.local }), h('div', h('b', 'Local Snapshots'),
+        h('small', on ? `On · ${l.count} on this computer` : l?.btrfs ? (l.count ? `Off · ${l.count} kept` : 'Off') : 'Needs Btrfs')));
+      if (l?.btrfs) el.addEventListener('contextmenu', (e) => contextMenu(e, [on ? { label: 'Turn Off Local Snapshots…', action: () => turnOffLocal() } : { label: 'Turn On Local Snapshots', action: () => turnOnLocal() },
+        { label: 'Time Machine Settings…', action: () => wm.open('settings', { pane: 'timemachine' }) }]));
+      return el;
+    }
+    async function turnOffLocal() {
+      if (!(await confirmDialog('Turn off local snapshots?', 'No new hourly snapshots are taken. The ones already on this computer stay, so you can still go back to them, and are cleaned up over time.', 'Turn Off', {}, win.el))) return;
+      if (!(await askSudo('Turning off local snapshots needs your password.', win.el))) return;
+      try { await api.tm.localSetup(false); refresh(); } catch (e) { alertDialog({ title: 'Local snapshots couldn’t be turned off', message: e.message }, win.el); }
     }
     async function turnOnLocal() {
       if (!(await askSudo('Turning on local snapshots needs your password once.', win.el))) return;

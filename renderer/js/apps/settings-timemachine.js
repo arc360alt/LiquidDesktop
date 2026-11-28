@@ -47,7 +47,7 @@ export async function timeMachinePane({ row, hero, rerender, askSudo, confirmDia
         try { await api.tm.localSetup(v); } catch (err) { e.target.checked = !v; alertDialog({ title: 'That didn’t work', message: err.message }); }
         rerender();
       }) : h('span.muted', 'Needs Btrfs'),
-      local.btrfs ? `Instant snapshots of /home (Btrfs) every hour, kept for a day, a week and a month — no drive needed. ${local.enabled ? `${local.count} now.` : 'Not a replacement for a backup disk: if this disk breaks, they’re gone too.'}` : 'Your home folder isn’t on a Btrfs file system, so it can’t be snapshotted.')),
+      local.btrfs ? `Instant snapshots of /home (Btrfs) every hour, kept for a day, a week and a month — no drive needed. ${local.enabled ? `${local.count} now.` : local.count ? `Off — the ${local.count} already taken stay until they’re cleaned up, and you can still go back to them.` : 'Not a replacement for a backup disk: if this disk breaks, they’re gone too.'}` : 'Your home folder isn’t on a Btrfs file system, so it can’t be snapshotted.')),
     h('div.group-title', 'Not Backed Up'),
     h('div.group', excl,
       h('div.row', h('button.btn', { onclick: async () => {

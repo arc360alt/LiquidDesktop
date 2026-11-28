@@ -22,7 +22,7 @@ const names = ['sys:info', 'sys:status', 'sys:rendering', 'sys:setRendering', 's
   'photos:list', 'photos:thumb', 'photos:import', 'music:list', 'music:art', 'media:playable',
   'tags:all', 'tags:set', 'tags:toggle', 'tags:define', 'tags:files', 'tags:moved', 'search:query', 'search:contents', 'search:engine',
   'a11y:status', 'a11y:screenReader', 'a11y:installOrca', 'a11y:keys', 'a11y:cursor', 'a11y:sources',
-  'tm:status', 'tm:drives', 'tm:prepare', 'tm:forget', 'tm:options', 'tm:backupNow', 'tm:stop', 'tm:points', 'tm:list', 'tm:conflicts', 'tm:restore', 'tm:delete', 'tm:localSetup', 'tm:snapNow', 'tm:system', 'tm:systemRollback',
+  'tm:status', 'tm:drives', 'tm:systemDisk', 'tm:prepare', 'tm:forget', 'tm:options', 'tm:backupNow', 'tm:stop', 'tm:points', 'tm:list', 'tm:conflicts', 'tm:restore', 'tm:delete', 'tm:localSetup', 'tm:snapNow', 'tm:system', 'tm:systemRollback',
   'sensors:read'];
 const api = {};
 for (const n of names) {

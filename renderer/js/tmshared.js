@@ -43,7 +43,20 @@ export async function chooseDisk(anchor) {
     }));
   };
   draw();
-  const r = await alertDialog({ title: 'Choose a Backup Disk', message: 'Time Machine keeps hourly backups for the past day, daily ones for the past month, and weekly ones for as long as there’s room. Your files stay readable on the drive.', content: list,
+  // this computer's own drive isn't Btrfs (none of its drives are, or only an external one): backups to a drive still
+  // work, but local and system snapshots can't — say so, and what it takes to change
+  const box = h('div.tm-choose', list);
+  api.tm.systemDisk?.().then((s) => {
+    if (!s || s.homeBtrfs) return;
+    const fs = (s.homeFs || 'another format').toUpperCase();
+    box.prepend(h('div.tm-fswarn',
+      h('div.tm-fswarn-ic', { html: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5 2.5 20h19z"/><path d="M12 10v4.5M12 17.3v.2"/></svg>' }),
+      h('div',
+        h('b', 'This computer isn’t set up for Btrfs'),
+        h('p', `Its drive uses ${fs}${s.externalBtrfs && !s.internalBtrfs ? ' (the only Btrfs drive is an external one)' : ''}. You can still back up to a drive, but Local Snapshots — versions of your files kept on this computer between backups — and system snapshots need the computer’s own drive to use Btrfs.`),
+        h('p', 'Switching to Btrfs means reinstalling the operating system and choosing Btrfs when it asks how to set up the drive. Back up to an external drive first, so you can bring your files back afterwards.'))));
+  }).catch(() => {});
+  const r = await alertDialog({ title: 'Choose a Backup Disk', message: 'Time Machine keeps hourly backups for the past day, daily ones for the past month, and weekly ones for as long as there’s room. Your files stay readable on the drive.', content: box,
     buttons: [{ label: 'Cancel', value: 'cancel' }, { label: 'Set Up Disk', value: 'ok', primary: true }] }, anchor);
   if (r.button !== 'ok' || !picked) return false;
   for (let i = 0; i < 2; i++) {

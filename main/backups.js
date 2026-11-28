@@ -220,12 +220,33 @@ async function snapperHome() {
   if (!r.ok) return { available: true, enabled: false, reason: /does not exist|Unknown config/i.test(r.err + r.out) ? 'off' : 'no-access', err: (r.err || r.out).trim() };
   let list = [];
   try { list = (JSON.parse(r.out).home || []).filter((s) => s.number > 0); } catch { /* none */ }
-  return { available: true, enabled: true, snapshots: list.map((s) => ({ id: 'local:' + s.number, source: 'local', number: s.number, time: Date.parse(s.date.replace(' ', 'T')) || 0, label: s.description || (s.cleanup === 'timeline' ? 'Hourly snapshot' : ''), path: path.join('/home/.snapshots', String(s.number), 'snapshot', path.relative('/home', HOME)) })) };
+  // set up, but are hourly snapshots being taken? (turning them off keeps the config, so the ones there stay browsable)
+  const cfg = await run('snapper', ['--jsonout', '-c', 'home', 'get-config'], { timeout: 10000 });
+  let timeline = true;
+  try { timeline = JSON.parse(cfg.out).TIMELINE_CREATE !== 'no'; } catch { /* older snapper: assume on */ }
+  return { available: true, enabled: true, timeline, snapshots: list.map((s) => ({ id: 'local:' + s.number, source: 'local', number: s.number, time: Date.parse(s.date.replace(' ', 'T')) || 0, label: s.description || (s.cleanup === 'timeline' ? 'Hourly snapshot' : ''), path: path.join('/home/.snapshots', String(s.number), 'snapshot', path.relative('/home', HOME)) })) };
 }
 async function localStatus() {
   const homeFs = (await run('findmnt', ['-no', 'FSTYPE', '/home'], { timeout: 3000 })).out.trim() || (await run('findmnt', ['-no', 'FSTYPE', '/'], { timeout: 3000 })).out.trim();
   const s = await snapperHome();
-  return { btrfs: homeFs === 'btrfs', snapper: !!which('snapper'), enabled: !!s.enabled, count: s.snapshots?.length || 0, reason: s.reason || null };
+  // enabled: hourly snapshots are being taken; count: snapshots there are to look back at (kept after turning it off)
+  return { btrfs: homeFs === 'btrfs', snapper: !!which('snapper'), enabled: !!s.enabled && s.timeline !== false, count: s.snapshots?.length || 0, reason: s.reason || null };
+}
+/**
+ * Is this computer set up for everything Time Machine does? Local snapshots (and Lumen's system snapshots) need the
+ * computer's own drive — where your home folder is — to be Btrfs. Backups to a drive work either way.
+ * → { homeFs, rootFs, homeBtrfs, internalBtrfs (any Btrfs on a drive inside the computer), externalBtrfs }
+ */
+async function systemDisk() {
+  const fs1 = async (m) => (await run('findmnt', ['-no', 'FSTYPE', '--target', m], { timeout: 3000 })).out.trim().split('\n')[0] || null;
+  const homeFs = await fs1(HOME) || await fs1('/home'), rootFs = await fs1('/');
+  let internalBtrfs = false, externalBtrfs = false;
+  const walk = (d, disk) => {
+    if (d.fstype === 'btrfs') { if (disk.rm || disk.hotplug || disk.tran === 'usb') externalBtrfs = true; else internalBtrfs = true; }
+    for (const c of d.children || []) walk(c, disk);
+  };
+  for (const d of await lsblk()) walk(d, d);
+  return { homeFs, rootFs, homeBtrfs: homeFs === 'btrfs', internalBtrfs, externalBtrfs };
 }
 /** Turn local snapshots on: a snapper configuration for /home you can use without a password, taking one every hour. */
 async function localSetup(on) {
@@ -398,6 +419,7 @@ function register({ mode } = {}) {
   const h = handler(ipcMain);
   h('tm:status', status);
   h('tm:drives', drives);
+  h('tm:systemDisk', systemDisk);
   h('tm:prepare', prepare);
   h('tm:forget', forget);
   h('tm:options', setOptions);

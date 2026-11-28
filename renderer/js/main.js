@@ -43,6 +43,12 @@ import './apps/reminders.js';
 import './apps/mirroring.js';
 import './apps/games.js';
 import './apps/journal.js';
+import './apps/archive.js';
+import './apps/clock.js';
+import './apps/console.js';
+import './apps/photos.js';
+import './apps/music.js';
+import './apps/timemachine.js';
 
 const progress = (p) => { const b = $('#boot .bar i'); if (b) b.style.width = p + '%'; };
 const hideBoot = () => {
@@ -68,6 +74,8 @@ async function bootFull() {
   import('./phone.js').then((m) => m.initPhoneNotices());   // files received from the phone
   import('./reminders.js').then((m) => import('./notifications.js').then(({ notify }) => m.initReminderAlerts(notify)));   // reminders' alerts
   import('./screentime.js').then((m) => m.initScreenTime());   // Screen Time: which app is in front, and for how long
+  import('./clock.js').then((m) => import('./notifications.js').then(({ notify }) => m.initClockAlerts(notify)));   // alarms and timers
+  import('./a11y.js').then((m) => m.initA11y());
   progress(35);
   wm.init();
   initMenubar();
@@ -111,6 +119,9 @@ async function bootShellSteps() {
   import('./reminders.js').then((m) => import('./notifications.js').then(({ notify }) => m.initReminderAlerts(notify)));   // reminders' alerts
   import('./screentime.js').then((m) => m.initScreenTime());   // Screen Time: which app is in front, and for how long
   import('./polkit.js').then((m) => m.initPolkit());   // the password sheet for apps asking for admin rights
+  import('./a11y.js').then((m) => m.initA11y());   // Accessibility: Zoom, the screen reader, Sticky Keys…
+  import('./tmshared.js').then((m) => import('./notifications.js').then(({ notify }) => m.initTimeMachineNotices(notify)));   // a failed backup
+  import('./clock.js').then((m) => import('./notifications.js').then(({ notify }) => m.initClockAlerts(notify)));   // alarms and timers
   S.on('session:runSetup', () => import('./setup.js').then((m) => m.runSetup()));
   const { installSessionWM, windowMenu } = await import('./sessionwm.js');
   const { initShellShape } = await import('./shellshape.js');

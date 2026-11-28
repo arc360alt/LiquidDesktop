@@ -133,9 +133,10 @@ async function play(m) {
 export function initGenie() {
   if (!S) return;
   S.on('session:genie', (m) => { play(m).catch(() => S.send('shell:genie', m.req)); });
-  const tell = () => S.send('wm:setMinimizeEffect', store.get('minimizeEffect') || 'genie');
+  // Accessibility › Reduce motion: windows just go, without flying into the Dock
+  const tell = () => S.send('wm:setMinimizeEffect', store.get('reduceMotion') ? 'none' : store.get('minimizeEffect') || 'genie');
   tell();
-  store.on('change', (k) => { if (k === 'minimizeEffect') tell(); });
+  store.on('change', (k) => { if (k === 'minimizeEffect' || k === 'reduceMotion') tell(); });
   // pictures of windows that were closed while minimized
   bus.on('windows', () => { for (const id of pictures.keys()) if (!wm.windows.some((w) => w.id === id && w.minimized)) pictures.delete(id); });
 }

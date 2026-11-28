@@ -1,14 +1,35 @@
 // Files — a Finder-style file manager for the real filesystem.
 import { h, $, $$, bus, basename, dirname, fmtSize, fmtDate, fileUrl, isCmd } from '../util.js';
-import { sym, folderIcon, docIcon, IMAGE_EXT, VIDEO_EXT, AUDIO_EXT, TEXT_EXT, appIconSVG } from '../icons.js';
+import { sym, folderIcon, docIcon, IMAGE_EXT, VIDEO_EXT, AUDIO_EXT, TEXT_EXT, appIconSVG, isArchive } from '../icons.js';
 import { registerApp, wm } from '../wm.js';
 import { api } from '../sys.js';
-import { contextMenu, prompt, confirmDialog, showMenu, alertDialog } from '../menus.js';
+import { contextMenu, prompt, confirmDialog, showMenu, alertDialog, enhanceSelects as enhance } from '../menus.js';
 import { shell } from '../shell.js';
 import { store } from '../store.js';
 import { sendToPhoneItem } from '../phone.js';
 
 let clipboard = null; // { op: 'copy'|'cut', paths }
+
+// Tags (colored dots on files) and Smart Folders (saved searches) — kept by main/finder.js and the store.
+// Virtual places in a window's history: "tag:Red", "smart:<id>".
+const SMART_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M3.5 7.5a2 2 0 0 1 2-2h4l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/><path d="M13 11.3l.9 1.9 2 .3-1.5 1.4.4 2-1.8-1-1.8 1 .4-2-1.5-1.4 2-.3z" fill="currentColor" stroke="none"/></svg>';
+const TAB_PLUS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 6v12M6 12h12"/></svg>';
+const KINDS = [['', 'Any Kind'], ['folders', 'Folders'], ['documents', 'Documents'], ['pdf', 'PDFs'], ['images', 'Images'], ['video', 'Movies'], ['audio', 'Music'], ['text', 'Text & Code'], ['archives', 'Archives']];
+const DATES = [[0, 'Any Date'], [1, 'Today'], [7, 'Last 7 Days'], [30, 'Last 30 Days'], [365, 'This Year']];
+let tagDb = { tags: [], files: {} };
+const tagListeners = new Set();
+let tagsLoaded = null;
+function loadTags() {
+  if (!api.tags) return Promise.resolve(tagDb);
+  tagsLoaded ||= (async () => {
+    api.tags.onChanged?.(async () => { tagDb = await api.tags.all().catch(() => tagDb); tagListeners.forEach((f) => f()); });
+    tagDb = await api.tags.all().catch(() => tagDb);
+    return tagDb;
+  })();
+  return tagsLoaded;
+}
+const tagColor = (n) => tagDb.tags.find((t) => t.name === n)?.color || '#8e8e93';
+const tagDots = (p) => { const l = tagDb.files[p]; return l?.length ? h('span.f-tags', ...l.slice(0, 3).map((n) => h('i', { style: { background: tagColor(n) }, title: n }))) : null; };
 
 registerApp({
   id: 'files', settings: 'files', name: 'Files', size: [920, 560], minSize: [520, 320], overlayContent: true, hideTitle: true,
@@ -16,11 +37,16 @@ registerApp({
   about: 'Browse and manage the files on this computer.',
   menus: (win) => [
     { title: 'File', items: [
-      { label: 'New Window', shortcut: '⌘N', action: () => wm.open('files', { path: win?.state?.path }) },
+      { label: 'New Window', shortcut: '⌘N', action: () => wm.open('files', { path: win?.state?.realPath }) },
+      { label: 'New Tab', shortcut: '⌘T', action: () => win?.state?.newTab() },
+      { label: 'Close Tab', shortcut: '⌘W', disabled: !(win?.state?.tabs?.length > 1), action: () => win?.state?.closeTab() },
       { label: 'New Folder', shortcut: '⇧⌘N', action: () => win?.state?.newFolder() },
       { label: 'New Text File', action: () => win?.state?.newFile() }, '-',
       { label: 'Open in Terminal', action: () => wm.open('terminal', { cwd: win?.state?.path }) },
-      { label: 'Get Info', action: () => win?.state?.info() }, '-',
+      { label: 'Get Info', action: () => win?.state?.info() },
+      { label: 'Compress', action: () => win?.state?.compressSel() }, '-',
+      { label: 'New Smart Folder', action: () => win?.state?.newSmart() },
+      { label: 'Find…', shortcut: '⌘F', action: () => win?.state?.search.focus() }, '-',
       { label: 'Move to Trash', action: () => win?.state?.trashSel() },
       { label: 'Close Window', shortcut: '⌘W', action: () => win?.close() }] },
     { title: 'View', items: [
@@ -36,6 +62,7 @@ registerApp({
       ...['home', 'desktop', 'documents', 'downloads', 'pictures'].map((k) => ({ label: k[0].toUpperCase() + k.slice(1), action: () => win?.state?.goPlace(k) })),
       { label: 'Computer', action: () => win?.state?.go('/') }, '-',
       { label: 'Go to Folder…', shortcut: '⇧⌘G', action: () => win?.state?.goTo() }] },
+    { title: 'Window', items: [{ label: 'Show Next Tab', shortcut: '⌃Tab', action: () => win?.state?.stepTab(1) }, { label: 'Show Previous Tab', shortcut: '⌃⇧Tab', action: () => win?.state?.stepTab(-1) }] },
   ],
   open(win, args) { new FilesView(win, args); },
 });
@@ -51,11 +78,18 @@ class FilesView {
     this.sel = new Set();
     this.items = [];
     this.filter = '';
+    this.tabs = [];   // [{ path, history, fwd, sel, scroll }] — the one shown is this.tab
+    this.tab = 0;
     this.build();
+    loadTags().then(() => { this.renderSidebar(); this.renderItems(); });
+    const offT = () => { this.renderSidebar(); if (this.virtual?.type === 'tag') this.refresh(true); else this.renderItems(); };
+    tagListeners.add(offT);
+    win.on('close', () => tagListeners.delete(offT));
     win.on('reopen', (a) => a?.path && this.go(a.path));
     api.fs.places().then((p) => {
       this.places = p;
       this.renderSidebar();
+      this.tabs = [{ path: args.path || p.home, history: [], fwd: [], sel: [], scroll: 0 }];
       this.go(args.path || p.home, { select: args.select });
     });
     // external drives come and go: look every few seconds while this window is open
@@ -82,6 +116,7 @@ class FilesView {
       if (k === 'filesShowExt') { this.showExt = store.get(k) !== false; this.renderItems(); }
       if (k === 'filesSort') { this.sort = store.get(k); this.renderItems(); }
       if (k === 'filesFoldersFirst') this.renderItems();
+      if (k === 'smartFolders') this.renderSidebar();
     });
     win.on('close', offS);
     win.on('close', off);
@@ -99,25 +134,35 @@ class FilesView {
     this.search = h('input.field', { placeholder: 'Search', style: { width: '170px', height: '34px' } });
     this.search.addEventListener('input', () => { this.filter = this.search.value.trim().toLowerCase(); this.renderItems(); });
     this.search.addEventListener('keydown', async (e) => {
-      if (e.key === 'Enter' && this.search.value.trim().length > 1) {
-        const res = await api.fs.search(this.search.value.trim(), this.path, 200);
-        this.searchResults = res; this.renderItems();
-      }
-      if (e.key === 'Escape') { this.search.value = ''; this.filter = ''; this.searchResults = null; this.renderItems(); this.view_.focus(); }
+      if (e.key === 'Enter' && this.search.value.trim().length > 1) this.runSearch({ text: this.search.value.trim() });
+      if (e.key === 'Escape') this.endSearch();
     });
     w.toolbar.style.marginLeft = '150px';
     w.toolbar.append(
       h('div.tb-group', this.backBtn, this.fwdBtn), this.titleEl, h('div.spacer'),
       h('div.tb-group', this.viewBtns.icons, this.viewBtns.list),
       h('div.tb-group', h('button.tb-btn', { html: sym.folderPlus, title: 'New Folder', onclick: () => this.newFolder() }),
-        h('button.tb-btn', { html: sym.share, title: 'Open in Terminal', onclick: () => wm.open('terminal', { cwd: this.path }) }),
+        h('button.tb-btn', { html: sym.share, title: 'Open in Terminal', onclick: () => wm.open('terminal', { cwd: this.realPath }) }),
         h('button.tb-btn', { html: sym.ellipsis, title: 'More', onclick: (e) => this.moreMenu(e.currentTarget) })),
       h('div.search-field', { html: sym.search }, this.search));
     this.view_ = h('div.files-view', { tabindex: 0 });
     this.pathbar = h('div.pathbar');
-    this.main = h('div.main-pane', this.view_, this.pathbar);
+    this.tabBar = h('div.f-tabs', { hidden: true });
+    this.scopeBar = h('div.f-scope', { hidden: true });
+    this.main = h('div.main-pane', this.tabBar, this.scopeBar, this.view_, this.pathbar);
+    // tabs: Ctrl+T, Ctrl+W, Ctrl+Tab — anywhere in the window
+    w.el.addEventListener('keydown', (e) => {
+      if (!(e.ctrlKey || e.metaKey) || e.target.closest?.('input.rename-input, .path-input')) return;
+      const k = e.key.toLowerCase();
+      if (k === 't') { e.preventDefault(); this.newTab(); }
+      else if (k === 'w' && this.tabs.length > 1) { e.preventDefault(); e.stopPropagation(); this.closeTab(); }
+      else if (e.key === 'Tab') { e.preventDefault(); this.stepTab(e.shiftKey ? -1 : 1); }
+      else if (/^[1-9]$/.test(e.key) && this.tabs.length > 1) { e.preventDefault(); this.switchTab(Math.min(this.tabs.length - 1, +e.key - 1)); }
+    }, true);
     w.body.append(this.sidebar, this.main);
     this.view_.addEventListener('mousedown', (e) => this.rubberBand(e));
+    // middle-click a folder: open it in a new tab
+    this.view_.addEventListener('auxclick', (e) => { if (e.button !== 1) return; const el = e.target.closest('[data-path]'); const f = el && this.visible().find((x) => x.path === el.dataset.path); if (f?.isDir) { e.preventDefault(); this.newTab(f.path, true); } });
     // the path bar: a click anywhere but a folder's name turns it into a field to type a path in
     this.pathbar.addEventListener('click', (e) => { if (!e.target.closest('.crumb') && !this.pathbar.querySelector('input')) this.editPath(); });
     this.view_.addEventListener('contextmenu', (e) => { if (!e.target.closest('.f-item, tr')) this.bgMenu(e); });
@@ -128,26 +173,35 @@ class FilesView {
 
   /* ---------------------------------------------- navigation */
   async go(path, { push = true, select } = {}) {
-    try { await api.fs.list(path); } catch (e) { shell.notify({ app: 'files', title: 'Can’t open folder', body: e.message }); return; }
+    const virt = /^(tag|smart):/.test(path);
+    if (!virt) { try { await api.fs.list(path); } catch (e) { shell.notify({ app: 'files', title: 'Can’t open folder', body: e.message }); return; } }
     if (push && this.path && this.path !== path) { this.history.push(this.path); this.fwd = []; }
     this.path = path;
+    this.virtual = virt ? { type: path.slice(0, path.indexOf(':')), id: path.slice(path.indexOf(':') + 1) } : null;
     this.sel.clear();
-    this.search.value = ''; this.filter = ''; this.searchResults = null;
+    this.search.value = ''; this.filter = ''; this.searchResults = null; this.searchQ = null; this.searchFrom = null;
+    if (this.virtual?.type === 'smart') { const sf = (store.get('smartFolders') || []).find((x) => x.id === this.virtual.id); this.searchQ = sf ? { ...sf.query } : null; }
+    this.drawScope();
     if (select) this.sel.add(select);
     await this.refresh(true);
     this.view_.focus();
   }
   back() { if (!this.history.length) return; this.fwd.push(this.path); this.go(this.history.pop(), { push: false }); }
   forward() { if (!this.fwd.length) return; this.history.push(this.path); this.go(this.fwd.pop(), { push: false }); }
-  up() { if (this.path !== '/') this.go(dirname(this.path), { select: this.path }); }
+  up() { if (this.virtual) return; if (this.path !== '/') this.go(dirname(this.path), { select: this.path }); }
+  /** The folder this window is really in (a tag or Smart Folder has none: home). */
+  get realPath() { return this.virtual ? this.places?.home : this.path; }
   goPlace(k) { if (this.places) this.go(this.places[k]); }
   async goTo() { const p = await prompt('Go to the folder:', this.path, {}, this.win.el); if (p) this.go(p.replace(/^~/, this.places.home)); }
   get isTrash() { return this.places && this.path === this.places.trash; }
 
   async refresh(force) {
     if (!this.path) return;
+    if (this.searchQ && !this.virtual && !force) return;   // showing search results: the folder isn't shown
     let items;
-    try { items = await api.fs.list(this.path); } catch { return; }
+    if (this.virtual?.type === 'tag') items = await api.tags.files(this.virtual.id).catch(() => []);
+    else if (this.virtual?.type === 'smart') items = this.searchQ ? await api.search.query({ ...this.searchQ, limit: 500 }).catch(() => []) : [];
+    else { try { items = await api.fs.list(this.path); } catch { return; } }
     const sig = items.map((i) => i.name + i.mtime + i.size).join('|');
     if (!force && sig === this.sig) return;
     this.sig = sig;
@@ -157,7 +211,10 @@ class FilesView {
   }
 
   renderChrome() {
-    const name = this.isTrash ? 'Trash' : this.path === this.places?.home ? 'Home' : basename(this.path);
+    const smart = this.virtual?.type === 'smart' ? (store.get('smartFolders') || []).find((x) => x.id === this.virtual.id) : null;
+    const name = this.virtual ? (smart?.name || this.virtual.id) : this.isTrash ? 'Trash' : this.path === this.places?.home ? 'Home' : basename(this.path);
+    if (this.tabs[this.tab]) this.tabs[this.tab].path = this.path;
+    this.drawTabs();
     this.titleEl.textContent = name;
     this.win.setTitle(name);
     this.backBtn.disabled = !this.history.length; this.fwdBtn.disabled = !this.fwd.length;
@@ -165,6 +222,11 @@ class FilesView {
     $$('.sb-item', this.sidebar).forEach((el) => el.classList.toggle('sel', el.dataset.path === this.path));
     // path bar
     this.pathbar.innerHTML = '';
+    if (this.virtual) {
+      this.pathbar.append(h('span.crumb', { html: `<span style="width:14px;height:14px;display:inline-flex">${this.virtual.type === 'tag' ? `<i style="display:block;width:10px;height:10px;margin:2px;border-radius:50%;background:${tagColor(this.virtual.id)}"></i>` : SMART_ICON}</span>` }, this.virtual.type === 'tag' ? `Tag: ${name}` : `Smart Folder: ${name}`));
+      this.status = h('span.status'); this.pathbar.append(this.status); this.updateStatus();
+      return;
+    }
     const parts = this.path.split('/').filter(Boolean);
     const crumbs = [['/', 'Computer']];
     parts.forEach((p, i) => crumbs.push(['/' + parts.slice(0, i + 1).join('/'), p]));
@@ -323,6 +385,7 @@ class FilesView {
 
   renderSidebar() {
     const p = this.places;
+    if (!p) return;   // (tags can arrive before the places do)
     const item = (icon, label, path) => {
       const el = h('div.sb-item', { 'data-path': path, html: icon }, label);
       el.addEventListener('click', () => this.go(path));
@@ -341,9 +404,143 @@ class FilesView {
       item(sym.drive, 'Computer', '/'),
       ...(this.drives || []).map((d) => this.driveItem(d)),
       item(sym.trash, 'Trash', p.trash),
+      ...this.smartItems(),
       h('div.sb-sec', 'Tags'),
-      ...[['Red', '#ff3b30'], ['Orange', '#ff9500'], ['Green', '#34c759'], ['Blue', '#0a84ff'], ['Purple', '#af52de']].map(([n, c]) =>
-        h('div.sb-item', { style: { opacity: 0.85 } }, h('span', { style: { width: '10px', height: '10px', borderRadius: '50%', background: c, margin: '0 3px' } }), n)));
+      ...tagDb.tags.map((t) => this.tagItem(t)));
+    $$('.sb-item', this.sidebar).forEach((el) => el.classList.toggle('sel', el.dataset.path === this.path));
+  }
+  tagItem(t) {
+    const el = h('div.sb-item.sb-tag', { 'data-path': 'tag:' + t.name }, h('i.sb-tagdot', { style: { background: t.color } }), h('span.ellipsis', t.name));
+    el.addEventListener('click', () => this.go('tag:' + t.name));
+    // drop files on a tag: they get it
+    el.addEventListener('dragover', (e) => { if (e.dataTransfer.types.includes('text/liquid-paths')) { e.preventDefault(); el.classList.add('drop'); } });
+    el.addEventListener('dragleave', () => el.classList.remove('drop'));
+    el.addEventListener('drop', (e) => { el.classList.remove('drop'); e.preventDefault(); api.tags.toggle(JSON.parse(e.dataTransfer.getData('text/liquid-paths') || '[]'), t.name, true); });
+    el.addEventListener('contextmenu', (e) => contextMenu(e, [
+      { label: 'Open in New Tab', action: () => this.newTab('tag:' + t.name, true) },
+      { label: `Rename “${t.name}”…`, action: async () => { const n = await prompt('Rename Tag', t.name, {}, this.win.el); if (n && n.trim() && n.trim() !== t.name) api.tags.define({ oldName: t.name, name: n.trim() }).catch((err) => alertDialog({ title: 'Couldn’t rename', message: err.message }, this.win.el)); } },
+      { label: 'Color', submenu: ['#ff3b30', '#ff9500', '#ffcc00', '#34c759', '#0a84ff', '#af52de', '#ff2d55', '#8e8e93'].map((c) => ({ label: ' ', icon: `<span style="display:block;width:12px;height:12px;border-radius:50%;background:${c}"></span>`, checked: t.color === c, action: () => api.tags.define({ oldName: t.name, color: c }) })) }, '-',
+      { label: `Delete Tag “${t.name}”`, danger: true, action: async () => { if (await confirmDialog(`Delete the tag “${t.name}”?`, 'It’s taken off every file that has it. The files stay.', 'Delete', { danger: true }, this.win.el)) api.tags.define({ remove: t.name }); } },
+      { label: 'New Tag…', action: () => this.newTag() }]));
+    return el;
+  }
+  async newTag(paths) {
+    const n = await prompt('New Tag', '', { placeholder: 'Name', ok: 'Create' }, this.win.el);
+    if (!n?.trim()) return;
+    try { await api.tags.define({ name: n.trim(), color: ['#5ac8fa', '#ff2d55', '#a2845e', '#30b0c7'][tagDb.tags.length % 4] }); if (paths?.length) await api.tags.toggle(paths, n.trim(), true); } catch (err) { alertDialog({ title: 'Couldn’t add the tag', message: err.message }, this.win.el); }
+  }
+  smartItems() {
+    const list = store.get('smartFolders') || [];
+    if (!list.length) return [];
+    return [h('div.sb-sec', 'Smart Folders'), ...list.map((sf) => {
+      const el = h('div.sb-item', { 'data-path': 'smart:' + sf.id, html: SMART_ICON }, h('span.ellipsis', sf.name));
+      el.addEventListener('click', () => this.go('smart:' + sf.id));
+      el.addEventListener('contextmenu', (e) => contextMenu(e, [
+        { label: 'Open in New Tab', action: () => this.newTab('smart:' + sf.id, true) },
+        { label: 'Rename…', action: async () => { const n = await prompt('Rename Smart Folder', sf.name, {}, this.win.el); if (n?.trim()) store.set('smartFolders', (store.get('smartFolders') || []).map((x) => (x.id === sf.id ? { ...x, name: n.trim() } : x))); this.renderChrome(); } },
+        { label: 'Delete Smart Folder', danger: true, action: () => { store.set('smartFolders', (store.get('smartFolders') || []).filter((x) => x.id !== sf.id)); if (this.path === 'smart:' + sf.id) this.go(this.places.home); } }]));
+      return el;
+    })];
+  }
+
+  /* ---------------------------------------------- searching (and Smart Folders: saved searches) */
+  // Enter in the search field searches this folder and everything in it — names and, with "Contents", what's
+  // inside files. The bar under the toolbar narrows it down (where, kind, date) and saves it as a Smart Folder.
+  runSearch(q) {
+    if (!this.searchQ && !this.virtual) this.searchFrom = this.path;
+    this.searchQ = { text: '', contents: true, kind: '', days: 0, dir: this.realPath, ...(this.searchQ || {}), ...q };
+    this.drawScope();
+    this.doSearch();
+  }
+  async doSearch() {
+    const q = this.searchQ; if (!q) return;
+    const my = (this.searchSeq = (this.searchSeq || 0) + 1);
+    this.view_.innerHTML = ''; this.view_.append(h('div.empty-state', { style: { height: '100%', gap: '8px' } }, h('div.spinner'), 'Searching…'));
+    const res = await api.search.query({ ...q, limit: 500 }).catch(() => []);
+    if (my !== this.searchSeq) return;
+    this.searchResults = res; this.renderItems();
+  }
+  endSearch() {
+    this.search.value = ''; this.filter = ''; this.searchResults = null;
+    if (this.virtual?.type === 'smart') { this.drawScope(); this.refresh(true); return; }
+    this.searchQ = null; this.searchFrom = null; this.drawScope(); this.renderItems(); this.view_.focus();
+  }
+  drawScope() {
+    const q = this.searchQ;
+    const smart = this.virtual?.type === 'smart';
+    this.scopeBar.hidden = !q;
+    this.main.classList.toggle('has-scope', !!q);
+    if (!q) return;
+    const segBtn = (on, label, fn) => h('button' + (on ? '.on' : ''), { onclick: fn }, label);
+    const home = this.places?.home;
+    const here = this.searchFrom && !/^(tag|smart):/.test(this.searchFrom) && this.searchFrom !== home ? this.searchFrom : null;
+    const sel = (opts, val, fn) => h('select.field.square', { onchange: (e) => fn(e.target.value) }, ...opts.map(([v, l]) => h('option', { value: v, selected: String(val) === String(v) }, l)));
+    this.scopeBar.replaceChildren(...[
+      h('span.f-scope-l', 'Search:'),
+      h('div.segmented', segBtn(q.dir === home, 'Home', () => this.runSearch({ dir: home })), ...(here || (q.dir && q.dir !== home) ? [segBtn(q.dir !== home, `“${basename(here || q.dir)}”`, () => this.runSearch({ dir: here || q.dir }))] : [])),
+      h('div.segmented', segBtn(!q.contents, 'Name', () => this.runSearch({ contents: false })), segBtn(!!q.contents, 'Contents', () => this.runSearch({ contents: true }))),
+      sel(KINDS, q.kind, (v) => this.runSearch({ kind: v })),
+      sel(DATES, q.days, (v) => this.runSearch({ days: +v })),
+      h('span.spacer'),
+      smart ? h('button.btn', { onclick: () => this.saveSmart(true) }, 'Save Changes') : h('button.btn', { onclick: () => this.saveSmart() }, 'Save…'),
+      smart ? null : h('button.f-scope-x', { title: 'End search', html: sym.close, onclick: () => this.endSearch() })].filter(Boolean));
+    enhance(this.scopeBar);
+  }
+  async saveSmart(update) {
+    const q = { ...this.searchQ };
+    if (update && this.virtual?.type === 'smart') { store.set('smartFolders', (store.get('smartFolders') || []).map((x) => (x.id === this.virtual.id ? { ...x, query: q } : x))); return; }
+    const name = await prompt('Save as a Smart Folder', q.text || KINDS.find((k) => k[0] === q.kind)?.[1] || 'Smart Folder', { ok: 'Save', message: 'It shows up in the sidebar and stays up to date: the search runs again each time you open it.' }, this.win.el);
+    if (!name?.trim()) return;
+    const id = Math.random().toString(36).slice(2, 9);
+    store.set('smartFolders', [...(store.get('smartFolders') || []), { id, name: name.trim(), query: q }]);
+    this.go('smart:' + id);
+  }
+  newSmart() { this.runSearch({ text: this.search.value.trim(), kind: 'documents', days: 7, contents: false }); this.search.focus(); }
+
+  /* ---------------------------------------------- tabs */
+  saveTab() { const t = this.tabs[this.tab]; if (t) Object.assign(t, { path: this.path, history: this.history, fwd: this.fwd, sel: [...this.sel], scroll: this.view_.scrollTop, searchQ: this.virtual ? null : this.searchQ, searchFrom: this.searchFrom, searchText: this.search.value }); }
+  newTab(path = this.realPath, background = false) {
+    this.saveTab();
+    this.tabs.splice(this.tab + 1, 0, { path, history: [], fwd: [], sel: [], scroll: 0 });
+    if (background) { this.drawTabs(); return; }
+    this.switchTab(this.tab + 1, true);
+  }
+  async switchTab(i, saved) {
+    if (i === this.tab && !saved) return;
+    if (!saved) this.saveTab();
+    this.tab = i;
+    const t = this.tabs[i];
+    this.history = t.history; this.fwd = t.fwd;
+    await this.go(t.path, { push: false });
+    this.sel = new Set(t.sel || []); this.paintSel();
+    if (t.searchQ) { this.searchFrom = t.searchFrom; this.searchQ = t.searchQ; this.search.value = t.searchText || ''; this.drawScope(); this.doSearch(); }
+    requestAnimationFrame(() => { this.view_.scrollTop = t.scroll || 0; });
+    this.drawTabs();
+  }
+  closeTab(i = this.tab) {
+    if (this.tabs.length < 2) return this.win.close();
+    const showing = i === this.tab;
+    this.tabs.splice(i, 1);
+    if (i < this.tab) this.tab--;
+    this.tab = Math.min(this.tab, this.tabs.length - 1);
+    if (showing) this.switchTab(this.tab, true); else this.drawTabs();
+  }
+  stepTab(d) { if (this.tabs.length > 1) this.switchTab((this.tab + d + this.tabs.length) % this.tabs.length); }
+  drawTabs() {
+    const many = this.tabs.length > 1;
+    this.tabBar.hidden = !many;
+    this.main.classList.toggle('has-tabs', many);
+    if (!many) return;
+    const label = (p) => (p.startsWith('tag:') ? p.slice(4) : p.startsWith('smart:') ? ((store.get('smartFolders') || []).find((x) => x.id === p.slice(6))?.name || 'Smart Folder') : p === this.places?.home ? 'Home' : p === this.places?.trash ? 'Trash' : basename(p) || 'Computer');
+    this.tabBar.replaceChildren(...this.tabs.map((t, i) => {
+      const el = h('div.f-tab' + (i === this.tab ? '.on' : ''), { title: t.path }, h('button.f-tab-x', { title: 'Close Tab', html: sym.close, onclick: (e) => { e.stopPropagation(); this.closeTab(i); } }), h('span.ellipsis', label(t.path)));
+      el.addEventListener('mousedown', (e) => { if (e.button === 0 && !e.target.closest('.f-tab-x')) this.switchTab(i); });
+      el.addEventListener('auxclick', (e) => { if (e.button === 1) this.closeTab(i); });
+      el.addEventListener('dragover', (e) => { if (e.dataTransfer.types.includes('text/liquid-paths') && !/^(tag|smart):/.test(t.path)) { e.preventDefault(); el.classList.add('drop'); } });
+      el.addEventListener('dragleave', () => el.classList.remove('drop'));
+      el.addEventListener('drop', (e) => { el.classList.remove('drop'); this.dropOn(e, t.path); });
+      return el;
+    }), h('button.f-tab-add', { title: 'New Tab', html: TAB_PLUS, onclick: () => this.newTab() }));
   }
 
   /* ---------------------------------------------- items */
@@ -367,7 +564,7 @@ class FilesView {
     const list = this.visible();
     this.view_.innerHTML = '';
     if (!list.length) {
-      this.view_.append(h('div.empty-state', { style: { height: '100%' } }, this.isTrash ? 'Trash is Empty' : this.filter || this.searchResults ? 'No Results' : 'This folder is empty'));
+      this.view_.append(h('div.empty-state', { style: { height: '100%' } }, this.isTrash ? 'Trash is Empty' : this.filter || this.searchResults ? 'No Results' : this.virtual?.type === 'tag' ? `Nothing is tagged “${this.virtual.id}” yet. Right-click a file and pick the tag.` : this.virtual ? 'No Results' : 'This folder is empty'));
       this.updateStatus();
       return;
     }
@@ -375,7 +572,7 @@ class FilesView {
     if (this.view === 'icons') {
       const grid = h('div.files-grid');
       for (const f of list) {
-        const el = h('div.f-item' + (f.hidden ? '.hidden-file' : ''), { draggable: true }, this.iconFor(f), h('div.nm', { title: f.name }, this.displayName(f)));
+        const el = h('div.f-item' + (f.hidden ? '.hidden-file' : ''), { draggable: true }, this.iconFor(f), h('div.nm', { title: f.name + (f.match === 'contents' ? ' — the text inside matches' : '') }, this.displayName(f)), tagDots(f.path));
         this.bindItem(el, f);
         grid.append(el);
       }
@@ -389,7 +586,7 @@ class FilesView {
       const th = (label, key) => h('th', { onclick: () => this.setSort(key), style: { cursor: 'default' } }, label + (this.sort === key ? ' ▾' : ''));
       const table = h('table.files-list', h('thead', h('tr', th('Name', 'name'), th('Date Modified', 'mtime'), th('Size', 'size'), th('Kind', 'ext'))), tb);
       for (const f of list) {
-        const tr = h('tr', { draggable: true }, h('td', h('div.cell', { title: f.name }, this.iconFor(f, 18), this.displayName(f))), h('td.muted', fmtDate(f.mtime)), h('td.muted', f.isDir ? '--' : fmtSize(f.size)), h('td.muted', f.isDir ? 'Folder' : (f.ext ? f.ext.toUpperCase() + ' file' : 'Document')));
+        const tr = h('tr', { draggable: true }, h('td', h('div.cell', { title: f.name }, this.iconFor(f, 18), this.displayName(f), tagDots(f.path))), h('td.muted', fmtDate(f.mtime)), h('td.muted', f.isDir ? '--' : fmtSize(f.size)), h('td.muted', f.isDir ? 'Folder' : (f.ext ? f.ext.toUpperCase() + ' file' : 'Document')));
         this.bindItem(tr, f);
         tb.append(tr);
       }
@@ -433,13 +630,14 @@ class FilesView {
   selected() { const all = this.visible(); return all.filter((f) => this.sel.has(f.path)); }
 
   openItem(f) {
-    if (f.isDir) return this.go(f.path);
+    if (f.isDir) return this.go(f.path);   // (going somewhere ends a search)
     shell.openPath(f.path, false);
   }
 
   /* ---------------------------------------------- operations */
   async dropOn(e, dir) {
     e.preventDefault();
+    if (/^(tag|smart):/.test(dir)) return;
     const paths = JSON.parse(e.dataTransfer.getData('text/liquid-paths') || '[]');
     const copy = e.ctrlKey || e.altKey;
     for (const p of paths) {
@@ -449,6 +647,7 @@ class FilesView {
     bus.emit('fs-changed');
   }
   async newFolder() {
+    if (this.virtual || this.searchQ) return;
     const p = await api.fs.mkdir(this.path, 'untitled folder').catch((e) => shell.notify({ app: 'files', title: 'Can’t create folder', body: e.message }));
     if (!p) return;
     await this.refresh(true);
@@ -457,6 +656,7 @@ class FilesView {
     bus.emit('fs-changed');
   }
   async newFile() {
+    if (this.virtual || this.searchQ) return;
     const p = await api.fs.newFile(this.path, 'untitled.txt').catch((e) => shell.notify({ app: 'files', title: 'Can’t create file', body: e.message }));
     if (!p) return;
     await this.refresh(true);
@@ -496,9 +696,13 @@ class FilesView {
     for (const f of sel) { try { this.isTrash ? await api.fs.remove(f.path) : await api.fs.trash(f.path); } catch (e) { shell.notify({ app: 'files', title: 'Can’t move to Trash', body: e.message }); } }
     bus.emit('fs-changed');
   }
+  compressSel(sel = this.selected()) {
+    if (!sel.length) return;
+    wm.open('archive', { compress: sel.map((x) => x.path) });
+  }
   copySel(op) { clipboard = { op, paths: this.selected().map((f) => f.path) }; api.clip.write(clipboard.paths.join('\n')); this.renderItems(); }
   async paste() {
-    if (!clipboard) return;
+    if (!clipboard || this.virtual || this.searchQ) return;
     for (const p of clipboard.paths) {
       try { clipboard.op === 'cut' ? await api.fs.move(p, this.path) : await api.fs.copy(p, this.path); } catch (e) { shell.notify({ app: 'files', title: 'Paste failed', body: e.message }); }
     }
@@ -510,7 +714,8 @@ class FilesView {
     const st = await api.fs.stat(f.path).catch(() => null);
     const icon = f.isDir ? folderIcon(f.name) : docIcon(f.ext);
     const { alertDialog } = await import('../menus.js');
-    alertDialog({ icon, title: f.name, message: `${f.isDir ? 'Folder' : (f.ext || '').toUpperCase() + ' file'}${st && !st.isDir ? ' · ' + fmtSize(st.size) : ''}\nModified ${st ? fmtDate(st.mtime) : '—'}\n${f.path}` }, this.win.el);
+    const tags = tagDb.files[f.path] || [];
+    alertDialog({ icon, title: f.name, message: `${f.isDir ? 'Folder' : (f.ext || '').toUpperCase() + ' file'}${st && !st.isDir ? ' · ' + fmtSize(st.size) : ''}\nModified ${st ? fmtDate(st.mtime) : '—'}${tags.length ? '\nTags: ' + tags.join(', ') : ''}\n${f.path}` }, this.win.el);
   }
   quickLook() {
     const f = this.selected()[0];
@@ -617,21 +822,28 @@ class FilesView {
         { label: 'Preview', action: () => wm.open('preview', { path: f.path }) },
         { label: 'Browser', action: () => wm.open('browser', { url: 'file://' + f.path }) },
         { label: 'System Default App', action: () => api.fs.open(f.path) }] } : { label: 'Open in New Window', action: () => wm.open('files', { path: f.path }) },
+      f.isDir ? { label: 'Open in New Tab', action: () => this.newTab(f.path, true) } : null,
       f.isDir ? { label: 'Open in Terminal', action: () => wm.open('terminal', { cwd: f.path }) } : null,
+      this.searchQ || this.virtual ? { label: 'Show in Enclosing Folder', action: () => this.go(dirname(f.path), { select: f.path }) } : null,
       '-',
       { label: this.isTrash ? 'Delete Immediately' : 'Move to Trash', danger: this.isTrash, action: () => this.trashSel() }, '-',
       { label: 'Get Info', action: () => this.info(f) },
       { label: 'Rename', disabled: many, action: () => this.renameInline(f.path) },
       { label: 'Quick Look', action: () => this.quickLook() },
+      !f.isDir && isArchive(f.path) && !many ? { label: 'Expand', action: () => wm.open('archive', { path: f.path }) } : null,
+      { label: many ? `Compress ${sel.length} Items` : `Compress “${f.name}”`, action: () => this.compressSel(sel) },
       // Share: to your phone (KDE Connect), when one is paired
       sendToPhoneItem(sel.map((x) => x.path), (p) => sel.find((x) => x.path === p)?.isDir, shell.notify), '-',
       { label: 'Copy', action: () => this.copySel('copy') }, { label: 'Cut', action: () => this.copySel('cut') },
       { label: 'Copy Path', action: () => api.clip.write(sel.map((x) => x.path).join('\n')) }, '-',
-      { label: 'Duplicate', action: async () => { for (const x of sel) await api.fs.copy(x.path, this.path).catch(() => {}); bus.emit('fs-changed'); } },
-      { label: 'Make Alias on Desktop', disabled: true },
+      { label: 'Duplicate', action: async () => { for (const x of sel) await api.fs.copy(x.path, dirname(x.path)).catch(() => {}); bus.emit('fs-changed'); } }, '-',
+      // tags: a row of colored dots, like Finder's (click one to put the tag on, or take it off)
+      { grid: tagDb.tags.slice(0, 8).map((t) => { const on = sel.every((x) => (tagDb.files[x.path] || []).includes(t.name)); return { title: (on ? 'Remove ' : 'Add ') + t.name, icon: `<span class="mt-dot${on ? ' on' : ''}" style="--c:${t.color}"></span>`, action: () => api.tags.toggle(sel.map((x) => x.path), t.name, !on) }; }) },
+      { label: 'Tags', submenu: [...tagDb.tags.map((t) => ({ label: t.name, icon: `<span style="display:block;width:10px;height:10px;border-radius:50%;background:${t.color}"></span>`, checked: sel.every((x) => (tagDb.files[x.path] || []).includes(t.name)), action: () => api.tags.toggle(sel.map((x) => x.path), t.name, !sel.every((x) => (tagDb.files[x.path] || []).includes(t.name))) })), '-', { label: 'New Tag…', action: () => this.newTag(sel.map((x) => x.path)) }] },
     ].filter(Boolean));
   }
   bgMenu(e) {
+    if (this.virtual || this.searchQ) return contextMenu(e, [{ label: 'View as Icons', checked: this.view === 'icons', action: () => this.setView('icons') }, { label: 'View as List', checked: this.view === 'list', action: () => this.setView('list') }]);
     contextMenu(e, [
       { label: 'New Folder', action: () => this.newFolder() },
       { label: 'New Text File', action: () => this.newFile() }, '-',
@@ -651,7 +863,9 @@ class FilesView {
       { label: 'New Folder', action: () => this.newFolder() }, { label: 'New Text File', action: () => this.newFile() }, '-',
       { label: 'Show Hidden Files', checked: this.showHidden, action: () => this.toggleHidden() },
       { label: 'Go to Folder…', action: () => this.goTo() },
-      { label: 'Copy Current Path', action: () => api.clip.write(this.path) },
+      { label: 'New Tab', action: () => this.newTab() },
+      { label: 'New Smart Folder', action: () => this.newSmart() },
+      { label: 'Copy Current Path', disabled: !!this.virtual, action: () => api.clip.write(this.path) },
     ], r.left, r.bottom + 6);
   }
 }

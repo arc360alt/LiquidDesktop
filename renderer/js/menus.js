@@ -59,9 +59,10 @@ export function showMenu(items, x, y, { onClose, anchor, minWidth, className } =
     rows.push(row);
     if (it.submenu) {
       row.addEventListener('mouseenter', () => {
-        sub?.close();
-        const r = row.getBoundingClientRect();
-        sub = showSubmenu(it.submenu, r.right + 4, r.top - 5, close);
+        sub?.close(); sub = null;
+        // (not while this menu is fading out: nothing would close that submenu again)
+        if (!el.isConnected || el.classList.contains('closing')) return;
+        sub = showSubmenu(it.submenu, el.getBoundingClientRect(), row.getBoundingClientRect(), close);
       });
     } else {
       row.addEventListener('mouseenter', () => { sub?.close(); sub = null; });
@@ -79,21 +80,25 @@ export function showMenu(items, x, y, { onClose, anchor, minWidth, className } =
   return close;
 }
 
-function showSubmenu(items, x, y, closeParent) {
-  const el = h('div.menu.glass.panel');
+// beside the parent menu: to its right, or to its left when there's no room on the right (never over it); level
+// with the row it came from, moved up as far as it needs to fit, and scrolling when it's taller than the screen
+function showSubmenu(items, parent, rowRect, closeParent) {
+  const el = h('div.menu.glass.panel.menu-sub');
+  el.style.maxHeight = (innerHeight - 12) + 'px';
   const rows = [];
   for (const it of items) {
     if (it === '-') { el.append(h('div.menu-sep')); continue; }
     const row = h('div.menu-item' + (it.disabled ? '.disabled' : ''),
       it.checked !== undefined ? h('span.mi-check', it.checked ? '✓' : '') : null,
-      it.icon ? h('span.mi-icon', { html: it.icon }) : null, h('span', it.label));
+      it.icon ? h('span.mi-icon', { html: it.icon }) : null, h('span', it.label), it.shortcut ? h('span.mi-sc', it.shortcut) : null);
     row.addEventListener('click', (e) => { e.stopPropagation(); if (it.disabled) return; closeParent(); setTimeout(() => it.action?.(), 0); });
     rows.push(row); el.append(row);
   }
   document.body.append(el);
   const r = el.getBoundingClientRect();
-  if (x + r.width > innerWidth - 6) x = x - r.width - 220;
-  if (y + r.height > innerHeight - 6) y = innerHeight - r.height - 6;
+  let x = parent.right + 4, y = rowRect.top - 5;
+  if (x + r.width > innerWidth - 6) x = parent.left - r.width - 4 >= 6 ? parent.left - r.width - 4 : Math.max(6, innerWidth - r.width - 6);
+  if (y + r.height > innerHeight - 6) y = Math.max(6, innerHeight - r.height - 6);
   el.style.left = x + 'px'; el.style.top = y + 'px';
   return { close: () => el.remove(), handles: () => false };
 }

@@ -850,8 +850,9 @@ function register({ getWindow, mode }) {
   h('fs:write', (p, data) => fsp.writeFile(p, data, 'utf8').then(() => true));
   h('fs:mkdir', async (dir, name) => { const p = await uniquePath(dir, name || 'untitled folder'); await fsp.mkdir(p); return p; });
   h('fs:newFile', async (dir, name) => { const p = await uniquePath(dir, name || 'untitled.txt'); await fsp.writeFile(p, ''); return p; });
-  h('fs:rename', async (p, name) => { const dest = path.join(path.dirname(p), name); if (fs.existsSync(dest)) throw new Error('Name already in use'); await fsp.rename(p, dest); return dest; });
-  h('fs:move', async (p, dir) => { const dest = await uniquePath(dir, path.basename(p)); await fsp.rename(p, dest); return dest; });
+  // (tags in Files go along with a renamed or moved file: main/finder.js)
+  h('fs:rename', async (p, name) => { const dest = path.join(path.dirname(p), name); if (fs.existsSync(dest)) throw new Error('Name already in use'); await fsp.rename(p, dest); require('./finder').moved(p, dest); return dest; });
+  h('fs:move', async (p, dir) => { const dest = await uniquePath(dir, path.basename(p)); await fsp.rename(p, dest); require('./finder').moved(p, dest); return dest; });
   h('fs:copy', async (p, dir) => { const dest = await uniquePath(dir, path.basename(p)); await fsp.cp(p, dest, { recursive: true }); return dest; });
   h('fs:trash', trash);
   h('fs:remove', async (p) => { if (!p || p === '/' || p === HOME) throw new Error('Refusing to delete ' + p); await fsp.rm(p, { recursive: true, force: true }); return true; });

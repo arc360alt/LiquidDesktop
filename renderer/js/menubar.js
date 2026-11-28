@@ -10,7 +10,7 @@ import { catalog } from './catalog.js';
 import { api } from './sys.js';
 import { isSession, session as S } from './layer.js';
 import { recordingIndicator } from './recording.js';
-import { ITEMS as MB_ITEMS, menubarOrder, editMenubar, editingMenubar, dragMenubarItem } from './menubaritems.js';
+import { itemDef, menubarOrder, editMenubar, editingMenubar, dragMenubarItem } from './menubaritems.js';
 import { HALVES, QUARTERS, ARRANGE, layoutIcon } from './tiling.js';
 
 let bar, appArea, statusArea, clockEl, battEl, wifiEl, openTitle = null, openEditorRef = null;
@@ -260,9 +260,9 @@ export function initMenubar() {
   const drawItems = () => {
     const kids = [recEl];
     for (const id of menubarOrder()) {
-      const def = MB_ITEMS[id];
+      const def = itemDef(id);
       let el = null;
-      try { el = def.own ? own[id] : def.build(ctx); } catch (e) { console.error('[menubar]', id, e); }
+      try { el = def.own ? own[id] : def.build(ctx, id); } catch (e) { console.error('[menubar]', id, e); }
       if (!el) continue;
       el.dataset.mb = id;
       kids.push(el);
@@ -278,8 +278,11 @@ export function initMenubar() {
     e.stopPropagation(); e.preventDefault();
     if (t === 'mousedown' && it && e.button === 0) dragMenubarItem(it, e, drawItems);
   }, true);
-  const openEditor = () => editMenubar(drawItems);
+  // the gallery's previews: a copy of one of menubar.js's own items, or a fresh one of the others (kept live)
+  const preview = (id) => { const def = itemDef(id); return def.own ? own[id]?.cloneNode(true) : def.build(ctx, id); };
+  const openEditor = () => editMenubar(drawItems, preview);
   openEditorRef = openEditor;
+  statusArea.addEventListener('mb-edit', openEditor);   // an item's own right-click menu › Edit Menu Bar…
   statusArea.addEventListener('contextmenu', (e) => {
     if (e.defaultPrevented) return;   // a background app's own menu
     e.preventDefault();

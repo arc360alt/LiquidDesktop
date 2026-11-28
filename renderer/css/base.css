@@ -325,3 +325,21 @@ select option, select optgroup { background: var(--win-bg); color: var(--text); 
 .pd-status { font-size: 11.5px; color: var(--text-2); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pd-box input.field { margin: 0; width: auto; }
 .pd-box .pd-row input.field[placeholder] { width: 100px !important; }
+
+/* ---------------------------------------------------------------- Accessibility (Settings › Accessibility) */
+/* Reduce motion: things appear where they go instead of sliding, zooming or bouncing there */
+:root[data-reduce-motion='true'] *:not(.spinner), :root[data-reduce-motion='true'] *::before, :root[data-reduce-motion='true'] *::after {
+  animation-duration: 0.01ms !important; animation-delay: 0s !important; animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important; transition-delay: 0s !important; scroll-behavior: auto !important;
+}
+/* Increase contrast: more solid surfaces, visible edges, stronger secondary text and separators */
+:root[data-increase-contrast='true'] { --glass-a: 0.9; --panel-a: 0.94; --sidebar-a: 0.94; --win-alpha: 0.97; --separator: rgba(0, 0, 0, 0.45); --text-2: rgba(0, 0, 0, 0.78); --text-3: rgba(0, 0, 0, 0.6); }
+:root[data-increase-contrast='true'][data-theme='dark'] { --separator: rgba(255, 255, 255, 0.5); --text-2: rgba(255, 255, 255, 0.82); --text-3: rgba(255, 255, 255, 0.65); }
+:root[data-increase-contrast='true'] :is(.glass, .panel, .group, .sidebar, .tb-group, .btn, .field, .segmented, .menu, .alert, .win) { box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55) !important; }
+:root[data-increase-contrast='true'][data-theme='dark'] :is(.glass, .panel, .group, .sidebar, .tb-group, .btn, .field, .segmented, .menu, .alert, .win) { box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.6) !important; }
+:root[data-increase-contrast='true'] :focus-visible { outline: 3px solid var(--accent) !important; outline-offset: 1px; }
+/* Zoom: the magnifying lens (shell) */
+#zoom-lens { position: fixed; z-index: 99990; pointer-events: none; border-radius: 18px; overflow: hidden; background: #000;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.5), 0 0 0 2.5px rgba(0, 0, 0, 0.35), 0 12px 40px rgba(0, 0, 0, 0.45); }
+#zoom-lens canvas { display: block; width: 100%; height: 100%; }
+#zoom-lens .zl-badge { position: absolute; right: 10px; bottom: 8px; font: 600 11px var(--font, sans-serif); color: #fff; background: rgba(0, 0, 0, 0.5); padding: 2px 7px; border-radius: 999px; }

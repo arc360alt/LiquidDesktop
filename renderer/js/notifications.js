@@ -3,7 +3,7 @@ import { h, $, bus, timeAgo } from './util.js';
 import { appIcon, sym } from './icons.js';
 import { api } from './sys.js';
 import { store } from './store.js';
-import { buildWidget, WIDGETS, SIZE_GROUPS, sizeItems, isOtherSize } from './widgets.js';
+import { buildWidget, WIDGETS, SIZE_GROUPS, sizeItems, isOtherSize, widgetItems } from './widgets.js';
 import { showMenu } from './menus.js';
 import { customWidgets } from './customwidget.js';
 import { catalog } from './catalog.js';
@@ -41,7 +41,7 @@ export function notify(n) {
   history.unshift(n);
   if (history.length > 50) history.pop();
   bus.emit('notifications');
-  if (store.get('dnd')) return;
+  if (store.get('dnd') && !n.urgent) return;   // alarms and timers still come through Focus, like a Mac's
   const host = $('#toasts');
   const t = card(n, 'toast', (how) => dismiss(how));
   const dismiss = (how) => {
@@ -80,7 +80,8 @@ function renderNC() {
     }
     // right-click › Size (widgets that come in two sizes)
     const sz = sizeItems(type, (t) => { store.set('ncWidgets', ncList().map((x, j) => (j === i ? t : x))); renderNC(); });
-    if (sz.length) el.addEventListener('contextmenu', (e) => { e.preventDefault(); e.stopPropagation(); showMenu(sz.slice(0, -1), e.clientX, e.clientY); });
+    const own = [...sz, ...widgetItems(type)].slice(0, -1);
+    if (own.length) el.addEventListener('contextmenu', (e) => { e.preventDefault(); e.stopPropagation(); showMenu(own, e.clientX, e.clientY); });
     grid.append(el);
   });
   nc.append(grid);

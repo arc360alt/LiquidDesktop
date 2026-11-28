@@ -21,6 +21,7 @@ const PANES = [
   ['energy', 'Battery', '#34c759', sym.bolt], ['sound', 'Sound', '#ff2d55', sym.speaker], ['network', 'Wi-Fi', '#0a84ff', sym.wifi], ['vpn', 'VPN', '#0a84ff', sym.vpn], ['bluetooth', 'Bluetooth', '#0a84ff', sym.bluetooth],
   ['phone', 'Phone', '#30d158', PHONE_ICONS.phone],
   ['notifications', 'Notifications', '#ff3b30', sym.bell], ['focus', 'Focus', '#5e5ce6', sym.moon], ['screentime', 'Screen Time', '#5e5ce6', sym.hourglass], ['lock', 'Lock Screen', '#1c1c1e', sym.lock],
+  ['accessibility', 'Accessibility', '#0a84ff', '<svg class="sym" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="4.6" r="1.9" fill="currentColor" stroke="none"/><path d="M4.5 8.2c2.6.9 5 1.3 7.5 1.3s4.9-.4 7.5-1.3M12 9.5v4.3M12 13.8l-3 6.4M12 13.8l3 6.4"/></svg>'], ['timemachine', 'Time Machine', '#30a46c', '<svg class="sym" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M5.6 7.6A8 8 0 1 1 4 12"/><path d="M3.2 6.6 5.6 7.8l.7-2.6"/><path d="M12 8v4.3l2.8 1.7"/></svg>'],
   ['mouse', 'Mouse & Trackpad', '#8e8e93', '<svg class="sym" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="6" y="3" width="12" height="18" rx="6"/><path d="M12 3v6"/></svg>'], ['keyboard', 'Keyboard', '#8e8e93', sym.keyboard], ['printers', 'Printers & Scanners', '#8e8e93', sym.printer], ['terminal', 'Terminal', '#1c1c1e', sym.terminal], ['apps', 'Apps', '#5e5ce6', sym.grid],
   ['android', 'Android', '#30c06b', '<svg class="sym" viewBox="0 0 24 24" fill="currentColor"><path d="M5.5 11a6.5 6.5 0 0 1 13 0z"/><rect x="5.5" y="12" width="13" height="8" rx="2"/><path d="M8.6 5.6 7.2 3.5M15.4 5.6l1.4-2.1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><circle cx="9.4" cy="8.6" r="1" fill="#30c06b"/><circle cx="14.6" cy="8.6" r="1" fill="#30c06b"/></svg>'],
   ['account', 'Users & Accounts', '#0a84ff', sym.user],
@@ -72,6 +73,8 @@ const render = {
   screentime: () => import('./settings-screentime.js').then((m) => m.screenTimePane(paneCtx())),
   printers: () => import('./settings-printers.js').then((m) => m.printersPane(paneCtx())),
   vpn: () => import('./settings-vpn.js').then((m) => m.vpnPane(paneCtx())),
+  accessibility: () => import('./settings-accessibility.js').then((m) => m.accessibilityPane(paneCtx())),
+  timemachine: () => import('./settings-timemachine.js').then((m) => m.timeMachinePane(paneCtx())),
   async general() {
     const i = await api.sys.info().catch(() => ({}));
     return [
@@ -1065,25 +1068,29 @@ function softwareUpdateGroup() {
 }
 /* ------------------------------------------------------------------ Menu Bar items (menubaritems.js) */
 async function menubarItemsGroup() {
-  const { ITEMS, menubarOrder } = await import('../menubaritems.js');
+  const { ITEMS, menubarOrder, itemDef, itemName, addId, withItem } = await import('../menubaritems.js');
   const shown = menubarOrder();
   const set = (list) => { store.set('menubarItems', list); rerender(); };
-  const move = (id, d) => { const l = [...shown]; const i = l.indexOf(id), j = i + d; if (j < 0 || j >= l.length || ITEMS[l[j]].fixed) return; [l[i], l[j]] = [l[j], l[i]]; set(l); };
-  const rowFor = (id) => {
-    const it = ITEMS[id], on = shown.includes(id);
-    return h('div.row.mbi-row', h('span.mbi-ic', { html: it.icon || sym.grid }), h('div.label', it.name, it.about ? h('small', it.about) : null),
+  const move = (id, d) => { const l = [...shown]; const i = l.indexOf(id), j = i + d; if (j < 0 || j >= l.length || itemDef(l[j]).fixed) return; [l[i], l[j]] = [l[j], l[i]]; set(l); };
+  // an item shown, or (More Items) one that can be added — again, for one that can be added more than once
+  const rowFor = (id, on) => {
+    const it = itemDef(id);
+    return h('div.row.mbi-row', h('span.mbi-ic', { html: it.icon || sym.grid }), h('div.label', on ? itemName(id) : it.name, (on && it.detail?.(id)) || it.about ? h('small', (on && it.detail?.(id)) || it.about) : null),
       on && !it.fixed ? h('div.mbi-move', h('button.tb-btn', { title: 'Move left', html: sym.chevronLeft, onclick: () => move(id, -1) }), h('button.tb-btn', { title: 'Move right', html: sym.chevronRight, onclick: () => move(id, 1) })) : null,
-      it.fixed ? h('span.muted', { style: { fontSize: '11.5px' } }, 'Always shown') : h('label.toggle', h('input', { type: 'checkbox', checked: on, onchange: (e) => {
-        set(e.target.checked ? [...shown.filter((x) => !ITEMS[x].fixed), id, ...shown.filter((x) => ITEMS[x].fixed)] : shown.filter((x) => x !== id));
-      } }), h('span')));
+      it.fixed ? h('span.muted', { style: { fontSize: '11.5px' } }, 'Always shown')
+        : !on && shown.includes(id) ? h('button.btn', { onclick: () => set(withItem(shown, addId(id, shown))) }, 'Add Another')
+        : h('label.toggle', h('input', { type: 'checkbox', checked: on, onchange: (e) => {
+          if (!e.target.checked && id.startsWith('temperature')) import('../temps.js').then((t) => t.setGaugeSensor(id, null));
+          set(e.target.checked ? withItem(shown, id) : shown.filter((x) => x !== id));
+        } }), h('span')));
   };
   const edit = () => (isSession ? api.session.send('shell:editMenubar') : import('../menubar.js').then((m) => m.openMenubarEditor()));
   return [h('div.group-title', 'Menu Bar Items'),
-    h('div.group', ...shown.map(rowFor),
+    h('div.group', ...shown.map((id) => rowFor(id, true)),
       row(h('small.muted', 'Or right-click the menu bar › Edit Menu Bar… and drag them into place.'), h('div', { style: { display: 'flex', gap: '6px' } },
         h('button.btn', { onclick: () => set(null) }, 'Reset'), h('button.btn', { onclick: edit }, 'Edit Menu Bar…')))),
     h('div.group-title', 'More Items'),
-    h('div.group', ...Object.keys(ITEMS).filter((id) => !shown.includes(id)).map(rowFor))];
+    h('div.group', ...Object.keys(ITEMS).filter((id) => addId(id, shown)).map((id) => rowFor(id, false)))];
 }
 
 /* ------------------------------------------------------------------ Login Items (main/autostart.js) */

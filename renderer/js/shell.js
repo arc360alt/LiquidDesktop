@@ -1,6 +1,6 @@
 // Shell services shared by every component: lock screen, power, screenshots, opening files, shortcuts.
 import { h, $, bus, sleep, isCmd, extOf } from './util.js';
-import { sym, logo, appIcon, appIconSVG, IMAGE_EXT, VIDEO_EXT, AUDIO_EXT, TEXT_EXT } from './icons.js';
+import { sym, logo, appIcon, appIconSVG, IMAGE_EXT, VIDEO_EXT, AUDIO_EXT, TEXT_EXT, isArchive } from './icons.js';
 import { api, isNative } from './sys.js';
 import { store } from './store.js';
 import { wm } from './wm.js';
@@ -48,6 +48,12 @@ export const shell = {
       if (pick) return api.apps.openWith(pick, [path]).catch(() => api.fs.open(path));
     }
     if (isDir) return wm.open('files', { path });
+    // archives: Archive Utility expands them next to themselves (a picked default app, above, still wins)
+    if (isArchive(path)) {
+      const pick = (await api.defaults?.get?.().catch(() => ({})))?.archives;
+      if (pick) return api.apps.openWith(pick, [path]).catch(() => api.fs.open(path));
+      return wm.open('archive', { path });
+    }
     if (cat === 'images' || cat === 'video' || cat === 'audio') return wm.open('preview', { path });
     if (cat === 'text') return wm.open('texteditor', { path });
     if (cat === 'web' || cat === 'pdf') return wm.open('browser', { url: 'file://' + path });
@@ -279,6 +285,7 @@ export function initSessionShell({ windowMenu }) {
       case 'switcher-commit': return switcherCommit();
       case 'switcher-cancel': return switcherCancel();
       case 'quit': { const w = wm.windows.find((x) => x.id === arg); if (w) wm.quitApp(w.app.id); return; }
+      case 'zoom-toggle': case 'zoom-in': case 'zoom-out': return import('./a11y.js').then((m) => m.zoomKey(name));
       default: mediaKey(name);
     }
   });

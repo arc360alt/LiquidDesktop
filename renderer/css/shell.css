@@ -1129,3 +1129,91 @@
 .mb-edit-foot { display: flex; align-items: center; gap: 8px; padding: 10px 14px 14px; border-top: 0.5px solid rgba(128, 128, 128, 0.3); margin-top: 6px; }
 /* the lists scroll between the head and the foot */
 .mb-edit-panel { overflow-y: auto; scrollbar-width: none; }
+
+/* Temperature widgets (widgets.js) and menu bar item */
+.w-tp { gap: 6px; }
+.w-tp-head { display: flex; align-items: center; gap: 5px; }
+.w-tp-ic { width: 15px; height: 15px; display: flex; color: #ff9f0a; }
+.w-tp-ic svg { width: 100%; height: 100%; }
+.w-tp-extra { font-size: 11px; opacity: 0.65; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.w-tp-body { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 0; }
+.w-tp-row { display: flex; justify-content: space-around; align-items: flex-start; width: 100%; }
+.w-tp-cell { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 0; width: 25%; }
+.w-tp-cell small { font-size: 11px; font-weight: 600; opacity: 0.7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.w-tp-gauge { position: relative; display: flex; align-items: center; justify-content: center; }
+.w-tp-svg, .w-tp-svg svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.w-tp-gauge b { position: relative; font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; transition: color 0.6s; }
+.w-tp-cell.big { width: auto; margin-top: -4px; }
+.w-tp-cell.big b { font-size: 22px; }
+.w-tp-cell.big small { margin-top: -16px; font-size: 11.5px; }
+.w-tp-chips { display: flex; gap: 10px; justify-content: center; width: 100%; margin-top: 2px; }
+.w-tp-chip { display: flex; align-items: center; gap: 4px; font-size: 11px; opacity: 0.85; white-space: nowrap; }
+.w-tp-chip i { width: 6px; height: 6px; border-radius: 50%; flex: none; }
+.w-tp-chip b { font-weight: 700; font-variant-numeric: tabular-nums; }
+.w-tp-none { font-size: 12px; opacity: 0.7; text-align: center; }
+.mb-item.mb-warm { color: #ff9f0a; }
+.mb-item.mb-hot { color: #ff453a; }
+.menu.menu-sub { overflow-y: auto; }
+
+/* Edit Menu Bar: the gallery (menubaritems.js), like Control Center's and the desktop's */
+.mb-gallery {
+  position: fixed; top: calc(var(--menubar-h) + 8px); left: 0; right: 0; margin: 0 auto; width: min(920px, calc(100vw - 32px));
+  max-height: min(660px, calc(100vh - var(--menubar-h) - 120px)); z-index: 15500; border-radius: 28px; padding: 16px 18px 18px;
+  display: flex; flex-direction: column; gap: 8px; color: var(--on-glass); animation: ccIn 0.35s var(--spring); transform-origin: top center;
+}
+.mb-gallery.closing { animation: ccOut 0.2s ease forwards; }
+.mbg-top { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.mbg-title { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 220px; }
+.mbg-title b { font-size: 16px; }
+.mbg-title small { font-size: 11.5px; color: var(--on-glass-2); }
+.mbg-actions { display: flex; gap: 8px; }
+.mbg-sec { font-size: 11.5px; font-weight: 600; color: var(--on-glass-2); margin-top: 4px; }
+.mbg-sec-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.mbg-sec-row .wg-tabs { display: flex; gap: 2px; padding: 3px; border-radius: 12px; background: rgba(120, 120, 128, 0.18); flex-wrap: wrap; color: var(--on-glass); }
+.mbg-sec-row .wg-tabs button { border: 0; background: none; color: inherit; font: inherit; font-size: 12px; font-weight: 600; padding: 4px 11px; border-radius: 9px; }
+.mbg-sec-row .wg-tabs button.on { background: rgba(255, 255, 255, 0.85); color: #1c1c1e; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18); }
+/* a little menu bar: what's in yours now */
+.mbg-strip, .mbg-prev {
+  background: linear-gradient(120deg, #2b4f86, #4b5fa8 45%, #7b5ea7); color: #fff; text-shadow: 0 0 12px rgba(0, 0, 0, 0.25);
+  box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.25);
+}
+.mbg-strip { display: flex; align-items: center; justify-content: flex-end; gap: 4px; padding: 9px 12px 7px; border-radius: 14px; overflow-x: auto; scrollbar-width: none; min-height: 44px; }
+.mbg-chip { position: relative; flex: none; border-radius: 8px; cursor: var(--cur-grab, grab); transition: opacity 0.2s, transform 0.2s var(--ease); }
+.mbg-chip:hover { background: rgba(255, 255, 255, 0.14); }
+.mbg-chip.fixed { cursor: default; opacity: 0.7; }
+.mbg-chip.fixed:hover { background: none; }
+.mbg-chip-in { pointer-events: none; display: flex; }
+.mbg-chip-in > *, .mbg-prev > * { pointer-events: none; }
+.mbg-rm { position: absolute; top: -7px; left: -7px; width: 17px; height: 17px; border-radius: 50%; border: 0; padding: 0; background: #ff3b30; color: #fff;
+  display: flex; align-items: center; justify-content: center; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3); opacity: 0; transform: scale(0.6); transition: opacity 0.15s, transform 0.2s var(--spring); z-index: 2; }
+.mbg-rm svg { width: 10px; height: 10px; }
+.mbg-strip:hover .mbg-rm, .mbg-chip:hover .mbg-rm { opacity: 1; transform: none; }
+.mbg-chip.leaving { opacity: 0; transform: scale(0.4); }
+/* every item you can add */
+.mbg-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; overflow-y: auto; padding: 6px 4px 4px; min-height: 120px; scrollbar-width: thin; }
+.mbg-card { position: relative; display: flex; flex-direction: column; gap: 3px; padding: 8px 8px 10px; border-radius: 18px; background: rgba(128, 128, 128, 0.1);
+  cursor: var(--cur-pointer, pointer); transition: transform 0.25s var(--spring), background 0.15s, opacity 0.2s; }
+.mbg-card:hover { background: rgba(128, 128, 128, 0.18); transform: translateY(-2px); }
+.mbg-card:active { transform: scale(0.97); }
+.mbg-card.adding { transform: scale(0.9) translateY(-8px); opacity: 0.4; }
+.mbg-card.added { opacity: 0.6; }
+.mbg-card.added:hover { opacity: 0.85; }
+.mbg-prev { height: 46px; border-radius: 12px; display: flex; align-items: center; justify-content: center; overflow: hidden; margin-bottom: 4px; }
+.mbg-prev > * { transform: scale(1.2); }
+.mbg-badge { position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #34c759; color: #fff; display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25); transition: transform 0.2s var(--spring); }
+.mbg-badge svg { width: 11px; height: 11px; }
+.mbg-card:hover .mbg-badge { transform: scale(1.12); }
+.mbg-card.added .mbg-badge { background: var(--accent); }
+.mbg-name { font-size: 12.5px; font-weight: 600; display: flex; align-items: baseline; gap: 6px; padding: 0 2px; }
+.mbg-more { font-size: 10.5px; font-weight: 500; color: var(--accent); }
+.mbg-about { font-size: 11px; color: var(--on-glass-2); line-height: 1.3; padding: 0 2px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+/* dragging (the menu bar and the strip): it lifts and follows the pointer; the others slide aside */
+#mb-status .mb-dragging, .mbg-strip .mb-dragging { position: relative; z-index: 3; animation: none !important; background: rgba(255, 255, 255, 0.3) !important;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3), inset 0 0 0 1px rgba(255, 255, 255, 0.5) !important; cursor: var(--cur-grabbing, grabbing); }
+#mb-status.mb-editing > [data-mb] { transition: background 0.15s; }
+#mb-status .mb-pop { animation: mbPop 0.5s var(--spring) !important; }
+@keyframes mbPop { from { transform: scale(0.2); opacity: 0; } 60% { transform: scale(1.15); opacity: 1; } }
+.mbg-prev > *, .mbg-chip-in > * { max-width: 80%; overflow: hidden; }
+.mbg-prev small, .mbg-chip-in small { overflow: hidden; text-overflow: ellipsis; }
+.mbg-chip-in > * { max-width: 220px; }

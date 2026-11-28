@@ -27,6 +27,9 @@ export function applyTheme() {
   root.dataset.glass = store.get('glass');
   root.dataset.refraction = String(store.get('refraction'));
   root.dataset.reduceTransparency = String(store.get('reduceTransparency'));
+  // Accessibility: Reduce motion (no sliding and zooming), Increase contrast (darker edges, more solid surfaces)
+  root.dataset.reduceMotion = String(!!store.get('reduceMotion'));
+  root.dataset.increaseContrast = String(!!store.get('increaseContrast'));
   root.dataset.iconStyle = store.get('iconStyle');
   const a = store.get('accent');
   root.style.setProperty('--accent', a);
@@ -188,7 +191,7 @@ function watchLenses() {
 export function initTheme() {
   applyTheme();
   store.on('change', (k) => {
-    if (['theme', 'accent', 'glass', 'refraction', 'reduceTransparency', 'iconStyle', 'nightShift', 'wallpaper', 'customWallpaper', 'dynamicWallpaper'].includes(k)) applyTheme();
+    if (['theme', 'accent', 'glass', 'refraction', 'reduceTransparency', 'reduceMotion', 'increaseContrast', 'iconStyle', 'nightShift', 'wallpaper', 'customWallpaper', 'dynamicWallpaper'].includes(k)) applyTheme();
     if (k === 'cursorTheme' || k === 'cursorSize') applyCursors();
     if (['iconStyle', 'accent', 'uniformIcons'].includes(k)) bus.emit('icons-changed');
   });

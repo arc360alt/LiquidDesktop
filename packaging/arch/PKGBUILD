@@ -13,7 +13,7 @@
 
 pkgname=liquid-desktop-git
 _name=liquid-desktop
-pkgver=0.3.0
+pkgver=0.4.0
 pkgrel=1
 pkgdesc='A Liquid Glass desktop environment written in JavaScript (Electron UI, X11 window manager, picom compositor)'
 arch=('any')
@@ -61,6 +61,14 @@ optdepends=(
   'mesa-utils: GPU detection for the nested session'
   'xfce4-terminal: a native terminal for Linux apps that need one'
   'flatpak: install apps from Flathub in the App Store'
+  'libarchive: Archive Utility (bsdtar: expanding and compressing archives)'
+  'tesseract-data-eng: Live Text — selecting text in pictures (Preview can install it)'
+  'ffmpeg: Music'\''s song details and artwork, Photos'\'' video thumbnails'
+  'orca: the screen reader (Settings › Accessibility can install it)'
+  'snapper: Time Machine'\''s local snapshots on Btrfs (Settings › Time Machine can install it)'
+  'udisks2: Time Machine opening the backup disk'
+  'ripgrep: searching inside files when there'\''s no search index (Baloo, localsearch or Recoll)'
+  'systemd: Console'\''s logs and crash reports (journalctl, coredumpctl)'
   'pacman-contrib: check for Arch Linux updates in the App Store (checkupdates)'
   'archlinux-appstream-data: names, icons and descriptions for Arch Linux apps in the App Store'
   'sddm: the LiquidDesktop login screen (installed and selected automatically)'

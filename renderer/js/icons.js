@@ -211,6 +211,46 @@ const APP_ICONS = {
       <circle cx="50" cy="74" r="2.4" fill="${c.ac}"/>
       <path d="M26 38a20 20 0 0 0 0 24M74 38a20 20 0 0 1 0 24" stroke="${c.ac2}" stroke-width="4" fill="none" stroke-linecap="round"/>
       <path d="M18 31a30 30 0 0 0 0 38M82 31a30 30 0 0 1 0 38" stroke="${c.ac2}" stroke-width="4" fill="none" stroke-linecap="round" opacity=".6"/>` },
+  // Time Machine: a clock face with a turning-back arrow around it
+  timemachine: { bg: ['#4f9d6e', '#1f5a3c'], tone: '#30d158', c: { fg: '#fff', ac: '#a4f0c0', ac2: '#1f5a3c', paper: '#fff', ink: '#1f5a3c' },
+    draw: (c) => `<path d="M27 32.5A29 29 0 1 1 21 50" stroke="${c.fg}" stroke-width="5.5" fill="none" stroke-linecap="round"/>
+      <path d="M14.5 27.5 27 33l2.8-13.4" stroke="${c.fg}" stroke-width="5.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="50" cy="50" r="19" fill="${c.ac}" opacity=".35"/>
+      <path d="M50 36v15l9.5 6" stroke="${c.fg}" stroke-width="5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>` },
+  // Archive Utility: a box with a zipper
+  archive: { bg: ['#d9d9de', '#9b9ba3'], tone: '#8e8e93', c: { fg: '#fff', ac: '#c9a26b', ac2: '#8a6a3e', paper: '#f4ead9', ink: '#5c4528' },
+    draw: (c) => `<path d="M20 38h60v34a7 7 0 0 1-7 7H27a7 7 0 0 1-7-7z" fill="${c.ac}"/>
+      <path d="M16 28a5 5 0 0 1 5-5h58a5 5 0 0 1 5 5v8a3 3 0 0 1-3 3H19a3 3 0 0 1-3-3z" fill="${c.paper}"/>
+      <g fill="${c.ink}"><rect x="47" y="23" width="6" height="4" rx="1"/><rect x="47" y="31" width="6" height="4" rx="1"/><rect x="47" y="41" width="6" height="4" rx="1"/><rect x="47" y="49" width="6" height="4" rx="1"/></g>
+      <g fill="${c.ac2}"><rect x="47" y="27" width="6" height="4" rx="1"/><rect x="47" y="45" width="6" height="4" rx="1"/></g>
+      <rect x="44.5" y="54" width="11" height="13" rx="3" fill="${c.ink}"/><circle cx="50" cy="63" r="2" fill="${c.paper}"/>` },
+  // Photos: a flower of overlapping colored petals
+  photos: { bg: ['#ffffff', '#f1f1f4'], tone: '#ff9f0a', paper: true, c: { fg: '#fff', ac: '#ff9f0a', paper: '#fff', ink: '#c7c7cc' },
+    draw: () => {
+      const cols = ['#ffb000', '#ff7a00', '#ff3b5c', '#c254e8', '#6a5cff', '#2b9bff', '#26c281', '#a5d531'];
+      return cols.map((col, i) => `<ellipse cx="50" cy="31" rx="10.5" ry="17" fill="${col}" opacity=".82" style="mix-blend-mode:multiply" transform="rotate(${i * 45} 50 50)"/>`).join('');
+    } },
+  // Music: a note on a red-pink gradient
+  music: { bg: ['#ff6b81', '#fa233b'], tone: '#ff375f', c: { fg: '#fff', ac: '#ffd6dd', ac2: '#fa233b', paper: '#fff', ink: '#fa233b' },
+    draw: (c) => `<path d="M41 27.5 69 21v37.5" stroke="${c.fg}" stroke-width="5.5" fill="none" stroke-linejoin="round"/>
+      <path d="M41 27.5V67" stroke="${c.fg}" stroke-width="5.5"/>
+      <ellipse cx="33" cy="68" rx="9.5" ry="7.5" fill="${c.fg}" transform="rotate(-18 33 68)"/>
+      <ellipse cx="61" cy="60.5" rx="9.5" ry="7.5" fill="${c.fg}" transform="rotate(-18 61 60.5)"/>` },
+  // Clock: a clock face (the hands show the time it was drawn)
+  clock: { bg: ['#3a3a40', '#111114'], tone: '#ff9f0a', c: { fg: '#fff', ac: '#ff9f0a', paper: '#fff', ink: '#1c1c1e' },
+    draw: (c) => { const d = new Date(); const ha = ((d.getHours() % 12) + d.getMinutes() / 60) * 30, ma = d.getMinutes() * 6;
+      const ticks = Array.from({ length: 12 }, (_, i) => `<path d="M50 ${i % 3 ? 22 : 20.5}v${i % 3 ? 3.5 : 5.5}" stroke="${c.ink}" stroke-width="${i % 3 ? 1.6 : 2.6}" stroke-linecap="round" transform="rotate(${i * 30} 50 50)"/>`).join('');
+      return `<circle cx="50" cy="50" r="32" fill="${c.paper}"/>${ticks}
+      <path d="M50 50V35" stroke="${c.ink}" stroke-width="4" stroke-linecap="round" transform="rotate(${ha} 50 50)"/>
+      <path d="M50 50V26" stroke="${c.ink}" stroke-width="3" stroke-linecap="round" transform="rotate(${ma} 50 50)"/>
+      <path d="M50 55V24" stroke="${c.ac}" stroke-width="1.4" stroke-linecap="round" transform="rotate(${ma + 140} 50 50)"/>
+      <circle cx="50" cy="50" r="2.6" fill="${c.ac}"/>`; } },
+  // Console: a log sheet with a warning line
+  console: { bg: ['#4a4a52', '#1f1f24'], tone: '#ffd60a', c: { fg: '#fff', ac: '#ffd60a', ac2: '#ff453a', paper: '#2c2c32', ink: '#fff' },
+    draw: (c) => `<rect x="20" y="18" width="60" height="64" rx="8" fill="${c.paper}" stroke="${c.fg}" stroke-opacity=".25" stroke-width="1.5"/>
+      <g stroke-width="3.2" stroke-linecap="round"><path d="M29 31h30" stroke="${c.ink}" opacity=".7"/><path d="M29 41h40" stroke="${c.ink}" opacity=".5"/>
+      <path d="M29 51h24" stroke="${c.ac}"/><path d="M29 61h36" stroke="${c.ink}" opacity=".5"/><path d="M29 71h18" stroke="${c.ac2}"/></g>
+      <path d="M66 46.5 73 59H59z" fill="${c.ac}"/><path d="M66 51v3.2" stroke="${c.paper}" stroke-width="1.8" stroke-linecap="round"/>` },
   weather: { bg: ['#5ab8ff', '#1f63e0'], tone: '#4aa8ff', c: { fg: '#fff', ac: '#ffd60a', ac2: '#ffb000', paper: '#fff', ink: '#fff' },
     draw: (c) => `<circle cx="40" cy="40" r="15" fill="${c.ac}"/>
       <path d="M36 74h32a12 12 0 0 0 1.5-23.9A15 15 0 0 0 41 53.6 10.3 10.3 0 0 0 36 74z" fill="${c.fg}" opacity=".97"/>` },
@@ -363,5 +403,8 @@ export function docIcon(ext) {
 }
 export const IMAGE_EXT = new Set(['png', 'jpg', 'jpeg', 'jfif', 'pjpeg', 'gif', 'webp', 'svg', 'bmp', 'ico', 'cur', 'avif', 'apng']);
 export const VIDEO_EXT = new Set(['mp4', 'm4v', 'webm', 'mkv', 'mov', 'ogv', '3gp']);
+// archives Archive Utility expands (bsdtar reads them), and single compressed files
+export const ARCHIVE_EXT = new Set(['zip', 'tar', 'tgz', 'txz', 'tbz', 'tbz2', 'tzst', 'gz', 'xz', 'bz2', 'zst', 'lz4', 'lzma', '7z', 'rar', 'iso', 'cpio', 'xar', 'cab', 'lha', 'lzh', 'jar']);
+export const isArchive = (p) => ARCHIVE_EXT.has(String(p).split('.').pop().toLowerCase()) && !/\.(svgz)$/i.test(p);
 export const AUDIO_EXT = new Set(['mp3', 'ogg', 'oga', 'opus', 'flac', 'wav', 'm4a', 'aac', 'weba']);
 export const TEXT_EXT = new Set(['txt', 'md', 'js', 'mjs', 'cjs', 'ts', 'tsx', 'jsx', 'json', 'py', 'sh', 'bash', 'zsh', 'rs', 'go', 'c', 'h', 'cpp', 'hpp', 'java', 'css', 'html', 'xml', 'yml', 'yaml', 'toml', 'ini', 'conf', 'cfg', 'log', 'csv', 'lua', 'rb', 'php', 'sql', 'desktop', 'env', 'gitignore', '']);

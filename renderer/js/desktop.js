@@ -5,7 +5,7 @@ import { store } from './store.js';
 import { api } from './sys.js';
 import { contextMenu, prompt } from './menus.js';
 import { wm } from './wm.js';
-import { buildWidget, WIDGETS, widgetDef, CATEGORIES, SIZE_PX, SIZE_GROUPS, sizeItems, isOtherSize } from './widgets.js';
+import { buildWidget, WIDGETS, widgetDef, CATEGORIES, SIZE_PX, SIZE_GROUPS, sizeItems, isOtherSize, widgetItems } from './widgets.js';
 import { customWidgets, validate, saveCustom, deleteCustom, toFile } from './customwidget.js';
 import { shell } from './shell.js';
 import { fileUrl } from './util.js';
@@ -130,6 +130,7 @@ function renderWidgets() {
     });
     el.addEventListener('contextmenu', (e) => contextMenu(e, [
       ...sizeItems(w.type, (t) => resizeWidget(w.id, t)),
+      ...widgetItems(w.type),
       { label: 'Remove Widget', action: () => store.set('widgets', store.get('widgets').filter((x) => x.id !== w.id)) },
       { label: 'Edit Widgets…', action: () => editWidgets() },
     ]));

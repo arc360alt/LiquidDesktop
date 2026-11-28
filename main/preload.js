@@ -16,7 +16,14 @@ const names = ['sys:info', 'sys:status', 'sys:rendering', 'sys:setRendering', 's
   'cliph:list', 'cliph:use', 'cliph:remove', 'cliph:pin', 'cliph:clear', 'cliph:options', 'sys:idleTime',
   'print:status', 'print:install', 'print:start', 'print:discover', 'print:add', 'print:remove', 'print:setDefault', 'print:pause', 'print:cancel', 'print:testPage', 'print:options', 'print:doc', 'print:savePdf',
   'vpn:list', 'vpn:connect', 'vpn:disconnect', 'vpn:import', 'vpn:remove', 'vpn:install', 'vpn:setAuto', 'vpn:rename',
-  'mirror:status', 'mirror:install', 'mirror:nearby', 'mirror:pair', 'mirror:connect', 'mirror:start', 'mirror:stop', 'mirror:key', 'mirror:disconnect'];
+  'mirror:status', 'mirror:install', 'mirror:nearby', 'mirror:pair', 'mirror:connect', 'mirror:start', 'mirror:stop', 'mirror:key', 'mirror:disconnect',
+  'archive:list', 'archive:extract', 'archive:compress', 'archive:cancel', 'archive:available', 'ocr:status', 'ocr:install', 'ocr:recognize',
+  'console:query', 'console:follow', 'console:stop', 'console:logFiles', 'console:readLog', 'console:crashes', 'console:crashInfo', 'console:report', 'console:units',
+  'photos:list', 'photos:thumb', 'photos:import', 'music:list', 'music:art',
+  'tags:all', 'tags:set', 'tags:toggle', 'tags:define', 'tags:files', 'tags:moved', 'search:query', 'search:contents', 'search:engine',
+  'a11y:status', 'a11y:screenReader', 'a11y:installOrca', 'a11y:keys', 'a11y:cursor', 'a11y:sources',
+  'tm:status', 'tm:drives', 'tm:prepare', 'tm:forget', 'tm:options', 'tm:backupNow', 'tm:stop', 'tm:points', 'tm:list', 'tm:conflicts', 'tm:restore', 'tm:delete', 'tm:localSetup', 'tm:snapNow', 'tm:system', 'tm:systemRollback',
+  'sensors:read'];
 const api = {};
 for (const n of names) {
   const [ns, fn] = n.split(':');
@@ -38,6 +45,14 @@ api.tray.onItems = (fn) => ipcRenderer.on('tray:items', (_e, list) => fn(list));
 api.sys.onUpdated = (fn) => ipcRenderer.on('sys:updated', () => fn());
 api.apps.onChanged = (fn) => ipcRenderer.on('apps:changed', () => fn());
 api.rec.onChanged = (fn) => ipcRenderer.on('rec:changed', (_e, s) => fn(s));
+api.archive.onProgress = (fn) => ipcRenderer.on('archive:progress', (_e, p) => fn(p));
+api.console.onEntries = (fn) => ipcRenderer.on('console:entries', (_e, id, batch) => fn(id, batch));
+api.photos.onProgress = (fn) => ipcRenderer.on('photos:progress', (_e, n, total) => fn(n, total));
+api.music.onProgress = (fn) => ipcRenderer.on('music:progress', (_e, n, total) => fn(n, total));
+api.tags.onChanged = (fn) => ipcRenderer.on('tags:changed', () => fn());
+api.tm.onChanged = (fn) => ipcRenderer.on('tm:changed', () => fn());
+api.tm.onProgress = (fn) => ipcRenderer.on('tm:progress', (_e, p) => fn(p));
+api.tm.onFinished = (fn) => ipcRenderer.on('tm:finished', (_e, r) => fn(r));
 api.rgb.onChanged = (fn) => ipcRenderer.on('rgb:changed', () => fn());
 api.kdc.onChanged = (fn) => ipcRenderer.on('kdc:changed', (_e, s) => fn(s));
 api.kdc.onFile = (fn) => ipcRenderer.on('kdc:file', (_e, f) => fn(f));

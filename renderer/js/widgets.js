@@ -7,6 +7,7 @@ import { customWidgets, renderCustom } from './customwidget.js';
 import { sym, folderIcon, docIcon, IMAGE_EXT } from './icons.js';
 import { fileUrl } from './util.js';
 import { wm } from './wm.js';
+import { readTemps, fmtTemp, level, COLOR, SHORT, mainParts, gaugeSvg, describePart, THERMO, unitItems } from './temps.js';
 import { mainPhone, onPhone, phoneReady, phoneState, deviceIcon, signalBars, batteryRing, PHONE_ICONS, phoneAct, has, phoneFor, canText, phoneContacts, contactFor, displayName, avatar, shortTime, isUnread } from './phone.js';
 
 const timers = new WeakMap();
@@ -447,7 +448,65 @@ function screenTimeWidget(el, size) {
       ...(!ranked.length ? [h('small.w-st-none', ST.stEnabled() ? 'No apps used yet today' : 'Screen Time is off')] : []));
   });
 }
+/* --------------------------------------------------------------- temperature */
+// Small: the processor's gauge, with the graphics card and the hottest drive under it. Medium: a gauge for each of
+// the processor, graphics card, storage and memory. Double-click: Activity Monitor.
+function tempWidget(el, size) {
+  const pad = h('div.w-pad.w-tp.' + size);
+  const head = h('div.w-tp-head', h('span.w-tp-ic', { html: THERMO }), label(size === 's' ? 'Temperature' : 'Temperatures'), h('div.spacer'));
+  const extra = h('small.w-tp-extra');
+  head.append(extra);
+  const body = h('div.w-tp-body');
+  pad.append(head, body);
+  el.append(pad);
+  el.addEventListener('dblclick', () => wm.activate('monitor'));
+  const cells = new Map();   // id → its gauge (updated in place, so the arc moves smoothly)
+  const cell = (d, px) => {
+    let c = cells.get(d.id);
+    if (!c) {
+      c = { el: h('div.w-tp-cell'), g: h('div.w-tp-gauge'), v: h('b'), n: h('small') };
+      c.g.append(h('div.w-tp-svg'), c.v);
+      c.el.append(c.g, c.n);
+      cells.set(d.id, c);
+    }
+    c.g.style.width = c.g.style.height = px + 'px';
+    c.g.firstChild.innerHTML = gaugeSvg(d, px);
+    c.v.textContent = d.asleep ? 'Off' : fmtTemp(d.temp);
+    c.v.style.color = d.asleep ? '' : level(d) === 'ok' ? '' : COLOR[level(d)];
+    c.n.textContent = SHORT[d.kind] || d.name;
+    c.el.title = describePart(d);
+    return c.el;
+  };
+  let empty = false;
+  const draw = async () => {
+    const r = await readTemps();
+    const parts = mainParts(r);
+    if (!parts.length) {
+      if (!empty) body.replaceChildren(h('div.w-tp-none', r ? 'No temperature sensors found' : 'Temperatures aren’t available'));
+      empty = true; return;
+    }
+    empty = false;
+    if (size === 's') {
+      const [main, ...rest] = parts;
+      const big = cell(main, 94);
+      big.classList.add('big');
+      const chips = rest.slice(0, 2).map((d) => h('span.w-tp-chip', { title: describePart(d) }, h('i', { style: { background: d.asleep ? 'rgba(128,128,128,.5)' : COLOR[level(d)] } }), SHORT[d.kind], h('b', d.asleep ? 'Off' : fmtTemp(d.temp))));
+      body.replaceChildren(big, h('div.w-tp-chips', ...chips));
+    } else {
+      body.replaceChildren(h('div.w-tp-row', ...parts.slice(0, 4).map((d) => cell(d, 64))));
+    }
+    // the fans, when the computer reports them (medium only: there's room)
+    const fan = size === 'm' && r.fans.find((f) => f.rpm > 0 || f.percent > 0);
+    extra.textContent = fan ? (fan.rpm != null ? `Fan ${Math.round(fan.rpm)} rpm` : `Fan ${fan.percent}%`) : '';
+  };
+  every(el, 3000, draw);
+  // the unit changed (here or anywhere else): show it now
+  const off = store.on('change:tempUnit', () => { if (!el.isConnected) return off?.(); draw(); });
+}
+
 Object.assign(WIDGETS, {
+  temperature: { name: 'Temperature', cat: 'system', size: 's', menu: unitItems, build: (el) => tempWidget(el, 's') },
+  temperaturem: { name: 'Temperatures', cat: 'system', size: 'm', menu: unitItems, build: (el) => tempWidget(el, 'm') },
   reminders: { name: 'Reminders', cat: 'productivity', size: 's', build: (el) => remindersWidget(el, 's') },
   remindersm: { name: 'Reminders', cat: 'productivity', size: 'm', build: (el) => remindersWidget(el, 'm') },
   remindersl: { name: 'Reminders', cat: 'productivity', size: 'l', hidden: true, build: (el) => remindersWidget(el, 'l') },
@@ -460,7 +519,7 @@ WIDGETS.phonenotifsl = { ...WIDGETS.phonenotifs, size: 'l', hidden: true };
 export const CATEGORIES = [['all', 'All Widgets'], ['clock', 'Clock & Calendar'], ['weather', 'Weather'], ['system', 'System'], ['productivity', 'Productivity'], ['media', 'Media'], ['phone', 'Phone'], ['mine', 'My Widgets']];
 export const SIZE_PX = { s: [164, 164], m: [340, 164], l: [340, 340] };
 // Widgets that are one widget at two sizes: the gallery shows the small one; right-click › Size switches
-export const SIZE_GROUPS = [{ s: 'battery', m: 'batteries' }, { s: 'weather', m: 'forecast' }, { s: 'clock', m: 'worldclock' }, { s: 'calendar', m: 'upcoming' }, { s: 'system', m: 'activity' }, { s: 'phone', m: 'phonemedium' }, { m: 'phonenotifs', l: 'phonenotifsl' }, { m: 'messagesw', l: 'messageswl' }, { s: 'reminders', m: 'remindersm', l: 'remindersl' }, { s: 'screentime', m: 'screentimem' }];
+export const SIZE_GROUPS = [{ s: 'battery', m: 'batteries' }, { s: 'weather', m: 'forecast' }, { s: 'clock', m: 'worldclock' }, { s: 'calendar', m: 'upcoming' }, { s: 'system', m: 'activity' }, { s: 'phone', m: 'phonemedium' }, { m: 'phonenotifs', l: 'phonenotifsl' }, { m: 'messagesw', l: 'messageswl' }, { s: 'reminders', m: 'remindersm', l: 'remindersl' }, { s: 'screentime', m: 'screentimem' }, { s: 'temperature', m: 'temperaturem' }];
 export const sizeGroup = (type) => SIZE_GROUPS.find((g) => g.s === type || g.m === type || g.l === type);
 /** A widget the galleries leave out: the bigger size of one shown at its smallest (or a hidden one). */
 export const isOtherSize = (type) => { const g = sizeGroup(type); return !!WIDGETS[type]?.hidden || (!!g && type !== (g.s || g.m)); };
@@ -471,6 +530,11 @@ export function sizeItems(type, setType) {
   return [{ header: 'Size' }, ...[['s', 'Small'], ['m', 'Medium'], ['l', 'Large']].filter(([k]) => g[k]).map(([k, l]) => ({ label: l, checked: g[k] === type, action: () => { if (g[k] !== type) setType(g[k]); } })), '-'];
 }
 
+/** A widget's own right-click items (before Remove…), ending in a separator; none for most widgets. */
+export function widgetItems(type) {
+  const items = WIDGETS[type]?.menu?.() || [];
+  return items.length ? [...items, '-'] : [];
+}
 /** A widget's definition: built-in, or a custom one ("custom:<id>"). */
 export function widgetDef(type) {
   if (typeof type === 'string' && type.startsWith('custom:')) {

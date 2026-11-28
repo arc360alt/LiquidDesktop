@@ -30,6 +30,7 @@ async function startSession({ preload }) {
   // apps' own menus in the menu bar: the registrar has to be there before apps start (they look for it then)
   require('./appmenu').register({ wm, resolveIcon: require('./system').resolveIcon });
   require('./clipboard').register({ wm });   // Clipboard History hears about copies from the X server
+  require('./a11y').register({ wm });   // Accessibility: Sticky / Slow / Bounce Keys go through the window manager
   const { width: sw, height: sh } = screen.getPrimaryDisplay().bounds;
   const prefs = { preload, contextIsolation: true, nodeIntegration: false, sandbox: false, webviewTag: true, spellcheck: false };
   const appWindows = new Map();   // session id → BrowserWindow
@@ -46,7 +47,7 @@ async function startSession({ preload }) {
   desktop.loadFile(INDEX, { query: { mode: 'session', layer: 'desktop' } });
 
   const shell = new BrowserWindow({ x: 0, y: 0, width: sw, height: sh, frame: false, show: false, resizable: false, skipTaskbar: true,
-    transparent: true, backgroundColor: '#00000000', hasShadow: false, type: 'dock', webPreferences: prefs });
+    transparent: true, backgroundColor: '#00000000', hasShadow: false, type: 'dock', webPreferences: { ...prefs, autoplayPolicy: 'no-user-gesture-required' } });   // alarms and timers ring from here
   fixedTitle(shell, 'LiquidDesktop Shell');
   wm.registerOwn(xidOf(shell), { role: 'shell', primary: true });
   const extra = new Map();   // display id → { desktop, bar } on monitors other than the main one

@@ -53,6 +53,14 @@ app.whenReady().then(async () => {
   require('../main/fingerprint').register();
   require('../main/games').register();
   require('../main/journal').register();
+  require('../main/archive').register();
+  require('../main/ocr').register();
+  require('../main/console').register();
+  require('../main/sensors').register();
+  require('../main/medialib').register();
+  require('../main/finder').register();
+  require('../main/a11y').register({});
+  require('../main/backups').register({ mode: 'windowed' });   // (no schedule outside a session)
   require('../main/portal').register({});
   require('../main/notifications').register({ resolveIcon: require('../main/system').resolveIcon });
   require('../main/tray').register({ resolveIcon: require('../main/system').resolveIcon });

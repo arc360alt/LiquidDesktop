@@ -69,7 +69,7 @@ function createWindowed() {
   const [w, h] = sizeArg ? sizeArg.split('x').map(Number) : [Math.min(1440, sw), Math.min(900, sh)];
   win = new BrowserWindow({
     width: w, height: h, minWidth: 900, minHeight: 600, title: 'LiquidDesktop', backgroundColor: '#0b1220', show: false, autoHideMenuBar: true,
-    webPreferences: { preload, contextIsolation: true, nodeIntegration: false, webviewTag: true, sandbox: false, spellcheck: false },
+    webPreferences: { preload, contextIsolation: true, nodeIntegration: false, webviewTag: true, sandbox: false, spellcheck: false, autoplayPolicy: 'no-user-gesture-required' },
   });
   win.setMenu(null);
   win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'), { query: { mode, layer: 'full' } });
@@ -91,7 +91,16 @@ app.on('web-contents-created', (_e, wc) => {
 });
 
 app.whenReady().then(async () => {
-  session.defaultSession.setPermissionRequestHandler((_wc, perm, cb) => cb(['clipboard-sanitized-write', 'fullscreen', 'notifications'].includes(perm)));
+  session.defaultSession.setPermissionRequestHandler((wc, perm, cb, details) => {
+    // Accessibility › Zoom: the shell (or the whole desktop in a window) plays a picture of the screen to magnify it.
+    // Only LiquidDesktop's own page, only video — app windows, websites and microphones still get no.
+    if (perm === 'media') {
+      const url = details?.requestingUrl || wc?.getURL?.() || '';
+      const own = url.startsWith('file://') && /\/renderer\/index\.html/.test(url) && /[?&]layer=(shell|full)\b/.test(url);
+      return cb(own && (details?.mediaTypes || []).every((t) => t === 'video'));
+    }
+    cb(['clipboard-sanitized-write', 'fullscreen', 'notifications'].includes(perm));
+  });
   require('./browser').register();
   require('./appstore').register();
   require('./sddm').register();
@@ -113,6 +122,13 @@ app.whenReady().then(async () => {
   require('./appthemes').register({ mode });   // before any app starts: Qt apps need QT_STYLE_OVERRIDE
   require('./printing').register();   // Printers & Scanners, the Print dialog (CUPS)
   require('./vpn').register();        // VPN (NetworkManager)
+  require('./archive').register();    // Archive Utility (bsdtar)
+  require('./ocr').register();        // Live Text (tesseract)
+  require('./console').register();    // Console (journalctl, coredumpctl, bug reports)
+  require('./medialib').register();   // the Photos and Music libraries
+  require('./finder').register();     // Files' tags, Smart Folders and searching inside files
+  require('./backups').register({ mode });   // Time Machine
+  require('./sensors').register();    // temperatures (the Temperature widgets and menu bar item)
   require('./mirror').register();     // iPhone-Mirroring-style phone mirroring (scrcpy)
   require('./idle').registerIpc();    // Settings › Lock Screen's power options (the timers run in a session)
   require('./autostart').register({ session: mode === 'session' });   // Login Items (started at login in a session)
@@ -133,6 +149,7 @@ app.whenReady().then(async () => {
     require('./portal').register({});   // Open / Save dialogs for LiquidDesktop's own apps
     require('./appmenu').register({});   // (only the setting: no app menus in a window)
     require('./clipboard').register({});
+    require('./a11y').register({});
     createWindowed();
   }
 });

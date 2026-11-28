@@ -37,7 +37,7 @@ const ACTIONS = [
 
 export function spotlight() {
   if (spot) return closeSpotlight();
-  let filter = 'all', results = [], sel = 0, fileResults = [], query = '';
+  let filter = 'all', results = [], sel = 0, fileResults = [], contentResults = [], query = '';
   const input = h('input', { placeholder: 'Spotlight Search', spellcheck: false });
   const bar = h('div.bar.glass.panel.sheen', { html: sym.search }, input);
   const chips = h('div.chips');
@@ -69,6 +69,8 @@ export function spotlight() {
         if (score(label, q)) results.push({ sec: 'System Settings', title: label, icon: sym.gear, run: () => shell.openSettings(pane), hint: 'Settings' });
     }
     if (filter === 'all' || filter === 'files') for (const f of fileResults) results.push({ sec: 'Files', title: f.name, sub: dirname(f.path).replace(shell.home, '~'), file: f, run: () => shell.openPath(f.path, f.isDir), hint: 'Open' });
+    // files with the words inside them (the system's search index — Baloo, localsearch, Recoll — or ripgrep)
+    if (filter === 'all' || filter === 'files') for (const f of contentResults) results.push({ sec: 'Documents', title: f.name, sub: `${dirname(f.path).replace(shell.home, '~')} · contains “${query}”`, file: f, run: () => shell.openPath(f.path, f.isDir), hint: 'Open' });
     if (filter === 'all' && /^(https?:\/\/|www\.)|\.\w{2,}(\/|$)/.test(query) && !/\s/.test(query)) results.unshift({ sec: 'Web', title: query, sub: 'Open in Browser', icon: sym.globe, run: () => wm.open('browser', { url: query }), hint: 'Open' });
     if (filter === 'all') results.push({ sec: 'Web', title: `Search the web for “${query}”`, icon: sym.globe, run: () => wm.open('browser', { url: 'https://duckduckgo.com/?q=' + encodeURIComponent(query) }), hint: 'Search' });
     sel = 0;
@@ -84,9 +86,17 @@ export function spotlight() {
   };
   const searchFiles = debounce(async () => {
     const q = input.value.trim();
-    if (q.length < 2 || safeCalc(q) != null) { fileResults = []; return update(); }
+    if (q.length < 2 || safeCalc(q) != null) { fileResults = []; contentResults = []; return update(); }
     try { fileResults = (await api.fs.search(q)).slice(0, filter === 'files' ? 30 : 6); } catch { fileResults = []; }
-    if (input.value.trim() === q) update();
+    if (input.value.trim() !== q) return;
+    contentResults = contentResults.filter(() => false);
+    update();
+    // what's inside files comes a moment later (it's a slower search)
+    if (q.length < 3 || !api.search?.contents) return;
+    const inside = await api.search.contents(q, undefined, filter === 'files' ? 25 : 8).catch(() => []);
+    if (input.value.trim() !== q) return;
+    contentResults = inside.filter((x) => !x.isDir && !fileResults.some((f) => f.path === x.path)).slice(0, filter === 'files' ? 20 : 4);
+    if (contentResults.length) update();
   }, 180);
 
   const draw = () => {

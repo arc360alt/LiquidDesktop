@@ -35,12 +35,14 @@ const HANDLE = 6;
 const DEBUG = !!process.env.LIQUID_WM_DEBUG;       // width of the invisible resize handles along a native window's sides and bottom
 
 // keysyms used for global shortcuts
-const KS = { space: 0x20, period: 0x2e, s: 0x73, v: 0x76, r: 0x72, Tab: 0xff09, F3: 0xffc0, F4: 0xffc1, F11: 0xffc8, q: 0x71, w: 0x77, m: 0x6d, f: 0x66, 3: 0x33, Print: 0xff61,
+const KS = { space: 0x20, period: 0x2e, equal: 0x3d, minus: 0x2d, 8: 0x38, s: 0x73, v: 0x76, r: 0x72, Tab: 0xff09, F3: 0xffc0, F4: 0xffc1, F11: 0xffc8, q: 0x71, w: 0x77, m: 0x6d, f: 0x66, 3: 0x33, Print: 0xff61,
   Left: 0xff51, Up: 0xff52, Right: 0xff53, Down: 0xff54, F4alt: 0xffc1, Alt_L: 0xffe9, Alt_R: 0xffea, Super_L: 0xffeb, Super_R: 0xffec,
   VolUp: 0x1008ff13, VolDown: 0x1008ff11, Mute: 0x1008ff12, BrightUp: 0x1008ff02, BrightDown: 0x1008ff03, Play: 0x1008ff14, Next: 0x1008ff17, Prev: 0x1008ff16 };
 
 const SHORTCUTS = [
   ['spotlight', ALT, 'space'], ['spotlight', SUPER, 'space'],
+  // Accessibility › Zoom: Super+Alt+8 turns it on and off, Super+Alt+= / − zoom in and out (⌥⌘8, ⌥⌘= on a Mac)
+  ['zoom-toggle', SUPER | ALT, '8'], ['zoom-in', SUPER | ALT, 'equal'], ['zoom-out', SUPER | ALT, 'minus'],
   // Emoji & Symbols: Ctrl+Cmd+Space like on a Mac (Cmd is Alt or Super here), or Super+. like on Windows
   ['emoji', CTRL | ALT, 'space'], ['emoji', CTRL | SUPER, 'space'], ['emoji', SUPER, 'period'],
   // Clipboard History: Super+V, like Windows (the Mac has none built in)
@@ -1334,6 +1336,48 @@ class WindowManager extends EventEmitter {
       this.grabbed.push({ name, mods, code });
     }
     if (process.env.LIQUID_WM_DEBUG) console.log('[wm] grabbed', this.grabbed.length, 'shortcuts');
+  }
+
+  /**
+   * Accessibility › Keyboard: Sticky Keys (press ⇧, Ctrl, Alt… one at a time for shortcuts; twice locks it), Slow Keys
+   * (a key counts only when held for a moment) and Bounce Keys (a quick repeat of the same key is ignored). These are
+   * the X server's own AccessX controls (XKB), so they work in every app. node-x11 has no XKB wrapper, so the two
+   * requests are packed here by hand (XKBproto: UseExtension, SetControls).
+   */
+  async xkb() {
+    if (this._xkb !== undefined) return this._xkb;
+    const X = this.X;
+    const ext = await new Promise((res) => X.QueryExtension('XKEYBOARD', (err, e) => res(err || !e?.present ? null : e)));
+    this._xkb = ext;
+    if (ext) await new Promise((res) => {
+      X.seq_num++;
+      X.pack_stream.pack('CCSSS', [ext.majorOpcode, 0, 2, 1, 0]);   // XkbUseExtension 1.0 (must be the first XKB request)
+      X.replies[X.seq_num] = [(buf, opt) => opt, () => res()];
+      X.pack_stream.flush();
+      setTimeout(res, 1000);
+    });
+    return ext;
+  }
+  async setAccessX({ sticky = false, slow = false, bounce = false, slowDelay = 300, bounceDelay = 300 } = {}) {
+    const ext = await this.xkb();
+    if (!ext) return false;
+    const STICKY = 1 << 3, SLOW = 1 << 1, BOUNCE = 1 << 2, ENABLED = 0x80000000, LATCH_TO_LOCK = 1 << 7, SK_PRESS_FB = 1 << 0;
+    const affect = STICKY | SLOW | BOUNCE;
+    const enabled = (sticky ? STICKY : 0) | (slow ? SLOW : 0) | (bounce ? BOUNCE : 0);
+    const change = (ENABLED | STICKY | (slow ? SLOW : 0) | (bounce ? BOUNCE : 0)) >>> 0;
+    const X = this.X;
+    X.seq_num++;
+    X.pack_stream.pack('CCSSCCCCSSSSCCSxxLLLSSSSSSSSsSLLSSxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx', [
+      ext.majorOpcode, 7, 25, 0x0100,          // XkbSetControls, 100 bytes, the core keyboard
+      0, 0, 0, 0, 0, 0, 0, 0,                  // internal / ignore-lock modifiers: unchanged
+      0, 0,                                    // mouse keys button, groups wrap
+      LATCH_TO_LOCK | SK_PRESS_FB, // AccessX options: pressing a modifier twice locks it
+      affect >>> 0, enabled >>> 0, change,
+      0, 0, Math.max(50, Math.min(2000, slowDelay | 0)), Math.max(50, Math.min(2000, bounceDelay | 0)), 0, 0, 0, 0, 0,
+      0, 0, 0, 0, 0,
+    ]);
+    X.pack_stream.flush();
+    return true;
   }
 
   /**

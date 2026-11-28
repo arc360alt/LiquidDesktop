@@ -27,6 +27,9 @@ function capture(root) {
   ipcRenderer.sendToHost('pw-capture', data);
 }
 
+// a (left) press anywhere in the page: the Browser closes its own popups (extensions, menus, suggestions) — clicks in a page
+// never reach the Browser's window, so it can't see them otherwise
+addEventListener('mousedown', (e) => { if (e.button === 0) ipcRenderer.sendToHost('page-pointer'); }, true);
 addEventListener('submit', (e) => capture(e.target), true);
 addEventListener('click', (e) => {
   const b = e.target.closest && e.target.closest('button, input[type=submit], [role=button]');

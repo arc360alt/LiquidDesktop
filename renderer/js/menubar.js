@@ -224,6 +224,26 @@ function renderStatus() {
 /* ---------------------------------------------- hiding while a window is full screen */
 let mbRevealed = false, mbTimer, mbEdge;
 const mbCovered = () => { const w = wm.focused; return !!w && !w.minimized && !!w.fullscreen; };
+/**
+ * The bar's material: see-through over the wallpaper, frosted when a window touches it so its text stays readable
+ * (store 'menubarBackground': 'auto' — that; 'always' — always frosted; 'never' — always see-through).
+ * In a session, windows are real X windows, placed in device pixels on the whole screen: they're brought to this
+ * screen's CSS pixels first (with display scaling, or on a second monitor, "y ≤ 34" never matched before).
+ */
+function touchesBar(w) {
+  if (w.space !== wm.currentSpace || w.minimized || w.fullscreen) return false;
+  const dpr = isSession ? devicePixelRatio || 1 : 1;
+  const ox = isSession ? screenX || 0 : 0, oy = isSession ? screenY || 0 : 0;
+  const x = w.x / dpr - ox, y = w.y / dpr - oy, ww = (w.w || 0) / dpr;
+  const barH = bar.offsetHeight || 34;
+  // on this screen, and its top within or just under the bar (maximised windows sit a few pixels below it)
+  return y <= barH + 10 && y + 40 > 0 && x < innerWidth && x + ww > 0;
+}
+function applyBackground() {
+  if (!bar) return;
+  const mode = store.get('menubarBackground') || 'auto';
+  bar.classList.toggle('solid', mode === 'always' || (mode === 'auto' && wm.windows.some(touchesBar)));
+}
 export function menubarHidden() { return !!bar?.classList.contains('autohidden'); }
 function applyMenubar() {
   const cov = mbCovered();
@@ -314,10 +334,11 @@ export function initMenubar() {
   bus.on('windows', () => {
     renderAppMenus();
     applyMenubar();
-    // give the bar a material when a window touches it so text stays readable
-    const touching = wm.windows.some((w) => w.space === wm.currentSpace && !w.minimized && w.y <= 34 && !w.fullscreen);
-    bar.classList.toggle('solid', touching);
+    applyBackground();
   });
+  store.on('change:menubarBackground', applyBackground);
+  addEventListener('resize', applyBackground);
+  applyBackground();
   bus.on('status', renderStatus);
   bus.on('wallpaper-luma', (l) => bar.classList.toggle('dark-text', l > 0.68));
   store.on('change', (k) => { if (['clock24', 'showSeconds'].includes(k)) tick(); if (k === 'showBatteryPct' || k === 'showBattery') renderStatus(); });

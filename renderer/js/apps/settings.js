@@ -262,6 +262,9 @@ const render = {
     return [
       hero('menubar', 'Menu Bar', 'What the clock and status items show, and where apps keep their menus.'),
       ...(await menubarItemsGroup()),
+      h('div.group', row('Menu bar background', h('select.field.square', { style: { height: '26px', minWidth: '200px' }, onchange: (e) => store.set('menubarBackground', e.target.value) },
+        ...[['auto', 'When a window touches it'], ['always', 'Always'], ['never', 'Never']].map(([v, l]) => h('option', { value: v, selected: (store.get('menubarBackground') || 'auto') === v }, l))),
+        'A frosted background behind the menu bar, so its text stays readable over windows and busy wallpapers.')),
       h('div.group', row('Use a 24-hour clock', toggle('clock24')), row('Show seconds', toggle('showSeconds')), row('Show battery', toggle('showBattery'), 'The battery icon in the menu bar'), row('Show battery percentage', toggle('showBatteryPct'))),
       global == null ? null : h('div.group', row('Show app menus in the menu bar', h('label.toggle', h('input', { type: 'checkbox', checked: global, onchange: async (e) => {
         await api.appmenu.setEnabled(e.target.checked).catch(() => {});

@@ -6,7 +6,7 @@ import { sym } from '../icons.js';
 import { api, isNative } from '../sys.js';
 import { wallpaperFor } from '../theme.js';
 import { store, appData } from '../store.js';
-import { showMenu, prompt, alertDialog, confirmDialog } from '../menus.js';
+import { showMenu, closeMenu, prompt, alertDialog, confirmDialog } from '../menus.js';
 import { shell } from '../shell.js';
 
 const B = api.browser;
@@ -342,8 +342,8 @@ class BrowserView {
       t.favicon = e.favicons[0]; this.renderTabs();
       const map = appData.get('browserFavicons', {}); map[hostOf(t.url)] = t.favicon; appData.set('browserFavicons', map);
     });
-    wv.addEventListener('focus', () => this.win.focus());
-    wv.addEventListener('ipc-message', (e) => this.onPageMessage(t, e.channel, e.args[0]));
+    wv.addEventListener('focus', () => { this.win.focus(); this.pageClicked(wv); });
+    wv.addEventListener('ipc-message', (e) => { if (e.channel === 'page-pointer') this.pageClicked(wv); else this.onPageMessage(t, e.channel, e.args[0]); });
     wv.addEventListener('context-menu', (e) => this.pageMenu(t, e.params));
     wv.addEventListener('found-in-page', (e) => this.onFound(e.result));
     wv.addEventListener('enter-html-full-screen', () => !this.win.fullscreen && this.win.toggleFullscreen());
@@ -574,7 +574,8 @@ class BrowserView {
         h('div.label', h('b', e.name), ' ', h('span.muted', e.version), h('small', e.description)),
         e.popup ? h('button.btn', { onclick: (ev) => this.openExtensionPopup(e, ev.currentTarget) }, 'Open') : null,
         e.options ? h('button.btn', { onclick: () => this.newTab(`chrome-extension://${e.id}/${e.options}`) }, 'Options') : null,
-        h('button.btn', { onclick: async () => { if (await confirmDialog(`Remove “${e.name}”?`, '', 'Remove', { danger: true }, this.win.el)) { await B.invoke('browser:extRemove', e.id); this.refreshExtensions(); } } }, 'Remove')));
+        h('button.btn', { onclick: () => this.setPinned(e, !BrowserView.isPinned(e)) }, BrowserView.isPinned(e) ? 'Unpin' : 'Pin'),
+        h('button.btn', { onclick: () => this.removeExtension(e) }, 'Remove')));
     }
   }
 
@@ -622,6 +623,18 @@ class BrowserView {
 
   /* ---------------------------------------------- passwords */
   activeTabId() { const t = this.tabs.find((x, i) => i === this.active && x.wv && x.ready) || this.tabs.find((x) => x.wv && x.ready && x.url.startsWith('http')); try { return t ? t.wv.getWebContentsId() : null; } catch { return null; } }
+  /**
+   * The page was clicked (or took the focus): close what's open over it — an extension's popup, a menu, the address
+   * bar's suggestions… — as a click anywhere else in the window would. A click inside a page never reaches this
+   * window, so it's passed on as a press on the page's element, which everything that closes on an outside click hears.
+   */
+  pageClicked(wv) {
+    // (not the page's own right-click menu, just opened by this same press)
+    if (Date.now() - (this.pageMenuAt || 0) < 400) return;
+    if (this.popup) this.closeExtensionPopup();
+    closeMenu();
+    wv.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, composed: true }));
+  }
   async onPageMessage(t, channel, data) {
     if (!isNative) return;
     if (channel === 'ext-active-tab?') { t.wv.send('ext-active-tab', this.activeTabId()); return; }
@@ -666,15 +679,89 @@ class BrowserView {
   }
 
   /* ---------------------------------------------- extensions */
+  /* Pinned extensions: appData 'browserExtPins' = { order: [ids, left to right], unpinned: [ids] }. An extension
+     with a popup is pinned unless you unpin it; one without stays in the Extensions menu unless you pin it. */
+  static pins() { const p = appData.get('browserExtPins', {}) || {}; return { order: p.order || [], unpinned: p.unpinned || [], pinned: p.pinned || [] }; }
+  static isPinned(e) { const p = BrowserView.pins(); return !p.unpinned.includes(e.id) && (!!e.popup || p.pinned.includes(e.id)); }
+  setPinned(e, on) {
+    const p = BrowserView.pins();
+    p.unpinned = p.unpinned.filter((x) => x !== e.id); p.pinned = p.pinned.filter((x) => x !== e.id);
+    if (!on) p.unpinned.push(e.id);
+    else { if (!e.popup) p.pinned.push(e.id); if (!p.order.includes(e.id)) p.order.push(e.id); }
+    appData.set('browserExtPins', p);
+    this.refreshExtensions();
+  }
+  // what clicking an extension does: its popup, else its options page, else the Extensions page
+  useExtension(e, anchor) { if (e.popup) this.openExtensionPopup(e, anchor); else if (e.options) this.newTab(`chrome-extension://${e.id}/${e.options}`); else this.openPage('extensions'); }
+  async removeExtension(e) {
+    if (!(await confirmDialog(`Remove “${e.name}”?`, 'It’s removed from the Browser, with its settings.', 'Remove', { danger: true }, this.win.el))) return;
+    await B.invoke('browser:extRemove', e.id).catch((err) => alertDialog({ title: 'Couldn’t remove the extension', message: err.message }, this.win.el));
+    const p = BrowserView.pins();
+    appData.set('browserExtPins', { order: p.order.filter((x) => x !== e.id), unpinned: p.unpinned.filter((x) => x !== e.id), pinned: p.pinned.filter((x) => x !== e.id) });
+    this.refreshExtensions();
+  }
   async renderExtensionBar() {
     this.extBar.innerHTML = '';
     if (!isNative) return;
-    const exts = (await B.invoke('browser:extList').catch(() => [])).filter((e) => e.popup).slice(0, 5);
+    const all = await B.invoke('browser:extList').catch(() => []);
+    const { order } = BrowserView.pins();
+    // in your order; ones you haven't placed yet after them
+    const exts = all.filter((e) => BrowserView.isPinned(e)).sort((a, b) => (order.indexOf(a.id) + 1 || 1e6) - (order.indexOf(b.id) + 1 || 1e6));
     for (const e of exts) {
-      const b = h('button.br-ext-btn', { title: e.name, onclick: (ev) => this.openExtensionPopup(e, ev.currentTarget) }, e.icon ? h('img', { src: 'file://' + e.icon }) : e.name[0]);
+      const b = h('button.br-ext-btn', { title: e.name, 'data-ext': e.id }, e.icon ? h('img', { src: 'file://' + e.icon, draggable: false }) : e.name[0]);
+      b.addEventListener('click', (ev) => { if (b.dataset.dragged) { delete b.dataset.dragged; return; } this.useExtension(e, ev.currentTarget); });
+      // right-click: this extension's options (not the window's menu)
+      b.addEventListener('contextmenu', (ev) => {
+        ev.preventDefault(); ev.stopPropagation();
+        const r = b.getBoundingClientRect();
+        showMenu([{ header: e.name },
+          e.popup ? { label: 'Open', action: () => this.openExtensionPopup(e, b) } : null,
+          e.options ? { label: 'Options', action: () => this.newTab(`chrome-extension://${e.id}/${e.options}`) } : null,
+          { label: 'Unpin from Toolbar', action: () => this.setPinned(e, false) },
+          '-', { label: 'Manage Extensions…', action: () => this.openPage('extensions') },
+          { label: `Remove “${e.name}”…`, danger: true, action: () => this.removeExtension(e) }].filter(Boolean), r.left, r.bottom + 6);
+      });
+      b.addEventListener('mousedown', (ev) => { if (ev.button === 0) this.dragExtension(b, ev); });
       this.extBar.append(b);
     }
     this.extBar.hidden = !exts.length;
+  }
+  /** Drag an extension along the bar to move it among the others: it follows the pointer, the others slide aside. */
+  dragExtension(el, e) {
+    const bar = this.extBar, sx = e.clientX, start = el.getBoundingClientRect().left;
+    let moved = false, slot = start;
+    const place = (ev) => { el.style.transform = `translateX(${ev.clientX - sx + start - slot}px) scale(1.1)`; };
+    const mv = (ev) => {
+      if (!moved && Math.abs(ev.clientX - sx) < 4) return;
+      if (!moved) { moved = true; el.classList.add('dragging'); this.closeExtensionPopup(); }
+      place(ev);
+      const list = [...bar.children], i = list.indexOf(el), r = el.getBoundingClientRect(), mid = r.left + r.width / 2;
+      const midOf = (n) => { const b = n.getBoundingClientRect(); return b.left + b.width / 2; };
+      const next = list[i + 1], prev = list[i - 1];
+      const target = next && mid > midOf(next) ? next.nextSibling : prev && mid < midOf(prev) ? prev : undefined;
+      if (target === undefined) return;
+      // the others slide from where they were to their new places
+      const before = new Map(list.filter((x) => x !== el).map((x) => [x, x.getBoundingClientRect().left]));
+      bar.insertBefore(el, target);
+      for (const [x, left] of before) { const dx = left - x.getBoundingClientRect().left; if (dx) x.animate([{ transform: `translateX(${dx}px)` }, { transform: 'none' }], { duration: 220, easing: 'cubic-bezier(0.32, 0.72, 0, 1)' }); }
+      const t = el.style.transform; el.style.transform = 'none'; slot = el.getBoundingClientRect().left; el.style.transform = t;
+      place(ev);
+    };
+    const up = () => {
+      removeEventListener('mousemove', mv, true); removeEventListener('mouseup', up, true);
+      if (!moved) return;
+      el.dataset.dragged = '1';   // (the click that ends a drag doesn't open it)
+      setTimeout(() => delete el.dataset.dragged, 0);
+      const from = el.style.transform; el.style.transform = '';
+      el.animate([{ transform: from }, { transform: 'none' }], { duration: 260, easing: 'cubic-bezier(0.34, 1.36, 0.64, 1)' }).onfinish = () => {
+        el.classList.remove('dragging');
+        const p = BrowserView.pins();
+        const ids = [...bar.children].map((x) => x.dataset.ext);
+        appData.set('browserExtPins', { ...p, order: [...ids, ...p.order.filter((x) => !ids.includes(x))] });
+        this.refreshExtensions();
+      };
+    };
+    addEventListener('mousemove', mv, true); addEventListener('mouseup', up, true);
   }
   refreshExtensions() { BrowserView.all.forEach((b) => { b.renderExtensionBar(); b.refreshPages('extensions'); }); }
   async extensionsMenu(anchor) {
@@ -682,7 +769,9 @@ class BrowserView {
     const exts = isNative ? await B.invoke('browser:extList').catch(() => []) : [];
     showMenu([
       ...(exts.length ? exts.map((e) => ({ label: e.name, icon: e.icon ? `<img src="file://${esc(e.icon)}" style="width:16px;height:16px">` : null,
-        action: () => (e.popup ? this.openExtensionPopup(e, anchor) : e.options ? this.newTab(`chrome-extension://${e.id}/${e.options}`) : this.openPage('extensions')) })) : [{ label: 'No extensions installed', disabled: true }]),
+        action: () => this.useExtension(e, anchor) })) : [{ label: 'No extensions installed', disabled: true }]),
+      // pin or unpin each (pinned ones have a button in the toolbar)
+      ...(exts.length ? ['-', { label: 'Pin to Toolbar', submenu: exts.map((e) => ({ label: e.name, checked: BrowserView.isPinned(e), action: () => this.setPinned(e, !BrowserView.isPinned(e)) })) }] : []),
       '-', { label: 'Manage Extensions…', action: () => this.openPage('extensions') }, { label: 'Chrome Web Store', action: () => this.newTab('https://chromewebstore.google.com/') },
     ], r.right - 220, r.bottom + 6, { minWidth: 220 });
   }
@@ -736,6 +825,7 @@ class BrowserView {
 
   /* ---------------------------------------------- page menus, find, misc */
   pageMenu(t, p) {
+    this.pageMenuAt = Date.now();
     const wr = t.wv.getBoundingClientRect();
     const x = wr.left + p.x, y = wr.top + p.y;
     const wv = t.wv;

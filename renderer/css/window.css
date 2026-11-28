@@ -2335,3 +2335,6 @@ body.mission-open #spaces { z-index: 7550; }
 .rm-cal-ev span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rm-cal-ev small { color: var(--text-2); font-size: 11.5px; font-variant-numeric: tabular-nums; }
 .rm-cal-ev.past { opacity: 0.55; }
+/* Browser: dragging a pinned extension along the toolbar */
+.br-ext-btn { transition: background 0.15s; }
+.br-ext-btn.dragging { position: relative; z-index: 3; background: var(--control, rgba(255, 255, 255, 0.9)); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.22); cursor: var(--cur-grabbing, grabbing); }

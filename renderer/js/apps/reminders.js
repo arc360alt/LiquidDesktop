@@ -7,6 +7,8 @@ import { sym } from '../icons.js';
 import { bus } from '../util.js';
 import { contextMenu, confirmDialog } from '../menus.js';
 import { loadReminders, editReminders, uid, SMART, sortItems, dueText, isOverdue, parseQuick, COLORS, toggleDone, todayKey } from '../reminders.js';
+import { loadCalendar, occurrences, calOf } from '../calendardata.js';
+import { store } from '../store.js';
 
 const SMART_ICONS = {
   today: '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="3" y="4.5" width="18" height="16" rx="3"/><text x="12" y="17.6" text-anchor="middle" font-size="9" font-weight="700" fill="#fff" font-family="Inter Variable, sans-serif">' + new Date().getDate() + '</text></svg>',
@@ -86,6 +88,8 @@ registerApp({
       head.style.setProperty('--rm-color', info.color);
       body.replaceChildren();
       if (view === 'completed' && items.length) body.append(h('div.rm-sub', h('span', `${items.length} Completed`), h('button.btn.plain', { onclick: clearCompleted }, 'Clear')));
+      // Today: today's events from Calendar, above the reminders
+      if (view === 'today') body.append(...todaysEvents());
       // Today and Scheduled come in sections (Overdue / by day), the rest as one list
       if (view === 'scheduled' || view === 'today') {
         const groups = new Map();
@@ -151,12 +155,23 @@ registerApp({
         { label: 'Due Today', action: () => set(it.id, { due: todayKey() }) },
         { label: 'Due Tomorrow', action: () => { const t = new Date(); t.setDate(t.getDate() + 1); set(it.id, { due: ymd(t) }); } },
         { label: 'Due This Weekend', action: () => { const t = new Date(); t.setDate(t.getDate() + ((6 - t.getDay() + 7) % 7 || 7)); set(it.id, { due: ymd(t) }); } },
-        it.due ? { label: 'Remove Due Date', action: () => set(it.id, { due: null, time: null }) } : null, '-',
+        it.due ? { label: 'Remove Due Date', action: () => set(it.id, { due: null, time: null }) } : null,
+        it.due ? { label: 'Show in Calendar', action: () => wm.activate('calendar', { day: it.due }) } : null, '-',
         { label: 'Priority', submenu: [['None', 0], ['Low', 1], ['Medium', 2], ['High', 3]].map(([l, p]) => ({ label: l, checked: (it.priority || 0) === p, action: () => set(it.id, { priority: p }) })) },
         d.lists.length > 1 ? { label: 'Move to', submenu: d.lists.map((l) => ({ label: l.name, checked: l.id === it.list, action: () => set(it.id, { list: l.id }) })) } : null, '-',
         { label: 'Delete', danger: true, action: () => remove(it.id) },
       ].filter(Boolean)));
       return el;
+    }
+    /** Calendar's events today (not the hidden calendars), as a small list: click one to see it in Calendar. */
+    function todaysEvents() {
+      const k = todayKey(), cal = loadCalendar(), hide = new Set(store.get('calHidden') || []), now = Date.now();
+      const occ = occurrences(k, k, cal).filter((o) => !hide.has(o.ev.cal));
+      if (!occ.length) return [];
+      return [h('div.rm-cal',
+        h('div.rm-cal-head', h('span', 'Today’s Calendar'), h('button.btn.plain', { onclick: () => wm.activate('calendar', { day: k }) }, 'Open Calendar')),
+        ...occ.map((o) => h('div.rm-cal-ev' + (!o.ev.allDay && o.end.getTime() < now ? '.past' : ''), { style: { '--c': calOf(cal, o.ev.cal).color }, title: 'Show in Calendar', onclick: () => wm.activate('calendar', { event: o.ev.id, day: o.key }) },
+          h('i'), h('span', o.ev.title || 'Event'), h('small', o.ev.allDay ? 'All day' : `${o.start.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })} – ${o.end.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`))))];
     }
     const ymd = (t) => `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`;
     function newRow() {
@@ -269,6 +284,7 @@ registerApp({
 
     win.state = { newItem, newList, toggleDone: toggleShowDone, get showDone() { return showDone; } };
     bus.on('reminders', () => { if (!win.el.isConnected) return; if (document.activeElement?.closest?.('.rm-main, .rm-side, .rm-pop')) return; draw(); });
+    const offCal = bus.on('calendar', () => { if (!win.el.isConnected) return offCal(); if (view === 'today' && !document.activeElement?.closest?.('.rm-main, .rm-side, .rm-pop')) draw(); });
     win.on('reopen', (a) => { if (a?.item) { const it = loadReminders().items.find((x) => x.id === a.item); if (it) { view = it.list; sel = it.id; draw(); } } });
     if (sel) { const it = loadReminders().items.find((x) => x.id === sel); if (it) view = it.done ? 'completed' : it.list; }
     if (args.view) view = args.view;

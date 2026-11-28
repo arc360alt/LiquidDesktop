@@ -3,7 +3,7 @@
 // Pages are kept in ~/.local/share/LiquidDesktop/journal (main/journal.js); everything saves as you go.
 //   Pan: scroll, or drag with the hand tool / middle button / Space held. Zoom: Ctrl+scroll, or the buttons.
 //   Pictures: the Picture tool, drag them in, or paste. Delete removes what's selected; Ctrl+Z / Ctrl+Shift+Z.
-import { h, $, $$, fileUrl } from '../util.js';
+import { h, $, $$, fileUrl, bus } from '../util.js';
 import { registerApp, wm } from '../wm.js';
 import { sym } from '../icons.js';
 import { api } from '../sys.js';
@@ -38,11 +38,11 @@ registerApp({
   id: 'journal', name: 'Journal', size: [1100, 720], minSize: [640, 420], overlayContent: true, hideTitle: true, singleton: true,
   keywords: ['freeform', 'whiteboard', 'canvas', 'draw', 'kanban', 'board', 'diary', 'notes', 'sketch', 'todo'],
   about: 'Freeform pages: type, draw, and pin pictures, to-dos and boards.',
-  menus: (win) => [{ title: 'File', items: [{ label: 'New Page', shortcut: '⌘N', action: () => win?.state?.newPage() }, '-', { label: 'Delete Page…', action: () => win?.state?.deletePage() }] },
+  menus: (win) => [{ title: 'File', items: [{ label: 'New Page', shortcut: '⌘N', action: () => win?.state?.newPage() }, { label: 'Add to Calendar…', action: () => win?.state?.addToCalendar() }, '-', { label: 'Delete Page…', action: () => win?.state?.deletePage() }] },
     { title: 'Edit', items: [{ label: 'Undo', shortcut: '⌃Z', action: () => win?.state?.undo() }, { label: 'Redo', shortcut: '⇧⌃Z', action: () => win?.state?.redo() }, '-', { label: 'Delete', action: () => win?.state?.delSel() }, { label: 'Duplicate', shortcut: '⌃D', action: () => win?.state?.dupSel() }] },
     { title: 'View', items: [{ label: 'Zoom In', shortcut: '⌃+', action: () => win?.state?.zoomBy(1.2) }, { label: 'Zoom Out', shortcut: '⌃−', action: () => win?.state?.zoomBy(1 / 1.2) }, { label: 'Zoom to Fit', shortcut: '⌃1', action: () => win?.state?.fit() }, { label: 'Actual Size', shortcut: '⌃0', action: () => win?.state?.zoomTo(1) }] },
     { title: 'Help', items: [{ label: 'Keyboard Shortcuts', shortcut: '?', action: () => win?.state?.keys() }] }],
-  open(win) {
+  open(win, args = {}) {
     let ix = { pages: [] }, page = null, pageId = null;
     let tool = 'select', ink = INK[0], penSize = 3, sel = null, view = { x: 0, y: 0, z: 1 };
     const undoStack = [], redoStack = [];
@@ -56,10 +56,12 @@ registerApp({
     const stage = h('div.jr-stage', world);
     const title = h('input.jr-title', { placeholder: 'Untitled', spellcheck: false });
     const date = h('small.jr-date');
+    // the Calendar event this page belongs to (Calendar › Make a Journal Page, or Add to Calendar here)
+    const evChip = h('button.jr-event', { hidden: true });
     const tools = h('div.jr-tools.glass');
     const inkBar = h('div.jr-inkbar.glass', { hidden: true });
     const zoomBox = h('div.jr-zoom.glass');
-    const canvasPane = h('div.main-pane.jr-main', stage, h('div.jr-titlebar', title, date), tools, inkBar, zoomBox);
+    const canvasPane = h('div.main-pane.jr-main', stage, h('div.jr-titlebar', title, h('div.jr-subline', date, evChip)), tools, inkBar, zoomBox);
     win.body.append(side, canvasPane);
 
     /* -------------------------------------------- pages */
@@ -99,17 +101,37 @@ registerApp({
           const el = h('div.jr-page' + (p.id === pageId ? '.sel' : ''), { onmousedown: (e) => { if (e.button === 0) openPage(p.id); } },
             h('span.jr-dot', { style: { background: p.color || '#0a84ff' } }), h('div', h('b', p.title || 'Untitled'), h('small', p.preview || new Date(p.updated).toLocaleDateString())));
           el.addEventListener('contextmenu', (e) => contextMenu(e, [{ label: 'Color', submenu: STICKY.concat('#0a84ff').map((c) => ({ label: ' ', icon: `<span style="display:block;width:12px;height:12px;border-radius:50%;background:${c}"></span>`, action: () => { p.color = c; api.journal.setIndex(ix); drawList(); } })) },
+            { label: p.event ? 'Show Event in Calendar' : 'Add to Calendar…', action: () => addToCalendar(p.id) },
             '-', { label: 'Delete Page…', danger: true, action: () => deletePage(p.id) }]));
           list.append(el);
         }
       }
       if (!ix.pages.length) list.append(h('div.jr-none', 'No pages yet'));
     }
+    async function drawEvent() {
+      const entry = ix.pages.find((p) => p.id === pageId);
+      const C = await import('../calendardata.js');
+      const ev = entry?.event ? C.loadCalendar().events.find((x) => x.id === entry.event) : null;
+      evChip.hidden = !ev;
+      if (!ev) return;
+      evChip.style.setProperty('--c', C.calOf(C.loadCalendar(), ev.cal).color);
+      evChip.replaceChildren(h('i'), h('span', ev.title || 'Event'), h('small', C.whenText(ev, entry.eventDay || ev.start)));
+      evChip.title = 'Show this event in Calendar';
+      evChip.onclick = () => wm.activate('calendar', { event: ev.id, day: entry.eventDay || ev.start });
+    }
+    /** Make a Calendar event for a page (on the day it was made), linked to it. */
+    async function addToCalendar(id = pageId) {
+      const p = ix.pages.find((x) => x.id === id);
+      if (!p) return;
+      if (p.event) return wm.activate('calendar', { event: p.event, day: p.eventDay });
+      const C = await import('../calendardata.js');
+      wm.activate('calendar', { create: { title: p.title || 'Journal', start: C.dayKey(new Date(p.created || p.updated || Date.now())), allDay: true, journal: id } });
+    }
     async function newPage() {
       const id = uid();
       const p = { id, title: '', items: [], strokes: [], created: Date.now(), updated: Date.now() };
       await api.journal.write(id, p);
-      ix.pages.push({ id, title: '', updated: p.updated, color: STICKY[ix.pages.length % STICKY.length] });
+      ix.pages.push({ id, title: '', created: p.created, updated: p.updated, color: STICKY[ix.pages.length % STICKY.length] });
       await api.journal.setIndex(ix);
       await openPage(id);
       title.focus();
@@ -130,6 +152,10 @@ registerApp({
       pageId = id; sel = null; undoStack.length = 0; redoStack.length = 0;
       title.value = page.title || '';
       date.textContent = new Date(page.created || Date.now()).toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+      // (Calendar shows pages on the day they were made: older index entries didn't keep that)
+      const entry = ix.pages.find((p) => p.id === id);
+      if (entry && !entry.created && page.created) { entry.created = page.created; api.journal.setIndex(ix).catch(() => {}); }
+      drawEvent();
       view = page.view || { x: 40, y: 90, z: 1 };
       render(); drawList();
     }
@@ -689,15 +715,26 @@ registerApp({
       setTimeout(() => addEventListener('mousedown', function off(e) { if (!sheet.contains(e.target)) { sheet.remove(); removeEventListener('mousedown', off, true); } }, true), 0);
     }
 
-    win.state = { newPage, deletePage: () => deletePage(), keys: () => shortcutsSheet(), undo, redo, delSel: () => del(sel), dupSel: () => dup(page?.items.find((i) => i.id === sel)), zoomBy: (f) => zoomAt(f), zoomTo: (z) => { view.z = z; applyView(); }, fit };
+    win.state = { newPage, addToCalendar: () => addToCalendar(), deletePage: () => deletePage(), keys: () => shortcutsSheet(), undo, redo, delSel: () => del(sel), dupSel: () => dup(page?.items.find((i) => i.id === sel)), zoomBy: (f) => zoomAt(f), zoomTo: (z) => { view.z = z; applyView(); }, fit };
     win.on('close', () => save(true));
+    // asked for a page while open (Calendar's "Open Journal Page"): re-read the index (Calendar may have just made it)
+    win.on('reopen', async (a) => {
+      if (!a?.page) return;
+      ix = await api.journal.index().catch(() => ix);
+      ix.pages ||= [];
+      if (ix.pages.some((p) => p.id === a.page)) { await openPage(a.page); drawList(); }
+    });
+    // an event changed or was linked in Calendar: the chip under the title
+    const offCal = bus.on('calendar', async () => { if (!win.el.isConnected) return offCal(); ix = await api.journal.index().catch(() => ix); ix.pages ||= []; drawEvent(); });
 
     (async () => {
       ix = await api.journal.index().catch(() => ({ pages: [] }));
       ix.pages ||= [];
       drawTools();
       const last = ix.pages.slice().sort((a, b) => b.updated - a.updated)[0];
-      if (last) await openPage(last.id); else await newPage();
+      // opened for a page (from Calendar): that one
+      if (args.page && ix.pages.some((p) => p.id === args.page)) await openPage(args.page);
+      else if (last) await openPage(last.id); else await newPage();
     })();
   },
 });

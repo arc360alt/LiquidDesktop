@@ -2,6 +2,7 @@
 // Photos, like the Mac's, with Favorites, Videos, Screenshots and albums of your own. Double-click opens a photo
 // big; arrows step through. The files stay where they are — albums and favorites are just lists.
 import { h, $, $$, fileUrl, basename, dirname, fmtSize } from '../util.js';
+import { playableMedia } from '../playable.js';
 import { registerApp, wm } from '../wm.js';
 import { sym } from '../icons.js';
 import { api } from '../sys.js';
@@ -248,7 +249,7 @@ registerApp({
       const v = h('div.ph2-viewer', stage, prev, next, bar);
       const show = () => {
         const it = list[i];
-        stage.replaceChildren(it.video ? h('video', { src: fileUrl(it.path), controls: true, autoplay: true }) : h('img', { src: fileUrl(it.path), draggable: false }));
+        stage.replaceChildren(it.video ? playableMedia(it.path).el : h('img', { src: fileUrl(it.path), draggable: false }));
         caption.replaceChildren(h('b', new Date(it.taken).toLocaleDateString([], { day: 'numeric', month: 'long', year: 'numeric' })), h('small', new Date(it.taken).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) + ' · ' + it.name));
         favBtn.classList.toggle('on', meta().favs.includes(it.path));
         prev.hidden = i === 0; next.hidden = i === list.length - 1;
@@ -258,10 +259,12 @@ registerApp({
       const key = (e) => { if (e.key === 'ArrowRight') go(1); else if (e.key === 'ArrowLeft') go(-1); else if (e.key === 'Escape' || e.key === ' ') { e.preventDefault(); closeViewer(); } else if (e.key === '.') favBtn.onclick(); else if (e.key === 'Delete') trash([list[i].path]); };
       viewer = { el: v, key };
       win.el.addEventListener('keydown', key);
-      main.append(v);
+      // over the whole window (the sidebar too), so the photo is in the middle of it
+      win.body.append(v);
+      win.el.classList.add('ph2-viewing');   // (the window's buttons stay above it)
       show();
     }
-    function closeViewer() { if (!viewer) return; win.el.removeEventListener('keydown', viewer.key); viewer.el.remove(); viewer = null; grid.focus(); }
+    function closeViewer() { if (!viewer) return; win.el.removeEventListener('keydown', viewer.key); viewer.el.remove(); viewer = null; win.el.classList.remove('ph2-viewing'); grid.focus(); }
 
     grid.addEventListener('keydown', (e) => {
       if (viewer) return;

@@ -100,22 +100,33 @@ export const WIDGETS = {
     const pad = h('div.w-pad');
     el.append(pad);
     el.addEventListener('dblclick', () => wm.activate('calendar'));
-    every(el, 60_000, () => {
-      const d = new Date();
-      const events = appData.get('calendar', {});
-      const upcoming = [];
-      for (let i = 0; i < 14 && upcoming.length < 3; i++) {
-        const day = new Date(d.getFullYear(), d.getMonth(), d.getDate() + i);
-        const key = day.toISOString().slice(0, 10);
-        for (const ev of events[key] || []) upcoming.push({ day, ev });
+    // the next three things: events (Calendar) and reminders with a date, over the next two weeks
+    const draw = async () => {
+      const C = await import('./calendardata.js'), R = await import('./reminders.js');
+      const d = new Date(), now = d.getTime(), today = C.dayKey(d), cal = C.loadCalendar();
+      const hide = new Set(store.get('calHidden') || []);
+      const list = C.occurrences(today, C.addDays(today, 14), cal).filter((o) => !hide.has(o.ev.cal) && o.end.getTime() > now)
+        .map((o) => ({ t: o.start.getTime(), title: o.ev.title || 'Event', color: C.calOf(cal, o.ev.cal).color, when: o.ev.allDay ? 'All day' : o.start.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }), day: o.key, ev: o.ev.id }));
+      if (store.get('calShowReminders') !== false) {
+        const rd = R.loadReminders();
+        for (const it of rd.items) if (!it.done && it.due && it.due >= today && it.due <= C.addDays(today, 14)) {
+          list.push({ t: R.dueAt(it), title: it.title || 'Reminder', color: rd.lists.find((l) => l.id === it.list)?.color || '#0a84ff', when: it.time ? R.fmtTime(it.time) : 'Reminder', day: it.due, rm: it.id });
+        }
       }
-      pad.innerHTML = '';
-      pad.append(h('div', { style: { display: 'flex', gap: '14px', height: '100%' } },
-        h('div', { style: { width: '90px' } }, h('div.w-cal-head', d.toLocaleDateString('en', { weekday: 'long' })), h('div.w-big', { style: { fontSize: '44px' } }, d.getDate())),
+      const next = list.sort((a, b) => a.t - b.t).slice(0, 3);
+      const dayName = (k) => (k === today ? 'Today' : k === C.addDays(today, 1) ? 'Tomorrow' : C.parseDay(k).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }));
+      pad.replaceChildren(h('div', { style: { display: 'flex', gap: '14px', height: '100%' } },
+        h('div', { style: { width: '90px' } }, h('div.w-cal-head', d.toLocaleDateString([], { weekday: 'long' })), h('div.w-big', { style: { fontSize: '44px' } }, d.getDate())),
         h('div', { style: { flex: 1, display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '12px', minWidth: 0 } },
-          upcoming.length ? upcoming.map(({ day, ev }) => h('div.cal-ev', { style: { fontSize: '12px', padding: '4px 8px' } }, h('b', ev.title), h('div', { style: { opacity: 0.7, fontSize: '11px' } }, day.toLocaleDateString('en', { weekday: 'short', month: 'short', day: 'numeric' }) + (ev.time ? ' · ' + ev.time : ''))))
-            : h('div', { style: { opacity: 0.6, marginTop: '10px' } }, 'No upcoming events'))));
-    });
+          next.length ? next.map((x) => {
+            const row = h('div.w-upnext', { style: { '--c': x.color } }, h('b', x.title), h('small', `${dayName(x.day)} · ${x.when}`));
+            row.addEventListener('dblclick', (e) => { e.stopPropagation(); x.rm ? wm.activate('reminders', { item: x.rm }) : wm.activate('calendar', { event: x.ev, day: x.day }); });
+            return row;
+          }) : h('div', { style: { opacity: 0.6, marginTop: '10px' } }, 'Nothing coming up'))));
+    };
+    every(el, 60_000, draw);
+    // (as soon as something changes, here or in another window)
+    const offs = [bus.on('calendar', () => (el.isConnected ? draw() : offs.forEach((f) => f()))), bus.on('reminders', () => (el.isConnected ? draw() : offs.forEach((f) => f())))];
   } },
 };
 

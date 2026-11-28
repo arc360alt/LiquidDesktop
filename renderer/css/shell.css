@@ -1217,3 +1217,7 @@
 .mbg-prev > *, .mbg-chip-in > * { max-width: 80%; overflow: hidden; }
 .mbg-prev small, .mbg-chip-in small { overflow: hidden; text-overflow: ellipsis; }
 .mbg-chip-in > * { max-width: 220px; }
+/* Up Next (widgets.js): an event or reminder, in its calendar's colour */
+.w-upnext { display: flex; flex-direction: column; gap: 1px; padding: 4px 8px; border-radius: 7px; border-left: 3px solid var(--c); background: color-mix(in srgb, var(--c) 16%, transparent); min-width: 0; }
+.w-upnext b { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.w-upnext small { font-size: 10.5px; opacity: 0.75; }

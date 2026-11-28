@@ -1,5 +1,6 @@
 // Preview: pictures (with zoom), videos and audio, plus plain-text files.
 import { h, basename, fileUrl, extOf, dirname, fmtSize } from '../util.js';
+import { playableMedia } from '../playable.js';
 import { registerApp, wm } from '../wm.js';
 import { sym, docIcon, IMAGE_EXT, VIDEO_EXT, AUDIO_EXT, TEXT_EXT } from '../icons.js';
 import { api } from '../sys.js';
@@ -55,8 +56,8 @@ registerApp({
       } else if (VIDEO_EXT.has(ext) || AUDIO_EXT.has(ext)) {
         // played straight from the file, so any size works
         const video = VIDEO_EXT.has(ext);
-        const el = h(video ? 'video.pv-media' : 'audio.pv-media', { src: fileUrl(p), controls: true, autoplay: true, preload: 'metadata',
-          onerror: () => { box.innerHTML = ''; cantShow(p, `This ${video ? 'video' : 'audio'} format can’t be played here.`); } });
+        // (a format Chromium can't play is converted first: playable.js)
+        const el = playableMedia(p, { video, className: 'pv-media', onFail: (msg) => { box.innerHTML = ''; cantShow(p, msg); } }).el;
         if (!video) box.append(h('div.pv-audio', h('div.pv-none-ic', { html: sym.music }), h('b', basename(p)), el));
         else box.append(el);
         box.classList.add('media');

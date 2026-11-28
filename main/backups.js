@@ -36,10 +36,18 @@ const changed = () => broadcast('tm:changed');
 
 /* ------------------------------------------------ backup drives */
 async function lsblk() {
-  const r = await run('lsblk', ['-J', '-b', '-o', 'NAME,PATH,PKNAME,UUID,LABEL,MOUNTPOINTS,FSTYPE,SIZE,FSAVAIL,RM,HOTPLUG,TRAN,TYPE,MODEL'], { timeout: 10000 });
+  const r = await run('lsblk', ['-J', '-b', '-o', 'NAME,PATH,PKNAME,UUID,LABEL,MOUNTPOINTS,FSTYPE,SIZE,FSAVAIL,RM,HOTPLUG,TRAN,TYPE,MODEL,PARTTYPE'], { timeout: 10000 });
   try { return JSON.parse(r.out).blockdevices || []; } catch { return []; }
 }
 /** Disks and partitions that could hold backups (not the one your system or home is on). */
+const BOOT_PARTS = new Set([
+  'c12a7328-f81f-11d2-ba4b-00a0c93ec93b',   // EFI System
+  'bc13c2ff-59e6-4262-a352-b275fd6f7172',   // Linux extended boot (/boot)
+  '21686148-6449-6e6f-744e-656564454649',   // BIOS boot
+  'e3c9e316-0b5c-4db8-817d-f92df00215ae',   // Microsoft reserved
+  'de94bba4-06d1-4d40-a16a-bfd50179d6ac',   // Windows recovery
+  '0xef',                                    // EFI System (MBR)
+]);
 async function drives() {
   const tree = await lsblk();
   const out = [];
@@ -51,15 +59,17 @@ async function drives() {
   for (const { d, disk } of flat) {
     if (!d.uuid || !d.fstype || /swap|crypto_LUKS|LVM2_member|linux_raid_member|iso9660|squashfs/.test(d.fstype) || d.type === 'loop' || /^zram/.test(d.name)) continue;
     if (sysDisks.has(disk.name)) continue;
+    // partitions only for starting a computer (another system's EFI or /boot, Windows' hidden ones): never a backup disk
+    if (BOOT_PARTS.has(String(d.parttype || '').toLowerCase())) continue;
     const mount = (d.mountpoints || []).find(Boolean) || null;
     const ok = LINUX_FS.test(d.fstype);
     out.push({
       uuid: d.uuid, device: d.path, label: d.label || disk.model?.trim() || d.name, fstype: d.fstype, size: +d.size || 0, avail: d.fsavail != null ? +d.fsavail : null,
       mount, removable: !!(disk.rm || disk.hotplug || disk.tran === 'usb'), ok,
-      reason: ok ? null : `This drive is formatted as ${d.fstype.toUpperCase()}, which can’t keep versions of your files efficiently. Time Machine needs a drive formatted for Linux (ext4 or Btrfs).`,
+      reason: ok ? null : `Formatted as ${d.fstype.toUpperCase()}, which can’t keep versions of your files. Time Machine needs a drive formatted for Linux (ext4 or Btrfs).`,
     });
   }
-  return out;
+  return out.sort((a, b) => b.ok - a.ok);
 }
 /** The chosen backup drive, mounted (udisks mounts it without a password when it's yours to mount). */
 async function mountDest() {

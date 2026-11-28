@@ -19,7 +19,7 @@ const names = ['sys:info', 'sys:status', 'sys:rendering', 'sys:setRendering', 's
   'mirror:status', 'mirror:install', 'mirror:nearby', 'mirror:pair', 'mirror:connect', 'mirror:start', 'mirror:stop', 'mirror:key', 'mirror:disconnect',
   'archive:list', 'archive:extract', 'archive:compress', 'archive:cancel', 'archive:available', 'ocr:status', 'ocr:install', 'ocr:recognize',
   'console:query', 'console:follow', 'console:stop', 'console:logFiles', 'console:readLog', 'console:crashes', 'console:crashInfo', 'console:report', 'console:units',
-  'photos:list', 'photos:thumb', 'photos:import', 'music:list', 'music:art',
+  'photos:list', 'photos:thumb', 'photos:import', 'music:list', 'music:art', 'media:playable',
   'tags:all', 'tags:set', 'tags:toggle', 'tags:define', 'tags:files', 'tags:moved', 'search:query', 'search:contents', 'search:engine',
   'a11y:status', 'a11y:screenReader', 'a11y:installOrca', 'a11y:keys', 'a11y:cursor', 'a11y:sources',
   'tm:status', 'tm:drives', 'tm:prepare', 'tm:forget', 'tm:options', 'tm:backupNow', 'tm:stop', 'tm:points', 'tm:list', 'tm:conflicts', 'tm:restore', 'tm:delete', 'tm:localSetup', 'tm:snapNow', 'tm:system', 'tm:systemRollback',
@@ -47,6 +47,7 @@ api.apps.onChanged = (fn) => ipcRenderer.on('apps:changed', () => fn());
 api.rec.onChanged = (fn) => ipcRenderer.on('rec:changed', (_e, s) => fn(s));
 api.archive.onProgress = (fn) => ipcRenderer.on('archive:progress', (_e, p) => fn(p));
 api.console.onEntries = (fn) => ipcRenderer.on('console:entries', (_e, id, batch) => fn(id, batch));
+api.media.onProgress = (fn) => ipcRenderer.on('media:progress', (_e, p, f) => fn(p, f));
 api.photos.onProgress = (fn) => ipcRenderer.on('photos:progress', (_e, n, total) => fn(n, total));
 api.music.onProgress = (fn) => ipcRenderer.on('music:progress', (_e, n, total) => fn(n, total));
 api.tags.onChanged = (fn) => ipcRenderer.on('tags:changed', () => fn());

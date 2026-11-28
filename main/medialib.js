@@ -12,7 +12,7 @@ const crypto = require('crypto');
 const { which, run, broadcast, handler, HOME, cacheDir } = require('./common');
 
 const IMG = /\.(jpe?g|png|gif|webp|avif|bmp|heic|heif|tiff?)$/i;
-const VID = /\.(mp4|m4v|mov|webm|mkv|avi|3gp)$/i;
+const VID = /\.(mp4|m4v|mov|webm|mkv|avi|3gp|wmv|flv|mpe?g|m2ts|mts)$/i;
 const AUD = /\.(mp3|flac|ogg|oga|opus|m4a|aac|wav|wma|aiff?|alac)$/i;
 const SKIP = new Set(['node_modules', '.git', '.cache', '.thumbnails', '@eaDir', '.Trash-1000']);
 
@@ -268,8 +268,75 @@ async function importPhotos(paths) {
   return out;
 }
 
+/* -------------------------------------------- videos Chromium can't play */
+// AVI, WMV, MPEG, FLV… (and MKVs with HEVC video): a copy it can play, made with FFmpeg and kept in the cache. When the
+// video and sound inside are ones it can already play, they're only moved into a new container (seconds); otherwise
+// they're converted (H.264 and AAC), with progress on 'media:progress' (path, 0–1).
+const PLAY_V = new Set(['h264', 'vp8', 'vp9', 'av1']);
+const PLAY_A = new Set(['aac', 'mp3', 'opus', 'vorbis', 'flac']);
+const playJobs = new Map();   // path → the conversion under way (asking twice waits for the same one)
+async function probe(p) {
+  const r = await run('ffprobe', ['-v', 'error', '-show_entries', 'stream=codec_type,codec_name:format=duration', '-of', 'json', p], { timeout: 20000 });
+  if (!r.ok) throw new Error('This file couldn’t be read — it may be damaged or not a video.');
+  const j = JSON.parse(r.out);
+  const v = j.streams?.find((s) => s.codec_type === 'video' && s.codec_name !== 'mjpeg' && s.codec_name !== 'png');   // (cover art isn't video)
+  const a = j.streams?.find((s) => s.codec_type === 'audio');
+  return { v: v?.codec_name || null, a: a?.codec_name || null, duration: +j.format?.duration || 0 };
+}
+async function playable(p) {
+  if (!which('ffmpeg') || !which('ffprobe')) throw new Error('NEEDS_FFMPEG');
+  const st = await fsp.stat(p);
+  const dir = cacheDir('playable');
+  await fsp.mkdir(dir, { recursive: true });
+  const key = crypto.createHash('sha1').update(`${p}|${st.size}|${st.mtimeMs}`).digest('hex').slice(0, 20);
+  for (const ext of ['.mp4', '.webm', '.m4a']) {
+    const done = path.join(dir, key + ext);
+    if (fs.existsSync(done)) { fsp.utimes(done, new Date(), new Date()).catch(() => {}); return { path: done }; }
+  }
+  if (playJobs.has(p)) return playJobs.get(p);
+  const job = (async () => {
+    const info = await probe(p);
+    if (!info.v && !info.a) throw new Error('There’s no video or sound in this file that can be played.');
+    const copyV = !info.v || PLAY_V.has(info.v), copyA = !info.a || PLAY_A.has(info.a);
+    // the container: WebM for VP8/Vorbis (MP4 can't hold them), M4A for sound only, MP4 for everything else
+    const webm = copyV && copyA && (info.v === 'vp8' || info.a === 'vorbis');
+    const ext = !info.v ? '.m4a' : webm ? '.webm' : '.mp4';
+    const out = path.join(dir, key + ext), part = out + '.part';
+    const args = ['-v', 'error', '-nostdin', '-i', p, '-map', '0:v:0?', '-map', '0:a:0?', '-sn', '-dn'];
+    args.push(...(info.v ? (copyV ? ['-c:v', 'copy'] : ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '22', '-pix_fmt', 'yuv420p']) : ['-vn']));
+    args.push(...(info.a ? (copyA && !(ext === '.m4a' && info.a === 'vorbis') ? ['-c:a', 'copy'] : ['-c:a', 'aac', '-b:a', '192k']) : []));
+    if (!webm) args.push('-movflags', '+faststart');
+    args.push('-f', webm ? 'webm' : 'mp4', '-progress', 'pipe:1', '-y', part);
+    await new Promise((resolve, reject) => {
+      const c = require('child_process').spawn('ffmpeg', args, { stdio: ['ignore', 'pipe', 'pipe'] });
+      let err = '', last = 0;
+      c.stdout.on('data', (b) => {
+        const m = /out_time_us=(\d+)/.exec(String(b));
+        if (m && info.duration && Date.now() - last > 300) { last = Date.now(); broadcast('media:progress', p, Math.min(0.99, +m[1] / 1e6 / info.duration)); }
+      });
+      c.stderr.on('data', (b) => { err += b; });
+      c.on('error', reject);
+      c.on('close', (code) => (code === 0 ? resolve() : reject(new Error('The video couldn’t be converted: ' + (err.trim().split('\n').pop() || 'FFmpeg failed')))));
+    });
+    await fsp.rename(part, out);
+    broadcast('media:progress', p, 1);
+    pruneCache(dir).catch(() => {});
+    return { path: out, converted: !(copyV && copyA) };
+  })().finally(() => playJobs.delete(p));
+  playJobs.set(p, job);
+  return job;
+}
+/** The converted copies stay under 4 GB: the ones not watched for longest go first. */
+async function pruneCache(dir) {
+  const files = [];
+  for (const n of await fsp.readdir(dir)) { if (n.endsWith('.part')) continue; const st = await fsp.stat(path.join(dir, n)).catch(() => null); if (st) files.push({ p: path.join(dir, n), size: st.size, t: st.mtimeMs }); }
+  let total = files.reduce((a, f) => a + f.size, 0);
+  for (const f of files.sort((a, b) => a.t - b.t)) { if (total < 4e9) break; await fsp.rm(f.p, { force: true }); total -= f.size; }
+}
+
 function register() {
   const h = handler(ipcMain);
+  h('media:playable', playable);
   h('photos:list', photos);
   h('photos:thumb', thumb);
   h('photos:import', importPhotos);

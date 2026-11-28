@@ -402,9 +402,11 @@ export function docIcon(ext) {
     ${label ? `<rect x="15" y="44" width="34" height="11" rx="3" fill="${col}"/><text x="32" y="52.6" text-anchor="middle" font-family="Inter Variable, sans-serif" font-size="7.5" font-weight="700" fill="#fff">${label}</text>` : ''}</svg>`;
 }
 export const IMAGE_EXT = new Set(['png', 'jpg', 'jpeg', 'jfif', 'pjpeg', 'gif', 'webp', 'svg', 'bmp', 'ico', 'cur', 'avif', 'apng']);
-export const VIDEO_EXT = new Set(['mp4', 'm4v', 'webm', 'mkv', 'mov', 'ogv', '3gp']);
+export const VIDEO_EXT = new Set(['mp4', 'm4v', 'webm', 'mkv', 'mov', 'ogv', '3gp', 'avi', 'wmv', 'flv', 'mpg', 'mpeg', 'm2ts', 'mts', 'vob', 'asf', 'divx', 'ogm']);
+// videos Chromium can't open at all: Photos, Preview and Files play a converted copy (playable.js) without trying first
+export const CONVERT_EXT = new Set(['avi', 'wmv', 'flv', 'mpg', 'mpeg', 'm2ts', 'mts', 'vob', 'asf', 'divx', 'ogm', 'wma', 'ape', 'aiff', 'aif']);
 // archives Archive Utility expands (bsdtar reads them), and single compressed files
 export const ARCHIVE_EXT = new Set(['zip', 'tar', 'tgz', 'txz', 'tbz', 'tbz2', 'tzst', 'gz', 'xz', 'bz2', 'zst', 'lz4', 'lzma', '7z', 'rar', 'iso', 'cpio', 'xar', 'cab', 'lha', 'lzh', 'jar']);
 export const isArchive = (p) => ARCHIVE_EXT.has(String(p).split('.').pop().toLowerCase()) && !/\.(svgz)$/i.test(p);
-export const AUDIO_EXT = new Set(['mp3', 'ogg', 'oga', 'opus', 'flac', 'wav', 'm4a', 'aac', 'weba']);
+export const AUDIO_EXT = new Set(['mp3', 'ogg', 'oga', 'opus', 'flac', 'wav', 'm4a', 'aac', 'weba', 'wma', 'ape', 'aiff', 'aif']);
 export const TEXT_EXT = new Set(['txt', 'md', 'js', 'mjs', 'cjs', 'ts', 'tsx', 'jsx', 'json', 'py', 'sh', 'bash', 'zsh', 'rs', 'go', 'c', 'h', 'cpp', 'hpp', 'java', 'css', 'html', 'xml', 'yml', 'yaml', 'toml', 'ini', 'conf', 'cfg', 'log', 'csv', 'lua', 'rb', 'php', 'sql', 'desktop', 'env', 'gitignore', '']);

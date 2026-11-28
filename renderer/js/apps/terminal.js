@@ -1,0 +1,137 @@
+// Terminal — xterm.js on a real PTY (bash/zsh/fish from $SHELL).
+import { h, bus } from '../util.js';
+import { registerApp, wm } from '../wm.js';
+import { api, isNative } from '../sys.js';
+import { store } from '../store.js';
+import { Terminal } from '../../../node_modules/@xterm/xterm/lib/xterm.mjs';
+import { FitAddon } from '../../../node_modules/@xterm/addon-fit/lib/addon-fit.mjs';
+
+const css = document.createElement('link');
+css.rel = 'stylesheet'; css.href = '../node_modules/@xterm/xterm/css/xterm.css';
+document.head.append(css);
+
+const THEMES = {
+  glass: { background: 'rgba(0,0,0,0)', foreground: '#f2f2f7', cursor: '#f2f2f7', cursorAccent: '#000', selectionBackground: 'rgba(120,160,255,.35)',
+    black: '#1c1c1e', red: '#ff6b6b', green: '#4fe08a', yellow: '#ffd36b', blue: '#6aa8ff', magenta: '#d68cff', cyan: '#5ee6e6', white: '#e5e5ea',
+    brightBlack: '#6e6e73', brightRed: '#ff8a8a', brightGreen: '#7af0a8', brightYellow: '#ffe08f', brightBlue: '#8fc0ff', brightMagenta: '#e4aaff', brightCyan: '#8ff0f0', brightWhite: '#ffffff' },
+  dark: { background: '#1e1e1e', foreground: '#e5e5ea', cursor: '#e5e5ea', selectionBackground: 'rgba(120,160,255,.35)' },
+  light: { background: '#ffffff', foreground: '#1c1c1e', cursor: '#1c1c1e', cursorAccent: '#fff', selectionBackground: 'rgba(10,132,255,.25)',
+    black: '#000', red: '#c41a16', green: '#007400', yellow: '#826b28', blue: '#0e0eff', magenta: '#a90d91', cyan: '#3f6e74', white: '#c7c7c7', brightBlack: '#7f7f7f' },
+};
+
+const sessions = new Map();
+if (isNative) {
+  api.pty.onData((id, d) => sessions.get(id)?.write(d));
+  api.pty.onExit((id) => sessions.get(id)?.exit());
+}
+
+registerApp({
+  id: 'terminal', settings: 'terminal', name: 'Terminal', size: [780, 512], minSize: [360, 200], overlayContent: true,
+  keywords: ['shell', 'console', 'bash', 'command line'],
+  about: 'A real shell, rendered with xterm.js.',
+  menus: (win) => [
+    { title: 'Shell', items: [
+      { label: 'New Window', shortcut: '⌘N', action: () => wm.open('terminal') },
+      { label: 'Terminal Settings…', action: () => wm.open('settings', { pane: 'terminal' }) }, '-',
+      { label: 'Clear', action: () => win?.state?.term.clear() },
+      { label: 'Reset', action: () => win?.state?.term.reset() }, '-',
+      { label: 'Close Window', shortcut: '⌘W', action: () => win?.close() }] },
+    { title: 'View', items: [
+      { label: 'Bigger', shortcut: '⌃+', action: () => win?.state?.zoom(1) },
+      { label: 'Smaller', shortcut: '⌃-', action: () => win?.state?.zoom(-1) },
+      { label: 'Actual Size', action: () => win?.state?.zoom(0) }, '-',
+      ...['glass', 'dark', 'light'].map((t) => ({ label: `${t[0].toUpperCase() + t.slice(1)} Profile`, checked: store.get('terminalTheme') === t, action: () => store.set('terminalTheme', t) }))] },
+  ],
+  open(win, args) {
+    const wrap = h('div.term-wrap');
+    win.body.append(wrap);
+    const applyProfile = () => {
+      const t = store.get('terminalTheme');
+      win.el.classList.remove('term-glass', 'term-dark', 'term-light');
+      win.el.classList.add('term-' + t);
+      wrap.style.setProperty('--term-bg', THEMES[t].background);
+      if (term) term.options.theme = THEMES[t];
+    };
+    let term = null;
+    applyProfile();
+    const fontStack = () => (store.get('terminalFont') ? `"${store.get('terminalFont')}", ` : '') + '"JetBrains Mono", "SF Mono", "Fira Code", "DejaVu Sans Mono", "Noto Sans Mono", monospace';
+    term = new Terminal({
+      fontFamily: fontStack(), fontSize: store.get('terminalFontSize'),
+      cursorBlink: store.get('terminalBlink'), cursorStyle: store.get('terminalCursor'), allowTransparency: true, theme: THEMES[store.get('terminalTheme')],
+      scrollback: store.get('terminalScrollback'), macOptionIsMeta: true,
+    });
+    applyProfile();
+    const fit = new FitAddon();
+    term.loadAddon(fit);
+    term.open(wrap);
+    const state = { term, id: null };
+    win.state = state;
+    state.zoom = (d) => { term.options.fontSize = d === 0 ? 13 : Math.max(8, Math.min(30, term.options.fontSize + d)); store.set('terminalFontSize', term.options.fontSize); fit.fit(); };
+    // settings apply to open terminals right away
+    const offs = [store.on('change:terminalTheme', applyProfile),
+      store.on('change', (k) => {
+        if (k === 'terminalFont') { term.options.fontFamily = fontStack(); doFit(); }
+        if (k === 'terminalFontSize') { term.options.fontSize = store.get('terminalFontSize'); doFit(); }
+        if (k === 'terminalCursor') term.options.cursorStyle = store.get('terminalCursor');
+        if (k === 'terminalBlink') term.options.cursorBlink = store.get('terminalBlink');
+        if (k === 'terminalScrollback') term.options.scrollback = store.get('terminalScrollback');
+      })];
+    const off = () => offs.forEach((f) => f());
+    const doFit = () => {
+      try {
+        fit.fit();
+        // never let the last row end below the visible area (it hid prompts like sudo's password line)
+        const scr = wrap.querySelector('.xterm-screen'), clip = wrap.closest('.win-body') || wrap;
+        if (scr && term.rows > 2 && scr.getBoundingClientRect().bottom > Math.min(wrap.getBoundingClientRect().bottom, clip.getBoundingClientRect().bottom) - 2) term.resize(term.cols, term.rows - 1);
+        if (state.id) api.pty.resize(state.id, term.cols, term.rows);
+      } catch { /* not visible yet */ }
+    };
+    win.on('resize', () => requestAnimationFrame(doFit));
+    // refit whenever the terminal's area changes size (real window resized, maximized, tiled…)
+    let fitQueued = false;
+    new ResizeObserver(() => { if (fitQueued) return; fitQueued = true; requestAnimationFrame(() => { fitQueued = false; doFit(); }); }).observe(wrap);
+    win.on('focus', () => term.focus());
+    term.attachCustomKeyEventHandler((e) => {
+      // Ctrl+Shift+C / V copy & paste like other Linux terminals
+      if (e.type === 'keydown' && e.ctrlKey && e.shiftKey && (e.key === 'C' || e.key === 'c')) { api.clip.write(term.getSelection()); e.preventDefault(); return false; }
+      // pasting is left to the browser's own paste event (handled once by xterm); we only note that it was asked for
+      if (e.type === 'keydown' && ((e.ctrlKey && (e.key === 'v' || e.key === 'V')) || (e.shiftKey && e.key === 'Insert'))) pasteArmed = Date.now();
+      if (e.type === 'keydown' && e.ctrlKey && (e.key === '=' || e.key === '+')) { state.zoom(1); return false; }
+      if (e.type === 'keydown' && e.ctrlKey && e.key === '-') { state.zoom(-1); return false; }
+      return true;
+    });
+    term.onTitleChange((t) => win.setTitle(t || 'Terminal'));
+    // Only paste when it was asked for: a paste shortcut just now (once per key press), or the right-click
+    // menu. This stops middle-click / three-finger-tap pastes of the selection while typing.
+    let pasteArmed = 0;
+    wrap.addEventListener('paste', (e) => {
+      if (Date.now() - pasteArmed < 600) { pasteArmed = 0; return; }
+      if (store.get('terminalMiddlePaste')) return;
+      e.stopImmediatePropagation(); e.preventDefault();
+    }, true);
+    wrap.addEventListener('mouseup', (e) => { if (e.button === 1 && !store.get('terminalMiddlePaste')) e.preventDefault(); }, true);
+    setTimeout(async () => {
+      doFit();
+      if (!isNative) { term.write('\x1b[1mLiquidDesktop Terminal\x1b[0m\r\n\r\nThe terminal needs the desktop backend — run \x1b[36mnpm start\x1b[0m.\r\n'); return; }
+      try {
+        state.id = await api.pty.create({ cols: term.cols, rows: term.rows, cwd: args.cwd || store.get('terminalCwd') || undefined,
+          shell: store.get('terminalShell') || undefined, login: store.get('terminalLogin') });
+        sessions.set(state.id, { write: (d) => term.write(d), exit: () => win.close(true) });
+        term.onData((d) => api.pty.write(state.id, d));
+        if (args.command) api.pty.write(state.id, args.command + '\n');
+        term.focus();
+      } catch (e) { term.write('Could not start a shell: ' + e.message + '\r\n'); }
+    }, 60);
+    win.setTitle('Terminal');
+    win.on('close', () => { off(); if (state.id) { api.pty.kill(state.id); sessions.delete(state.id); } term.dispose(); });
+    wrap.addEventListener('contextmenu', (e) => {
+      import('../menus.js').then(({ contextMenu }) => contextMenu(e, [
+        { label: 'Copy', disabled: !term.hasSelection(), action: () => api.clip.write(term.getSelection()) },
+        { label: 'Paste', action: () => api.clip.read().then((t) => state.id && api.pty.write(state.id, t)) },
+        { label: 'Select All', action: () => term.selectAll() }, '-',
+        { label: 'Clear', action: () => term.clear() },
+        { label: 'New Window', action: () => wm.open('terminal') },
+      ]));
+    });
+  },
+});
